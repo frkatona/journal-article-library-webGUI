@@ -1,101 +1,175 @@
-# Literature Library (Local Web UI)
+# Literature Library
 
-Local, searchable article library for PDF collections with thumbnail cards, metadata editing, tags, and notes.
+A native desktop application for managing and browsing local PDF article collections. Features thumbnail cards, full-text search, metadata editing, tags, and notes — all running locally with no server or internet required.
 
-![alt text](screenshot.png)
+Built with [Tauri v2](https://tauri.app/) (Rust backend + vanilla JS frontend).
 
-## Quick Start
+## Installation
 
-1. Install dependencies:
+### Prerequisites
+
+- [Rust](https://rustup.rs/) (stable toolchain)
+- [Node.js](https://nodejs.org/) (v18+)
+
+### Build from Source
 
 ```powershell
-py -3 -m pip install -r requirements.txt
+# Clone or download this repository, then from the repo root:
+
+# 1. Install the Tauri CLI
+npm install
+
+# 2. Build the release binary
+npx tauri build
 ```
 
-2. Start the app (from repo root):
+The installer/executable will be output to `src-tauri/target/release/bundle/`.
+
+### Run in Development Mode
 
 ```powershell
-py -3 run_article_library.py
+npx tauri dev
 ```
 
-3. Open the URL printed by the CLI, for example:
+This compiles the Rust backend and opens the app window with hot-reload for frontend changes.
+
+## Usage
+
+### Adding Articles
+
+Place your PDF files anywhere inside the `Articles/` folder at the project root:
 
 ```text
-http://127.0.0.1:8080
+Articles/
+  (2024) Smith, Jones - Deep Learning Survey.pdf
+  subfolder/
+    another-paper.pdf
 ```
 
-If `8080` is blocked/reserved on Windows, the app now auto-picks a nearby fallback port and prints it.
+The app will scan `Articles/` recursively on launch. If the folder doesn't exist, it will be created automatically.
 
-## What This Implements
+#### Filename Convention (Optional)
 
-- Scans `Articles/` recursively for `.pdf` files.
-- Extracts metadata from:
-  - filename heuristic: `(<year>) <authors> - <title>.pdf`
-  - PDF metadata and first-page DOI regex fallback.
-- Generates auto thumbnails with configurable strategy:
-  - `hybrid` (default): try embedded image, fallback to first-page render.
-  - `embedded`: only embedded image extraction.
-  - `first-page`: page render only.
-  - previews are letterboxed (black bars) to preserve full image without crop/zoom.
-- Stores generated index and assets in `library_data/`.
-- Lets you correct metadata, add custom tags/notes, and upload manual thumbnail overrides.
-- Includes two browsing modes: compact preview cards and a details-style list view.
+For best auto-extraction, name your PDFs using this pattern:
+
+```text
+(<year>) <authors> - <title>.pdf
+```
+
+For example: `(2023) Chen, Li - Neural Architecture Search.pdf`
+
+The app will parse title, authors, and year directly from this pattern. If your filenames don't follow this convention, the app will still work — it falls back to PDF metadata and the raw filename.
+
+### Browsing & Searching
+
+- **Search bar**: type any keyword to filter articles across all metadata fields (title, authors, abstract, tags, DOI, notes, etc.)
+- **Tag filter**: use the dropdown to filter by assigned tags
+- **Sort**: choose primary and secondary sort criteria (year, title, authors, journal)
+- **View modes**: toggle between thumbnail card grid and compact list view
+- **Card size**: adjust the card height slider in the settings panel
+
+### Editing Metadata
+
+Click the **pencil icon** on any article card to open the edit modal. You can modify:
+
+- Title, authors, year, journal, DOI
+- Abstract
+- Tags (comma-separated)
+- Notes
+- Thumbnail mode (auto or manual)
+
+All manual edits are saved as override files in `library_data/overrides/` and survive reindexing.
+
+### Thumbnails
+
+The app auto-generates thumbnails from your PDFs:
+
+- **Hybrid** (default): extracts the best embedded image from the PDF; falls back to a placeholder if none found
+- **Embedded**: only uses embedded images from the PDF
+- **Manual upload**: drag-and-drop or click to upload a custom thumbnail image
+
+To change the thumbnail strategy, use the settings panel in the app header.
+
+### Opening PDFs
+
+Click any article card to open the PDF in your system's default viewer.
+
+### Reindexing
+
+Click the **refresh icon** in the header to rescan `Articles/` and rebuild the index. This re-extracts metadata and regenerates auto thumbnails while preserving all your manual edits and tags.
 
 ## Data Layout
 
 ```text
-Articles/                          # your source PDFs
+Articles/                          # your source PDFs (add files here)
 library_data/
-  index.json                       # generated catalog (merged view for UI/search)
+  index.json                       # generated catalog (auto-rebuilt on reindex)
   thumbnails/                      # auto-generated thumbnails
   manual_thumbnails/               # uploaded manual thumbnail overrides
   overrides/
-    <article_id>.json              # human edits (metadata/tags/notes/manual mode)
-web/
-  index.html
-  styles.css
-  app.js
+    <article_id>.json              # your edits (metadata/tags/notes/thumbnail mode)
 ```
 
-## Why This Structure
+> **Tip**: Keep original PDFs in `Articles/` and avoid renaming files after tagging — article IDs are derived from file paths, so moving files creates new IDs.
 
-- `index.json` is fast for search and rendering.
-- Per-article `overrides/<id>.json` avoids merge conflicts and protects manual edits from reindex.
-- Separate `thumbnails/` and `manual_thumbnails/` lets you regenerate auto thumbs without touching manual overrides.
+## How It's Built
 
-## Metadata Editing Model
+### Architecture
 
-- Auto extraction is non-destructive.
-- Manual edits are stored only in override JSON.
-- Reindexing rebuilds auto metadata and thumbnails, then re-applies overrides.
-- You can toggle back to auto thumbnail mode at any time.
+| Layer | Technology | Role |
+|---|---|---|
+| Backend | Rust (Tauri v2) | PDF scanning, metadata extraction, thumbnails, index management |
+| Frontend | Vanilla HTML/CSS/JS | UI rendering, search, filtering, modal editing |
+| IPC | Tauri `invoke()` | Frontend ↔ backend communication (no HTTP server) |
+| PDF parsing | `lopdf` + `pdf-extract` | Pure-Rust PDF metadata and text extraction |
+| Image processing | `image` crate | Thumbnail compositing with blur + letterbox |
 
-## Thumbnail Strategy Tradeoffs
+### Backend Commands
 
-1. Embedded image extraction
-- Pros: often the cleanest visual figure from paper content.
-- Cons: can pick logos/icons unless filtered; some PDFs have no extractable figure images.
+The Rust backend exposes these commands to the frontend:
 
-2. First-page render
-- Pros: always available, predictable.
-- Cons: text-heavy preview, less visual.
+| Command | Purpose |
+|---|---|
+| `get_articles` | Fetch articles with optional search/tag/pagination |
+| `get_tags` | List all tags with usage counts |
+| `reindex` | Rescan PDFs and rebuild the index |
+| `save_metadata` | Save manual metadata overrides |
+| `upload_thumbnail` | Upload a manual thumbnail image |
+| `open_pdf` | Open a PDF in the system default viewer |
+| `get_thumbnail_url` | Load a thumbnail as a base64 data URL |
+| `get_root_dir` | Get the application root directory |
 
-3. Hybrid (recommended)
-- Pros: best practical default for mixed scientific PDFs.
-- Cons: still needs occasional manual overrides.
+### Key Dependencies
 
-## CLI Options
+**Rust**: `tauri`, `lopdf`, `pdf-extract`, `image`, `serde`, `serde_json`, `regex`, `walkdir`, `opener`, `sha1_smol`, `base64`, `chrono`
 
-```powershell
-py -3 run_article_library.py --thumbnail-strategy hybrid
-py -3 run_article_library.py --reindex-only
-py -3 run_article_library.py --skip-reindex
-py -3 run_article_library.py --host 0.0.0.0 --port 8080
-py -3 run_article_library.py --port 5000 --no-port-fallback
+**Frontend**: `@tauri-apps/api` (via `withGlobalTauri`)
+
+## Editing the Source
+
+### Project Structure
+
+```text
+src/                    # Frontend assets
+  index.html            # Main HTML
+  styles.css            # All styling
+  app.js                # Application logic (invoke-based IPC)
+src-tauri/              # Rust backend
+  src/lib.rs            # All backend logic (~1300 lines)
+  src/main.rs           # Entry point
+  Cargo.toml            # Rust dependencies
+  tauri.conf.json       # Tauri window/build config
+  capabilities/         # Tauri v2 permission grants
 ```
+
+### Making Changes
+
+- **Frontend**: Edit files in `src/`. Changes are picked up automatically in dev mode.
+- **Backend**: Edit `src-tauri/src/lib.rs`. The Rust code recompiles automatically when running `npx tauri dev`.
+- **Add a new command**: Define a `#[tauri::command]` function in `lib.rs`, register it in the `invoke_handler!` macro in `run()`, then call it from JS with `window.__TAURI__.core.invoke("command_name", { args })`.
 
 ## Notes for Larger Libraries
 
-- Keep original PDFs in `Articles/` and avoid moving files after tagging to preserve stable IDs.
-- For very large sets, keep using override files per article; this scales better than editing one giant hand-maintained JSON.
-- If search eventually slows, move to server-side indexed search (SQLite FTS) while keeping the same override schema.
+- For very large collections, the per-article override file approach scales well — no single giant JSON to manage.
+- Article IDs are stable SHA1 hashes of the relative path, so they persist across reindexes as long as files aren't moved.
+- If search performance degrades with thousands of articles, consider adding SQLite FTS while keeping the same override schema.

@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use tauri::Manager;
+
 use walkdir::WalkDir;
 
 // ── Constants ───────────────────────────────────────────────────────────────
@@ -348,11 +348,11 @@ fn pdf_dict_string(doc: &PdfDoc, dict: &lopdf::Dictionary, key: &[u8]) -> String
                             }
                         })
                         .collect();
-                    String::from_utf16_lossy(&chars)
+                    Some(String::from_utf16_lossy(&chars))
                 } else {
                     // Try UTF-8, fall back to latin-1
-                    String::from_utf8(bytes.clone())
-                        .unwrap_or_else(|_| bytes.iter().map(|&b| b as char).collect())
+                    Some(String::from_utf8(bytes.clone())
+                        .unwrap_or_else(|_| bytes.iter().map(|&b| b as char).collect()))
                 }
             }
             _ => None,
@@ -1182,17 +1182,19 @@ fn save_metadata(
 
     save_override(&st.overrides_dir, &article_id, &existing);
 
+    let root_dir = st.root_dir.clone();
+    let index_path = st.index_path.clone();
     let index = st.index.as_mut().ok_or("no index loaded")?;
     let article = find_article_mut(index, &article_id).ok_or("Article not found")?;
 
     article.metadata = merge_metadata(&article.auto_meta, &existing);
-    article.thumbnail = resolve_thumbnail(&article.auto_thumbnail, &existing, &st.root_dir);
+    article.thumbnail = resolve_thumbnail(&article.auto_thumbnail, &existing, &root_dir);
     article.search_text = build_search_text(article);
 
     let updated = article.clone();
 
     let json = serde_json::to_string_pretty(index).unwrap_or_default();
-    let _ = fs::write(&st.index_path, json);
+    let _ = fs::write(&index_path, json);
 
     Ok(MutationResponse {
         ok: true,
@@ -1236,15 +1238,17 @@ fn upload_thumbnail(
     );
     save_override(&st.overrides_dir, &article_id, &over);
 
+    let root_dir = st.root_dir.clone();
+    let index_path = st.index_path.clone();
     let index = st.index.as_mut().ok_or("no index loaded")?;
     let article = find_article_mut(index, &article_id).ok_or("Article not found")?;
-    article.thumbnail = resolve_thumbnail(&article.auto_thumbnail, &over, &st.root_dir);
+    article.thumbnail = resolve_thumbnail(&article.auto_thumbnail, &over, &root_dir);
     article.search_text = build_search_text(article);
 
     let updated = article.clone();
 
     let json = serde_json::to_string_pretty(index).unwrap_or_default();
-    let _ = fs::write(&st.index_path, json);
+    let _ = fs::write(&index_path, json);
 
     Ok(MutationResponse {
         ok: true,
