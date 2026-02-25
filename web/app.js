@@ -259,7 +259,7 @@ async function copyToClipboard(text) {
     try {
       await navigator.clipboard.writeText(clean);
       return true;
-    } catch {}
+    } catch { }
   }
   try {
     const area = document.createElement("textarea");
@@ -590,35 +590,14 @@ async function saveMetadata(evt) {
     notes: notesValue,
   };
 
-  const formData = new FormData();
-  formData.append("title", payload.title);
-  formData.append("authors", payload.authors);
-  formData.append("year", payload.year);
-  formData.append("journal", payload.journal);
-  formData.append("doi", payload.doi);
-  formData.append("abstract", payload.abstract);
-  formData.append("notes", payload.notes);
-  payload.tags.forEach((tag) => formData.append("tags", tag));
-
   setStatus("Saving metadata...");
   try {
-    const postMetadata = (requestBody, headers = undefined) =>
-      fetchJson(`/api/articles/${state.current.id}/metadata`, {
-        method: "POST",
-        headers,
-        body: requestBody,
-      });
-
-    let result = await postMetadata(formData);
-    let savedArticle = result?.article || null;
-    const requestedAbstract = abstractValue.trim();
-    let savedAbstract = normalizeWhitespace(savedArticle?.metadata?.abstract);
-
-    if (requestedAbstract && !savedAbstract) {
-      result = await postMetadata(JSON.stringify(payload), { "Content-Type": "application/json" });
-      savedArticle = result?.article || savedArticle;
-      savedAbstract = normalizeWhitespace(savedArticle?.metadata?.abstract);
-    }
+    const result = await fetchJson(`/api/articles/${currentId}/metadata`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const savedArticle = result?.article || null;
 
     if (!savedArticle) {
       throw new Error("Server did not return updated article.");
@@ -636,11 +615,7 @@ async function saveMetadata(evt) {
     openEditor(savedArticle);
 
     await loadTags();
-    if (requestedAbstract && !savedAbstract) {
-      setStatus("Save warning: server returned an empty abstract.", true);
-    } else {
-      setStatus("Metadata saved.");
-    }
+    setStatus("Metadata saved.");
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     setStatus(`Save failed: ${message}`, true);
