@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Article Library</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="title-wrap">
+        <h1>Scientific Article Library</h1>
+        <p class="subtitle">Local PDF search with visual thumbnails</p>
+      </div>
+      <div class="controls">
+        <label class="field">
+          <span>Search</span>
+          <input id="search-input" type="search" placeholder="title, author, abstract, DOI, tags, notes..." />
+        </label>
+        <label class="field">
+          <span>Tag</span>
+          <select id="tag-filter">
+            <option value="">All tags</option>
+          </select>
+        </label>
+        <label class="field compact">
+          <span>View</span>
+          <select id="view-mode">
+            <option value="preview">Preview cards</option>
+            <option value="details">List</option>
+          </select>
+        </label>
+        <label class="field compact sort-field">
+          <span>Primary Sort</span>
+          <select id="primary-sort">
+            <option value="year_desc">Year (newest)</option>
+            <option value="year_asc">Year (oldest)</option>
+            <option value="title_asc">Title (A-Z)</option>
+            <option value="authors_asc">Authors (A-Z)</option>
+            <option value="journal_asc">Journal (A-Z)</option>
+            <option value="doi_asc">DOI (A-Z)</option>
+            <option value="file_modified_desc">Modified (newest)</option>
+            <option value="file_modified_asc">Modified (oldest)</option>
+          </select>
+        </label>
+        <label class="field compact sort-field">
+          <span>Secondary Sort</span>
+          <select id="secondary-sort">
+            <option value="title_asc">Title (A-Z)</option>
+            <option value="year_desc">Year (newest)</option>
+            <option value="year_asc">Year (oldest)</option>
+            <option value="authors_asc">Authors (A-Z)</option>
+            <option value="journal_asc">Journal (A-Z)</option>
+            <option value="doi_asc">DOI (A-Z)</option>
+            <option value="file_modified_desc">Modified (newest)</option>
+            <option value="file_modified_asc">Modified (oldest)</option>
+            <option value="none">None</option>
+          </select>
+        </label>
+        <div id="settings-wrap" class="settings-wrap">
+          <button id="menu-toggle" class="menu-toggle" type="button" aria-expanded="false" aria-controls="settings-menu">
+            <span class="menu-bars" aria-hidden="true"></span>
+            <span>Menu</span>
+          </button>
+          <div id="settings-menu" class="settings-menu hidden" role="menu">
+            <label class="field">
+              <span>Card Height <strong id="card-height-value">138</strong>px</span>
+              <input id="card-height-slider" type="range" min="100" max="640" step="2" value="138" />
+            </label>
+            <label class="field">
+              <span>Card Font <strong id="card-font-value">14</strong>px</span>
+              <input id="card-font-slider" type="range" min="10" max="32" step="1" value="14" />
+            </label>
+            <label class="field">
+              <span>Interface Font</span>
+              <select id="font-family-select">
+                <option value="segoe">Segoe UI</option>
+                <option value="arial">Arial</option>
+                <option value="georgia">Georgia</option>
+                <option value="trebuchet">Trebuchet MS</option>
+                <option value="courier">Courier New</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Auto Thumbnail</span>
+              <select id="strategy-select">
+                <option value="hybrid">Hybrid</option>
+                <option value="embedded">Embedded image</option>
+                <option value="first-page">First-page render</option>
+              </select>
+            </label>
+            <button id="reindex-btn" type="button">Reindex</button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section class="stats-row">
+        <p id="status-line">Loading...</p>
+      </section>
+      <section id="grid" class="grid" aria-live="polite"></section>
+    </main>
+
+    <div id="edit-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2 id="modal-title">Edit Article</h2>
+          <button id="modal-close" type="button">Close</button>
+        </div>
+        <div class="modal-layout">
+          <div id="modal-thumb-wrap" class="modal-thumb-wrap">
+            <img id="modal-thumb" src="" alt="Article thumbnail" />
+            <p class="drop-hint">Choose a file or drag and drop an image here to auto-replace thumbnail.</p>
+            <div class="thumb-tools">
+              <input id="thumb-file" type="file" accept="image/*" />
+              <button id="thumb-upload" type="button">Upload Manual Thumbnail</button>
+              <button id="thumb-reset" type="button" class="ghost">Use Auto Thumbnail</button>
+            </div>
+          </div>
+          <form id="metadata-form">
+            <label class="field">
+              <span>Title</span>
+              <input id="f-title" name="title" type="text" />
+            </label>
+            <label class="field">
+              <span>Authors</span>
+              <input id="f-authors" name="authors" type="text" />
+            </label>
+            <div class="inline-row">
+              <label class="field">
+                <span>Year</span>
+                <input id="f-year" name="year" type="text" />
+              </label>
+              <label class="field">
+                <span>Journal / Subject</span>
+                <input id="f-journal" name="journal" type="text" />
+              </label>
+            </div>
+            <label class="field">
+              <span>DOI</span>
+              <input id="f-doi" name="doi" type="text" />
+            </label>
+            <label class="field">
+              <span>Abstract</span>
+              <textarea id="f-abstract" name="abstract" rows="5"></textarea>
+            </label>
+            <label class="field">
+              <span>Custom tags (comma separated)</span>
+              <input id="f-tags" name="tags" type="text" />
+            </label>
+            <label class="field">
+              <span>Notes</span>
+              <textarea id="f-notes" name="notes" rows="4"></textarea>
+            </label>
+            <div class="modal-actions">
+              <button id="meta-save" type="submit">Save Metadata</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div
+      id="abstract-modal"
+      class="modal hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="abstract-title"
+    >
+      <div class="modal-card abstract-modal-card">
+        <div class="modal-header">
+          <h2 id="abstract-title">Abstract</h2>
+          <button id="abstract-close" type="button">Close</button>
+        </div>
+        <div class="abstract-body">
+          <p id="abstract-meta" class="meta"></p>
+          <div id="abstract-text"></div>
+        </div>
+      </div>
+    </div>
+
+    <script src="/app.js" defer></script>
+  </body>
+</html>
