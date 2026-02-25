@@ -1,3 +1,13 @@
-__pycache__/
-*.pyc
+# Rust build output
+src-tauri/target/
+
+# Node
+node_modules/
+
+# Generated data (user-specific, rebuilt on launch)
 library_data/
+
+# OS files
+Thumbs.db
+.DS_Store
+node_modules

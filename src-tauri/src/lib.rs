@@ -8,8 +8,10 @@ use serde::{Deserialize, Serialize};
 use sha1_smol::Sha1;
 use std::collections::HashMap;
 use std::fs;
+use std::panic;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::thread;
 
 use walkdir::WalkDir;
 
@@ -384,7 +386,20 @@ fn pdf_dict_int(doc: &PdfDoc, dict: &lopdf::Dictionary, key: &[u8]) -> i64 {
 // ── PDF Metadata Extraction ─────────────────────────────────────────────────
 
 fn extract_pdf_text(pdf_path: &Path) -> String {
-    pdf_extract::extract_text(pdf_path).unwrap_or_default()
+    // Run on a thread with 8 MB stack to avoid stack overflow on complex PDFs
+    let path = pdf_path.to_path_buf();
+    let handle = thread::Builder::new()
+        .stack_size(8 * 1024 * 1024)
+        .spawn(move || {
+            panic::catch_unwind(panic::AssertUnwindSafe(|| {
+                pdf_extract::extract_text(&path).unwrap_or_default()
+            }))
+            .unwrap_or_default()
+        });
+    match handle {
+        Ok(h) => h.join().unwrap_or_default(),
+        Err(_) => String::new(),
+    }
 }
 
 fn extract_auto_metadata(pdf_path: &Path) -> AutoMeta {
@@ -409,9 +424,9 @@ fn extract_auto_metadata(pdf_path: &Path) -> AutoMeta {
         page_count: 0,
     };
 
-    let doc = match PdfDoc::load(pdf_path) {
-        Ok(d) => d,
-        Err(_) => return fallback,
+    let doc = match panic::catch_unwind(panic::AssertUnwindSafe(|| PdfDoc::load(pdf_path))) {
+        Ok(Ok(d)) => d,
+        _ => return fallback,
     };
 
     let page_count = doc.get_pages().len() as i32;
@@ -551,7 +566,9 @@ fn embedded_image_score(img: &DynamicImage) -> f64 {
 }
 
 fn first_significant_embedded_image(pdf_path: &Path, max_pages: i32) -> Option<DynamicImage> {
-    let doc = PdfDoc::load(pdf_path).ok()?;
+    let doc = panic::catch_unwind(panic::AssertUnwindSafe(|| PdfDoc::load(pdf_path)))
+        .ok()?
+        .ok()?;
     let pages = doc.get_pages();
     let mut page_ids: Vec<(u32, lopdf::ObjectId)> = pages.into_iter().collect();
     page_ids.sort_by_key(|(num, _)| *num);
@@ -904,6 +921,62 @@ fn build_search_text(article: &Article) -> String {
 
 // ── Indexing ────────────────────────────────────────────────────────────────
 
+fn process_single_pdf(
+    pdf_path: &Path,
+    state: &AppState,
+    strategy: &str,
+) -> Option<Article> {
+    let article_id = article_id_for_path(pdf_path, &state.articles_dir);
+    let stat = fs::metadata(pdf_path).ok()?;
+
+    let auto = extract_auto_metadata(pdf_path);
+    let auto_thumb = generate_auto_thumbnail(
+        pdf_path,
+        &article_id,
+        &auto.title,
+        strategy,
+        &state.thumbnails_dir,
+        &state.root_dir,
+    );
+    let over = load_override(&state.overrides_dir, &article_id);
+    let metadata = merge_metadata(&auto, &over);
+    let thumbnail = resolve_thumbnail(&auto_thumb, &over, &state.root_dir);
+
+    let rel_path = pdf_path
+        .strip_prefix(&state.root_dir)
+        .unwrap_or(pdf_path)
+        .to_string_lossy()
+        .replace('\\', "/");
+
+    let modified = stat
+        .modified()
+        .ok()
+        .map(|t| {
+            let dt: chrono::DateTime<Utc> = t.into();
+            dt.to_rfc3339()
+        })
+        .unwrap_or_default();
+
+    let mut article = Article {
+        id: article_id,
+        pdf_filename: pdf_path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string(),
+        pdf_relpath: rel_path,
+        file_size: stat.len(),
+        file_modified: modified,
+        auto_meta: auto,
+        auto_thumbnail: auto_thumb,
+        metadata,
+        thumbnail,
+        search_text: String::new(),
+    };
+    article.search_text = build_search_text(&article);
+    Some(article)
+}
+
 fn index_articles(state: &mut AppState, strategy: &str) -> IndexPayload {
     state.ensure_dirs();
 
@@ -925,58 +998,17 @@ fn index_articles(state: &mut AppState, strategy: &str) -> IndexPayload {
     let mut articles: Vec<Article> = Vec::new();
 
     for pdf_path in &pdfs {
-        let article_id = article_id_for_path(pdf_path, &state.articles_dir);
-        let stat = match fs::metadata(pdf_path) {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
-
-        let auto = extract_auto_metadata(pdf_path);
-        let auto_thumb = generate_auto_thumbnail(
-            pdf_path,
-            &article_id,
-            &auto.title,
-            strategy,
-            &state.thumbnails_dir,
-            &state.root_dir,
-        );
-        let over = load_override(&state.overrides_dir, &article_id);
-        let metadata = merge_metadata(&auto, &over);
-        let thumbnail = resolve_thumbnail(&auto_thumb, &over, &state.root_dir);
-
-        let rel_path = pdf_path
-            .strip_prefix(&state.root_dir)
-            .unwrap_or(pdf_path)
-            .to_string_lossy()
-            .replace('\\', "/");
-
-        let modified = stat
-            .modified()
-            .ok()
-            .map(|t| {
-                let dt: chrono::DateTime<Utc> = t.into();
-                dt.to_rfc3339()
-            })
-            .unwrap_or_default();
-
-        let mut article = Article {
-            id: article_id,
-            pdf_filename: pdf_path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string(),
-            pdf_relpath: rel_path,
-            file_size: stat.len(),
-            file_modified: modified,
-            auto_meta: auto,
-            auto_thumbnail: auto_thumb,
-            metadata,
-            thumbnail,
-            search_text: String::new(),
-        };
-        article.search_text = build_search_text(&article);
-        articles.push(article);
+        // Wrap the entire per-PDF block so one bad file can't crash the app
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            process_single_pdf(pdf_path, state, strategy)
+        }));
+        match result {
+            Ok(Some(article)) => articles.push(article),
+            Ok(None) => { /* file inaccessible, skip */ }
+            Err(_) => {
+                eprintln!("Warning: skipped problematic PDF: {}", pdf_path.display());
+            }
+        }
     }
 
     articles.sort_by(|a, b| {

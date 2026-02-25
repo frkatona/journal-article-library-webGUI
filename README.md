@@ -2,6 +2,10 @@
 
 A native desktop application for managing and browsing local PDF article collections. Features thumbnail cards, full-text search, metadata editing, tags, and notes — all running locally with no server or internet required.
 
+![hero shot of front page](readme-images/hero.png)
+
+![example of modal which appears of the abstract when abstract button is selected](readme-images/abstract_modal.png)
+
 Built with [Tauri v2](https://tauri.app/) (Rust backend + vanilla JS frontend).
 
 ## Installation
@@ -173,3 +177,19 @@ src-tauri/              # Rust backend
 - For very large collections, the per-article override file approach scales well — no single giant JSON to manage.
 - Article IDs are stable SHA1 hashes of the relative path, so they persist across reindexes as long as files aren't moved.
 - If search performance degrades with thousands of articles, consider adding SQLite FTS while keeping the same override schema.
+
+
+## to-do
+ - rebase from master to tauri
+ - resize the 'edit' modal (currently the exit button is inaccessible at normal heights, <1080)
+  - also allow a left click *down* to click out of it, not *up*
+ - think on thumbnail images
+  - where to store them (do they need separate storage?)
+  - avoid resetting them (and other customized fields) on reindex (in menu, add a "save paths/json/toml" option?)
+  - automatically check the custom folder and sidestep extraction if found?  Check based on exact filename, fuzzy, trailing hash from the file itself, or ?
+  - auto-rescale stored image when resolution is unecessarily high 
+ - add menu option to highlight which articles have unfilled fields (other than tags and notes)
+ - fix the thumbnail not appearing as taskbar icon
+ - explore adding a database
+ - explore pushing a build that can be launched from an executable
+ - drag-and-drop pdfs into the app to add to library, as well as thumbnail images
