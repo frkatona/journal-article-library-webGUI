@@ -925,19 +925,67 @@ fn process_single_pdf(
     pdf_path: &Path,
     state: &AppState,
     strategy: &str,
+    fast: bool,
 ) -> Option<Article> {
     let article_id = article_id_for_path(pdf_path, &state.articles_dir);
     let stat = fs::metadata(pdf_path).ok()?;
 
-    let auto = extract_auto_metadata(pdf_path);
-    let auto_thumb = generate_auto_thumbnail(
-        pdf_path,
-        &article_id,
-        &auto.title,
-        strategy,
-        &state.thumbnails_dir,
-        &state.root_dir,
-    );
+    // In fast mode, skip all PDF reading (text extraction + thumbnail generation)
+    let auto = if fast {
+        let (fn_title, fn_authors, fn_year) = parse_filename_metadata(pdf_path);
+        AutoMeta {
+            title: fn_title,
+            authors: fn_authors,
+            year: fn_year,
+            journal: String::new(),
+            doi: String::new(),
+            abstract_text: String::new(),
+            keywords: Vec::new(),
+            page_count: 0,
+        }
+    } else {
+        extract_auto_metadata(pdf_path)
+    };
+
+    let auto_thumb = if fast {
+        // Reuse existing thumbnail or generate a fast placeholder
+        let existing_path = state.thumbnails_dir.join(format!("{}.jpg", article_id));
+        if existing_path.exists() {
+            let rel_path = existing_path
+                .strip_prefix(&state.root_dir)
+                .unwrap_or(&existing_path)
+                .to_string_lossy()
+                .replace('\\', "/");
+            ThumbnailInfo {
+                path: rel_path,
+                source: "existing".to_string(),
+                mode: "auto".to_string(),
+            }
+        } else {
+            let output_path = state.thumbnails_dir.join(format!("{}.jpg", article_id));
+            let img = placeholder_thumbnail(&auto.title);
+            let _ = img.to_rgb8().save(&output_path);
+            let rel_path = output_path
+                .strip_prefix(&state.root_dir)
+                .unwrap_or(&output_path)
+                .to_string_lossy()
+                .replace('\\', "/");
+            ThumbnailInfo {
+                path: rel_path,
+                source: "placeholder".to_string(),
+                mode: "auto".to_string(),
+            }
+        }
+    } else {
+        generate_auto_thumbnail(
+            pdf_path,
+            &article_id,
+            &auto.title,
+            strategy,
+            &state.thumbnails_dir,
+            &state.root_dir,
+        )
+    };
     let over = load_override(&state.overrides_dir, &article_id);
     let metadata = merge_metadata(&auto, &over);
     let thumbnail = resolve_thumbnail(&auto_thumb, &over, &state.root_dir);
@@ -977,7 +1025,7 @@ fn process_single_pdf(
     Some(article)
 }
 
-fn index_articles(state: &mut AppState, strategy: &str) -> IndexPayload {
+fn index_articles(state: &mut AppState, strategy: &str, fast: bool) -> IndexPayload {
     state.ensure_dirs();
 
     let mut pdfs: Vec<PathBuf> = Vec::new();
@@ -1000,7 +1048,7 @@ fn index_articles(state: &mut AppState, strategy: &str) -> IndexPayload {
     for pdf_path in &pdfs {
         // Wrap the entire per-PDF block so one bad file can't crash the app
         let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-            process_single_pdf(pdf_path, state, strategy)
+            process_single_pdf(pdf_path, state, strategy, fast)
         }));
         match result {
             Ok(Some(article)) => articles.push(article),
@@ -1045,7 +1093,7 @@ fn load_index(state: &mut AppState) -> IndexPayload {
             }
         }
     }
-    index_articles(state, &state.default_strategy.clone())
+    index_articles(state, &state.default_strategy.clone(), false)
 }
 
 fn find_article_mut<'a>(
@@ -1137,6 +1185,7 @@ fn get_tags(state: tauri::State<'_, Mutex<AppState>>) -> Result<TagsResponse, St
 fn reindex(
     state: tauri::State<'_, Mutex<AppState>>,
     strategy: Option<String>,
+    fast: Option<bool>,
 ) -> Result<ReindexResponse, String> {
     let mut st = state.lock().map_err(|e| e.to_string())?;
     let strat = strategy
@@ -1149,7 +1198,8 @@ fn reindex(
         st.default_strategy.clone()
     };
 
-    let payload = index_articles(&mut st, &strat);
+    let fast_mode = fast.unwrap_or(false);
+    let payload = index_articles(&mut st, &strat, fast_mode);
 
     Ok(ReindexResponse {
         ok: true,
@@ -1371,7 +1421,7 @@ fn import_pdf(
 
     // Process the new PDF
     let strategy = st.default_strategy.clone();
-    let article = process_single_pdf(&output_path, &st, &strategy)
+    let article = process_single_pdf(&output_path, &st, &strategy, true)
         .ok_or_else(|| "Failed to process imported PDF".to_string())?;
 
     // Add to the in-memory index

@@ -37,6 +37,7 @@ const dom = {
     tagFilter: document.getElementById("tag-filter"),
     strategySelect: document.getElementById("strategy-select"),
     viewMode: document.getElementById("view-mode"),
+    fastReindex: document.getElementById("fast-reindex"),
     reindexBtn: document.getElementById("reindex-btn"),
     statusLine: document.getElementById("status-line"),
     grid: document.getElementById("grid"),
@@ -364,29 +365,34 @@ function buildCard(article) {
     });
 
     // Image drag-and-drop onto card for thumbnail replacement
+    // Only highlight and intercept for image files; let PDFs bubble to body handler
     ["dragenter", "dragover"].forEach((name) => {
         card.addEventListener(name, (evt) => {
-            // Only react to image files
-            if (evt.dataTransfer && evt.dataTransfer.types.includes("Files")) {
+            if (!evt.dataTransfer || !evt.dataTransfer.types.includes("Files")) return;
+            // Check if drag contains an image (not PDF)
+            const items = Array.from(evt.dataTransfer.items || []);
+            const hasImage = items.some((it) => it.kind === "file" && it.type.startsWith("image/"));
+            const hasPdf = items.some((it) => it.kind === "file" && it.type === "application/pdf");
+            if (hasImage && !hasPdf) {
                 evt.preventDefault();
                 evt.stopPropagation();
                 card.classList.add("drag-over");
             }
+            // If it's a PDF, don't preventDefault/stopPropagation — let it bubble to body
         });
     });
     ["dragleave", "dragend"].forEach((name) => {
         card.addEventListener(name, (evt) => {
-            evt.preventDefault();
-            evt.stopPropagation();
             card.classList.remove("drag-over");
         });
     });
     card.addEventListener("drop", async (evt) => {
-        evt.preventDefault();
-        evt.stopPropagation();
         card.classList.remove("drag-over");
         const file = evt.dataTransfer?.files?.[0];
         if (!file || !isImageFile(file)) return;
+        // It's an image drop — handle it here
+        evt.preventDefault();
+        evt.stopPropagation();
         setStatus(`Updating thumbnail for "${md.title || article.pdf_filename}"...`);
         try {
             const base64Data = await fileToBase64(file);
@@ -794,11 +800,12 @@ async function resetAutoThumbnail() {
 
 async function doReindex() {
     const strategy = dom.strategySelect.value;
+    const fast = dom.fastReindex.checked;
     setMenuOpen(false);
-    setStatus(`Reindexing with ${strategy} strategy...`);
+    setStatus(`Reindexing with ${strategy} strategy${fast ? " (fast mode)" : ""}...`);
     dom.reindexBtn.disabled = true;
     try {
-        await invoke("reindex", { strategy });
+        await invoke("reindex", { strategy, fast });
         thumbCache.clear();
         await Promise.all([loadTags(), loadArticles()]);
         setStatus("Reindex complete.");
@@ -950,9 +957,13 @@ function wireEvents() {
     // Body-level PDF drag-and-drop import
     let dragCounter = 0;
     document.body.addEventListener("dragenter", (evt) => {
-        // Don't show overlay if the edit modal is open (thumbnail drag should work instead)
+        // Don't show overlay if the edit modal is open
         if (!dom.modal.classList.contains("hidden")) return;
-        if (evt.dataTransfer && evt.dataTransfer.types.includes("Files")) {
+        if (!evt.dataTransfer || !evt.dataTransfer.types.includes("Files")) return;
+        // Check if drag contains a PDF
+        const items = Array.from(evt.dataTransfer.items || []);
+        const hasPdf = items.some((it) => it.kind === "file" && it.type === "application/pdf");
+        if (hasPdf) {
             evt.preventDefault();
             dragCounter++;
             dom.dropOverlay.classList.remove("hidden");

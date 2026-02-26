@@ -512,6 +512,10 @@ main {
   pointer-events: none;
 }
 
+#drop-overlay.hidden {
+  display: none;
+}
+
 #drop-overlay .drop-message {
   border: 3px dashed var(--accent);
   border-radius: 18px;

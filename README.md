@@ -180,16 +180,13 @@ src-tauri/              # Rust backend
 
 
 ## to-do
- - have edit modal appear in front of the top bar  (currently the exit button is inaccessible at normal heights, <1080)
-  - also allow a left click *down* to click out of it, not *up*
- - think on thumbnail images
-  - where to store them (do they need separate storage?)
-  - avoid resetting them (and other customized fields) on reindex (in menu, add a "save paths/json/toml" option?)
-  - automatically check the custom folder and sidestep extraction if found?  Check based on exact filename, fuzzy, trailing hash from the file itself, or ?
-  - auto-rescale stored image when resolution is unecessarily high 
+- also allow a left click *down* to click out of it, not *up*
+- auto-rescale stored image when resolution is unecessarily high 
  - add menu option to highlight which articles have unfilled fields (other than tags and notes)
  - fix the app's icon not appearing in the taskbar
  - explore adding a database
  - explore pushing a build that can be launched from an executable
- - drag-and-drop pdfs into the app to add to library and images onto the cards to replace thumbnail images
-   - show a prompt to accept or undo the changes for drag-and-drop thumbnails
+- show a prompt to accept or undo the changes for drag-and-drop thumbnails
+
+- slight card color based on tags
+  - network mode based on tags, authors (degrees of kevin bacon)
