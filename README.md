@@ -178,15 +178,54 @@ src-tauri/              # Rust backend
 - Article IDs are stable SHA1 hashes of the relative path, so they persist across reindexes as long as files aren't moved.
 - If search performance degrades with thousands of articles, consider adding SQLite FTS while keeping the same override schema.
 
-
 ## to-do
-- also allow a left click *down* to click out of it, not *up*
-- auto-rescale stored image when resolution is unecessarily high 
- - add menu option to highlight which articles have unfilled fields (other than tags and notes)
- - fix the app's icon not appearing in the taskbar
- - explore adding a database
- - explore pushing a build that can be launched from an executable
-- show a prompt to accept or undo the changes for drag-and-drop thumbnails
+- bugs
+  - [x] adding thumbnail image from clipboard (test if other conditions) removes other metadata
 
-- slight card color based on tags
-  - network mode based on tags, authors (degrees of kevin bacon)
+- design/UX
+  - [x] default to fast search on, rework checkbox to on = slow search (name?)
+  - better toggle switch visibility
+  - better organization of hamburger menu options
+  - refine tag color
+    - how buttons appear in menu
+    - slider for subtle -> dramatic influence on base hue
+    - toggle between 'mix colors' and 'use biggest tag'
+    - checkbox for color-blind palette
+  - menu button color
+  - [x] taskbar icon - remove black box background; add a bit more texture
+
+- features
+  - [x] allow a left click down (but not a click release) to click out of the metadata modal
+  - [x] process pasted input to the "authors" and abstract" fields to try to fix common PDF copy-paste issues (astrices, number/letter superscripts, consistency in '.' after initials, 'and' vs '&',oxford commas, and line breaks)
+    - add checkbox to enable this automatic paste processing (enabled by default)
+  - [ ] auto-rescale stored image when resolution is unecessarily high 
+  - [ ] show a prompt to accept or undo the changes for drag-and-drop thumbnails
+  - [ ] in 'tags' field, a '+' button to add a tag from existing tags
+    - also fuzzy-search autofill prompting after each character and solidifying after entering them like listing email addresses in a gmail 'send' field
+  - hotkeys
+    - [x] 'esc', 'enter', or click out of box to exit metadata modal
+    - [x] ctrl + shift + click to open 'edit metadata'
+    - [ ] ctrl + shift + alt + click to open DOI page (or maybe to search for other papers by that lab in google scholar?)
+  - [x] add 'added date' to metadata.  allow editing, but fill it automatically with the day when a file is added or indexed for the first time.  Also, 'last selected date' (which updates every time the article is selected)
+  - [ ] 'random article' button
+  - [ ] ctrl + scroll to resize cards (both dimensions)
+  
+- questions
+  - where are these thumbnail images going?  they're not populating the folder
+  - when does scaling become a concern?  what is involved in implementing a database?
+  - how long does compiling to executable take and how far is that from a zip that anyone can open?  On what devices?  Macs?  Phones?
+  - is there no better existing method for extracting PDF data?  Even some recommended screenshot text analysis?
+    - same with copying and pasting abstract and having the line breaks carry over when they should just be a space (add a "paste from clipboard" button to the abstract and authors lines where it pastes processed version of the contents?  Just have the pasted values automatically get processed and have a right click menu option to paste raw?)
+  - general ideas
+
+- easter eggs
+  - game (temporary box destroyer), play a little jingle when opening files, have a ball bounce between the cards
+- network mode based on tags, authors (degrees of kevin bacon)
+- make a video showing the features (hotkeys, colors, thumbnail replacement, drag-and-drop)
+  - test run with Kristen
+
+
+next prompt:
+some content copied from PDFs tend to carry unwanted characters and linebreaks, as well as undesirable inconsistencies.  process pasted text in the "authors" field to remove astrices and numbers and letter superscripts (mind that some individual letters will be intended as initials, and so perhaps this is best interpreted as standalone letters appearing between commas and strings with length > 1, or some other logic).  If possible, also consolidate common formatting inconsistencies, like "and" vs "&", oxford commas, and periods after initials.
+
+Similarly, in the 'abstract' field, most line breaks should be treated as spaces, except where the character preceding the line break is a hyphen.  Further, I'd like the sentences of each abstract split into 3 roughly equal-sentence-number sections with a double line break between each

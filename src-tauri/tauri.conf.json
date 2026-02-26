@@ -9,7 +9,7 @@
     "app": {
         "windows": [
             {
-                "title": "Scientific Article Library",
+                "title": "FRK PDF Manager",
                 "width": 1280,
                 "height": 860,
                 "resizable": true,

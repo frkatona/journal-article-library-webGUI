@@ -14,12 +14,15 @@ const state = {
     current: null,
     viewMode: window.localStorage.getItem("article-view-mode") || "preview",
     cardHeight: Number.parseInt(window.localStorage.getItem("article-card-height") || "138", 10),
+    cardWidth: Number.parseInt(window.localStorage.getItem("article-card-width") || "200", 10),
     cardFont: Number.parseInt(window.localStorage.getItem("article-card-font") || "14", 10),
     fontFamily: window.localStorage.getItem("article-font-family") || "segoe",
     primarySort: window.localStorage.getItem("article-primary-sort") || "year_desc",
     secondarySort: window.localStorage.getItem("article-secondary-sort") || "title_asc",
     menuOpen: false,
     highlightIncomplete: window.localStorage.getItem("article-highlight-incomplete") === "true",
+    tintByTag: window.localStorage.getItem("article-tint-by-tag") === "true",
+    tagColors: JSON.parse(window.localStorage.getItem("article-tag-colors") || "{}"),
 };
 
 const dom = {
@@ -30,14 +33,16 @@ const dom = {
     secondarySort: document.getElementById("secondary-sort"),
     cardHeightSlider: document.getElementById("card-height-slider"),
     cardHeightValue: document.getElementById("card-height-value"),
+    cardWidthSlider: document.getElementById("card-width-slider"),
+    cardWidthValue: document.getElementById("card-width-value"),
     cardFontSlider: document.getElementById("card-font-slider"),
     cardFontValue: document.getElementById("card-font-value"),
     fontFamilySelect: document.getElementById("font-family-select"),
     searchInput: document.getElementById("search-input"),
     tagFilter: document.getElementById("tag-filter"),
     strategySelect: document.getElementById("strategy-select"),
-    viewMode: document.getElementById("view-mode"),
-    fastReindex: document.getElementById("fast-reindex"),
+    viewModeToggle: document.getElementById("view-mode-toggle"),
+    parsePdfs: document.getElementById("parse-pdfs"),
     reindexBtn: document.getElementById("reindex-btn"),
     statusLine: document.getElementById("status-line"),
     grid: document.getElementById("grid"),
@@ -53,6 +58,9 @@ const dom = {
     authors: document.getElementById("f-authors"),
     year: document.getElementById("f-year"),
     journal: document.getElementById("f-journal"),
+    volume: document.getElementById("f-volume"),
+    issue: document.getElementById("f-issue"),
+    pages: document.getElementById("f-pages"),
     doi: document.getElementById("f-doi"),
     abstract: document.getElementById("f-abstract"),
     tags: document.getElementById("f-tags"),
@@ -65,6 +73,15 @@ const dom = {
     highlightBtn: document.getElementById("highlight-btn"),
     thumbPaste: document.getElementById("thumb-paste"),
     dropOverlay: document.getElementById("drop-overlay"),
+    tintByTag: document.getElementById("tint-by-tag"),
+    editTagColorsBtn: document.getElementById("edit-tag-colors-btn"),
+    tagColorEditor: document.getElementById("tag-color-editor"),
+    tagColorList: document.getElementById("tag-color-list"),
+    tagColorClose: document.getElementById("tag-color-close"),
+    toast: document.getElementById("toast"),
+    hotkeysBtn: document.getElementById("hotkeys-btn"),
+    hotkeysModal: document.getElementById("hotkeys-modal"),
+    hotkeysClose: document.getElementById("hotkeys-close"),
 };
 
 const SORT_KEYS = new Set([
@@ -76,6 +93,10 @@ const SORT_KEYS = new Set([
     "doi_asc",
     "file_modified_desc",
     "file_modified_asc",
+    "date_added_desc",
+    "date_added_asc",
+    "last_opened_desc",
+    "last_opened_asc",
     "none",
 ]);
 
@@ -115,6 +136,20 @@ function applyCardHeight(value) {
     document.documentElement.style.setProperty("--thumb-height", `${thumbHeight}px`);
     dom.cardHeightSlider.value = String(cardHeight);
     dom.cardHeightValue.textContent = String(cardHeight);
+}
+
+function clampCardWidth(value) {
+    const n = Number.parseInt(String(value), 10);
+    if (Number.isNaN(n)) return 200;
+    return Math.max(120, Math.min(600, n));
+}
+
+function applyCardWidth(value) {
+    const cardWidth = clampCardWidth(value);
+    state.cardWidth = cardWidth;
+    document.documentElement.style.setProperty("--card-min-width", `${cardWidth}px`);
+    dom.cardWidthSlider.value = String(cardWidth);
+    dom.cardWidthValue.textContent = String(cardWidth);
 }
 
 function clampCardFont(value) {
@@ -212,6 +247,13 @@ function modifiedEpoch(article) {
     return Number.isNaN(t) ? -1 : t;
 }
 
+function dateEpoch(dateStr) {
+    const raw = normalizeWhitespace(dateStr);
+    if (!raw) return -1;
+    const t = Date.parse(raw);
+    return Number.isNaN(t) ? -1 : t;
+}
+
 function compareSortKey(a, b, key) {
     const aMd = a.metadata || {};
     const bMd = b.metadata || {};
@@ -232,6 +274,14 @@ function compareSortKey(a, b, key) {
             return modifiedEpoch(b) - modifiedEpoch(a);
         case "file_modified_asc":
             return modifiedEpoch(a) - modifiedEpoch(b);
+        case "date_added_desc":
+            return dateEpoch(b.date_added) - dateEpoch(a.date_added);
+        case "date_added_asc":
+            return dateEpoch(a.date_added) - dateEpoch(b.date_added);
+        case "last_opened_desc":
+            return dateEpoch(b.last_opened) - dateEpoch(a.last_opened);
+        case "last_opened_asc":
+            return dateEpoch(a.last_opened) - dateEpoch(b.last_opened);
         default:
             return 0;
     }
@@ -316,6 +366,81 @@ async function openPdf(article) {
     }
 }
 
+function openFileLocation(article) {
+    invoke("open_file_location", { relpath: article.pdf_relpath }).then(() => {
+        showToast("Opened file location");
+    }).catch((err) => {
+        const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
+        setStatus(`Failed to open location: ${message}`, true);
+    });
+}
+
+// Toast notification
+let toastTimer = null;
+function showToast(msg) {
+    dom.toast.textContent = msg;
+    dom.toast.classList.remove("hidden");
+    dom.toast.classList.add("visible");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+        dom.toast.classList.remove("visible");
+        setTimeout(() => dom.toast.classList.add("hidden"), 300);
+    }, 2200);
+}
+
+// BibTeX generation
+function generateBibtex(article) {
+    const md = article.metadata || {};
+    const authors = splitAuthors(md.authors || "").join(" and ");
+    const lastName = (md.authors || "Unknown").split(/[,;\s]+/)[0].toLowerCase();
+    const yr = md.year || "0000";
+    const key = `${lastName}${yr}`;
+    let bib = `@article{${key},\n`;
+    bib += `  title     = {${md.title || ""}},\n`;
+    bib += `  author    = {${authors}},\n`;
+    bib += `  year      = {${yr}},\n`;
+    if (md.journal) bib += `  journal   = {${md.journal}},\n`;
+    if (md.volume) bib += `  volume    = {${md.volume}},\n`;
+    if (md.number) bib += `  number    = {${md.number}},\n`;
+    if (md.pages) bib += `  pages     = {${md.pages}},\n`;
+    if (md.doi) bib += `  doi       = {${md.doi}},\n`;
+    bib += `}`;
+    return bib;
+}
+
+// Color helpers for tag tinting
+function hexToHsl(hex) {
+    let r = parseInt(hex.slice(1, 3), 16) / 255;
+    let g = parseInt(hex.slice(3, 5), 16) / 255;
+    let b = parseInt(hex.slice(5, 7), 16) / 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    let h = 0, s = 0, l = (max + min) / 2;
+    if (max !== min) {
+        const d = max - min;
+        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+        else if (max === g) h = ((b - r) / d + 2) / 6;
+        else h = ((r - g) / d + 4) / 6;
+    }
+    return [h * 360, s * 100, l * 100];
+}
+
+function getCardTint(article) {
+    if (!state.tintByTag) return null;
+    const tags = (article.metadata?.tags || []).filter((t) => t.trim() && state.tagColors[t.trim()]);
+    if (tags.length === 0) return null;
+    let hSum = 0, sSum = 0, lSum = 0;
+    for (const tag of tags) {
+        const [h, s, l] = hexToHsl(state.tagColors[tag.trim()]);
+        hSum += h; sSum += s; lSum += l;
+    }
+    const n = tags.length;
+    return `hsla(${Math.round(hSum / n)}, ${Math.round(sSum / n)}%, ${Math.round(lSum / n)}%, 0.13)`;
+}
+
+function saveTagColors() {
+    window.localStorage.setItem("article-tag-colors", JSON.stringify(state.tagColors));
+}
 function openAbstract(article) {
     const md = article.metadata || {};
     dom.abstractTitle.textContent = md.title || article.pdf_filename || "Abstract";
@@ -356,13 +481,43 @@ function buildCard(article) {
     card.tabIndex = 0;
     card.setAttribute("role", "link");
     card.setAttribute("aria-label", `Open PDF: ${md.title || article.pdf_filename}`);
-    card.addEventListener("click", () => openPdf(article));
+    card.addEventListener("click", (evt) => {
+        if (evt.ctrlKey && evt.shiftKey) {
+            evt.preventDefault();
+            evt.stopPropagation();
+            openEditor(article);
+            return;
+        }
+        if (evt.ctrlKey || evt.metaKey) {
+            evt.preventDefault();
+            evt.stopPropagation();
+            const bib = generateBibtex(article);
+            copyToClipboard(bib).then((ok) => {
+                showToast(ok ? "BibTeX copied to clipboard" : "Failed to copy BibTeX");
+            });
+            return;
+        }
+        if (evt.altKey) {
+            evt.preventDefault();
+            evt.stopPropagation();
+            openFileLocation(article);
+            return;
+        }
+        openPdf(article);
+    });
     card.addEventListener("keydown", (evt) => {
         if (evt.key === "Enter" || evt.key === " ") {
             evt.preventDefault();
             openPdf(article);
         }
     });
+
+    // Apply tag tint
+    const tint = getCardTint(article);
+    if (tint) {
+        card.style.borderColor = tint.replace("0.13", "0.45");
+        card.style.background = `linear-gradient(135deg, ${tint}, transparent 70%)`;
+    }
 
     // Image drag-and-drop onto card for thumbnail replacement
     // Only highlight and intercept for image files; let PDFs bubble to body handler
@@ -640,6 +795,9 @@ function openEditor(article) {
     dom.authors.value = md.authors || "";
     dom.year.value = md.year || "";
     dom.journal.value = md.journal || "";
+    dom.volume.value = md.volume || "";
+    dom.issue.value = md.number || "";
+    dom.pages.value = md.pages || "";
     dom.doi.value = md.doi || "";
     dom.abstract.value = md.abstract || "";
     dom.tags.value = (md.tags || []).join(", ");
@@ -674,6 +832,9 @@ async function saveMetadata(evt) {
         authors: dom.authors.value.trim(),
         year: dom.year.value.trim(),
         journal: dom.journal.value.trim(),
+        volume: dom.volume.value.trim(),
+        number: dom.issue.value.trim(),
+        pages: dom.pages.value.trim(),
         doi: dom.doi.value.trim(),
         abstract: abstractValue,
         tags: dom.tags.value
@@ -752,6 +913,21 @@ async function uploadManualThumbnail(fileOverride = null) {
         return;
     }
 
+    // Snapshot unsaved form values before reload
+    const formSnapshot = {
+        title: dom.title.value,
+        authors: dom.authors.value,
+        year: dom.year.value,
+        journal: dom.journal.value,
+        volume: dom.volume.value,
+        issue: dom.issue.value,
+        pages: dom.pages.value,
+        doi: dom.doi.value,
+        abstract: dom.abstract.value,
+        tags: dom.tags.value,
+        notes: dom.notes.value,
+    };
+
     previewSelectedThumb(file);
     setStatus("Uploading manual thumbnail...");
 
@@ -768,6 +944,20 @@ async function uploadManualThumbnail(fileOverride = null) {
         await loadArticles();
         state.current = state.articles.find((a) => a.id === currentId) || null;
         if (state.current) openEditor(state.current);
+
+        // Restore unsaved form values
+        dom.title.value = formSnapshot.title;
+        dom.authors.value = formSnapshot.authors;
+        dom.year.value = formSnapshot.year;
+        dom.journal.value = formSnapshot.journal;
+        dom.volume.value = formSnapshot.volume;
+        dom.issue.value = formSnapshot.issue;
+        dom.pages.value = formSnapshot.pages;
+        dom.doi.value = formSnapshot.doi;
+        dom.abstract.value = formSnapshot.abstract;
+        dom.tags.value = formSnapshot.tags;
+        dom.notes.value = formSnapshot.notes;
+
         dom.thumbFile.value = "";
         setStatus("Manual thumbnail saved.");
     } catch (err) {
@@ -800,7 +990,7 @@ async function resetAutoThumbnail() {
 
 async function doReindex() {
     const strategy = dom.strategySelect.value;
-    const fast = dom.fastReindex.checked;
+    const fast = !dom.parsePdfs.checked;
     setMenuOpen(false);
     setStatus(`Reindexing with ${strategy} strategy${fast ? " (fast mode)" : ""}...`);
     dom.reindexBtn.disabled = true;
@@ -829,10 +1019,11 @@ function wireEvents() {
     state.primarySort = normalizeSortKey(state.primarySort, "year_desc");
     state.secondarySort = normalizeSortKey(state.secondarySort, "title_asc");
     state.fontFamily = normalizeFontKey(state.fontFamily, "segoe");
-    dom.viewMode.value = state.viewMode;
+    dom.viewModeToggle.checked = state.viewMode === "details";
     dom.primarySort.value = state.primarySort;
     dom.secondarySort.value = state.secondarySort;
     applyCardHeight(state.cardHeight);
+    applyCardWidth(state.cardWidth);
     applyCardFont(state.cardFont);
     applyFontFamily(state.fontFamily);
     setMenuOpen(false);
@@ -842,10 +1033,69 @@ function wireEvents() {
         state.tag = dom.tagFilter.value.trim();
         await loadArticles();
     });
-    dom.viewMode.addEventListener("change", () => {
-        state.viewMode = dom.viewMode.value === "details" ? "details" : "preview";
+    // View mode toggle
+    dom.viewModeToggle.checked = state.viewMode === "details";
+    dom.viewModeToggle.addEventListener("change", () => {
+        state.viewMode = dom.viewModeToggle.checked ? "details" : "preview";
         window.localStorage.setItem("article-view-mode", state.viewMode);
         renderArticles();
+    });
+
+    // Tint by tag
+    dom.tintByTag.checked = state.tintByTag;
+    dom.tintByTag.addEventListener("change", () => {
+        state.tintByTag = dom.tintByTag.checked;
+        window.localStorage.setItem("article-tint-by-tag", state.tintByTag ? "true" : "false");
+        renderArticles();
+    });
+
+    // Tag color editor
+    dom.editTagColorsBtn.addEventListener("click", () => {
+        // Count tag usage for sorting
+        const tagCounts = {};
+        for (const article of state.articles) {
+            for (const tag of (article.metadata?.tags || [])) {
+                const t = tag.trim();
+                if (t) tagCounts[t] = (tagCounts[t] || 0) + 1;
+            }
+        }
+        clearNode(dom.tagColorList);
+        const sorted = Object.keys(tagCounts).sort((a, b) => tagCounts[b] - tagCounts[a]);
+        if (sorted.length === 0) {
+            const msg = document.createElement("p");
+            msg.className = "meta";
+            msg.textContent = "No tags found. Add tags to articles first.";
+            dom.tagColorList.appendChild(msg);
+        } else {
+            for (const tag of sorted) {
+                const row = document.createElement("div");
+                row.className = "tag-color-row";
+                const picker = document.createElement("input");
+                picker.type = "color";
+                picker.value = state.tagColors[tag] || "#52d0a3";
+                picker.addEventListener("input", () => {
+                    state.tagColors[tag] = picker.value;
+                    saveTagColors();
+                    renderArticles();
+                });
+                const label = document.createElement("span");
+                label.textContent = tag;
+                row.appendChild(picker);
+                row.appendChild(label);
+                dom.tagColorList.appendChild(row);
+            }
+        }
+        dom.tagColorEditor.classList.remove("hidden");
+    });
+    dom.tagColorClose.addEventListener("click", () => {
+        dom.tagColorEditor.classList.add("hidden");
+    });
+    // Hotkeys modal
+    dom.hotkeysBtn.addEventListener("click", () => {
+        dom.hotkeysModal.classList.remove("hidden");
+    });
+    dom.hotkeysClose.addEventListener("click", () => {
+        dom.hotkeysModal.classList.add("hidden");
     });
     dom.primarySort.addEventListener("change", () => {
         state.primarySort = normalizeSortKey(dom.primarySort.value, "year_desc");
@@ -867,6 +1117,10 @@ function wireEvents() {
     dom.cardHeightSlider.addEventListener("input", () => {
         applyCardHeight(dom.cardHeightSlider.value);
         window.localStorage.setItem("article-card-height", String(state.cardHeight));
+    });
+    dom.cardWidthSlider.addEventListener("input", () => {
+        applyCardWidth(dom.cardWidthSlider.value);
+        window.localStorage.setItem("article-card-width", String(state.cardWidth));
     });
     dom.cardFontSlider.addEventListener("input", () => {
         applyCardFont(dom.cardFontSlider.value);
@@ -1020,9 +1274,29 @@ function wireEvents() {
         setMenuOpen(false);
     });
 
+    // Mousedown on modal backdrops to close
+    [dom.modal, dom.abstractModal, dom.tagColorEditor, dom.hotkeysModal].forEach((modalEl) => {
+        modalEl.addEventListener("mousedown", (evt) => {
+            if (evt.target === modalEl) {
+                modalEl.classList.add("hidden");
+            }
+        });
+    });
+
+    // Global keyboard handlers
     document.addEventListener("keydown", (evt) => {
-        if (evt.key === "Escape" && state.menuOpen) {
-            setMenuOpen(false);
+        if (evt.key === "Escape") {
+            if (state.menuOpen) setMenuOpen(false);
+            if (!dom.modal.classList.contains("hidden")) closeEditor();
+            if (!dom.abstractModal.classList.contains("hidden")) closeAbstract();
+            dom.tagColorEditor.classList.add("hidden");
+            dom.hotkeysModal.classList.add("hidden");
+        }
+        if (evt.key === "Enter" && !dom.modal.classList.contains("hidden")) {
+            // Don't trigger if user is in a textarea
+            if (evt.target.tagName === "TEXTAREA") return;
+            evt.preventDefault();
+            saveMetadata(evt).then(() => closeEditor());
         }
     });
 }

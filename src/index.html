@@ -11,8 +11,8 @@
 <body>
     <header class="topbar">
         <div class="title-wrap">
-            <h1>Scientific Article Library</h1>
-            <p class="subtitle">Local PDF search with visual thumbnails</p>
+            <h1>FRK PDF Manager</h1>
+            <p class="subtitle">Local PDF search with custom thumbnails</p>
         </div>
         <div class="controls">
             <label class="field">
@@ -25,13 +25,7 @@
                     <option value="">All tags</option>
                 </select>
             </label>
-            <label class="field compact">
-                <span>View</span>
-                <select id="view-mode">
-                    <option value="preview">Preview cards</option>
-                    <option value="details">List</option>
-                </select>
-            </label>
+
             <label class="field compact sort-field">
                 <span>Primary Sort</span>
                 <select id="primary-sort">
@@ -43,6 +37,10 @@
                     <option value="doi_asc">DOI (A-Z)</option>
                     <option value="file_modified_desc">Modified (newest)</option>
                     <option value="file_modified_asc">Modified (oldest)</option>
+                    <option value="date_added_desc">Added (newest)</option>
+                    <option value="date_added_asc">Added (oldest)</option>
+                    <option value="last_opened_desc">Opened (newest)</option>
+                    <option value="last_opened_asc">Opened (oldest)</option>
                 </select>
             </label>
             <label class="field compact sort-field">
@@ -56,6 +54,10 @@
                     <option value="doi_asc">DOI (A-Z)</option>
                     <option value="file_modified_desc">Modified (newest)</option>
                     <option value="file_modified_asc">Modified (oldest)</option>
+                    <option value="date_added_desc">Added (newest)</option>
+                    <option value="date_added_asc">Added (oldest)</option>
+                    <option value="last_opened_desc">Opened (newest)</option>
+                    <option value="last_opened_asc">Opened (oldest)</option>
                     <option value="none">None</option>
                 </select>
             </label>
@@ -69,6 +71,10 @@
                     <label class="field">
                         <span>Card Height <strong id="card-height-value">138</strong>px</span>
                         <input id="card-height-slider" type="range" min="100" max="640" step="2" value="138" />
+                    </label>
+                    <label class="field">
+                        <span>Card Width <strong id="card-width-value">200</strong>px</span>
+                        <input id="card-width-slider" type="range" min="120" max="600" step="2" value="200" />
                     </label>
                     <label class="field">
                         <span>Card Font <strong id="card-font-value">14</strong>px</span>
@@ -93,11 +99,25 @@
                         </select>
                     </label>
                     <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
-                        <input id="fast-reindex" type="checkbox" />
-                        <span style="font-size:0.82rem;">Fast (skip PDF reading)</span>
+                        <input id="parse-pdfs" type="checkbox" />
+                        <span style="font-size:0.82rem;">Parse PDFs</span>
                     </label>
                     <button id="reindex-btn" type="button">Reindex</button>
                     <button id="highlight-btn" type="button" class="ghost">Highlight Incomplete</button>
+                    <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                        <input id="tint-by-tag" type="checkbox" />
+                        <span style="font-size:0.82rem;">Tint by Tag</span>
+                    </label>
+                    <button id="edit-tag-colors-btn" type="button" class="ghost">Edit Tag Colors</button>
+                    <div class="view-toggle" style="padding:4px 0;">
+                        <span class="view-toggle-label">Cards</span>
+                        <label class="toggle-switch">
+                            <input id="view-mode-toggle" type="checkbox" />
+                            <span class="toggle-track"></span>
+                        </label>
+                        <span class="view-toggle-label">List</span>
+                    </div>
+                    <button id="hotkeys-btn" type="button" class="ghost">Hotkeys</button>
                 </div>
             </div>
         </div>
@@ -146,6 +166,20 @@
                             <input id="f-journal" name="journal" type="text" />
                         </label>
                     </div>
+                    <div class="inline-row">
+                        <label class="field">
+                            <span>Volume</span>
+                            <input id="f-volume" name="volume" type="text" />
+                        </label>
+                        <label class="field">
+                            <span>Issue</span>
+                            <input id="f-issue" name="number" type="text" />
+                        </label>
+                        <label class="field">
+                            <span>Pages</span>
+                            <input id="f-pages" name="pages" type="text" />
+                        </label>
+                    </div>
                     <label class="field">
                         <span>DOI</span>
                         <input id="f-doi" name="doi" type="text" />
@@ -188,6 +222,62 @@
     </div>
 
     <script src="app.js" defer></script>
+
+    <!-- Tag Color Editor Panel -->
+    <div id="tag-color-editor" class="modal hidden" role="dialog" aria-modal="true">
+        <div class="modal-card" style="max-width:420px;">
+            <div class="modal-header">
+                <h2>Tag Colors</h2>
+                <button id="tag-color-close" class="close-btn" type="button">&times;</button>
+            </div>
+            <div id="tag-color-list" class="tag-color-list"></div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="toast hidden"></div>
+
+    <!-- Hotkeys Modal -->
+    <div id="hotkeys-modal" class="modal hidden" role="dialog" aria-modal="true">
+        <div class="modal-card" style="max-width:420px;">
+            <div class="modal-header">
+                <h2>Keyboard Shortcuts</h2>
+                <button id="hotkeys-close" class="close-btn" type="button">&times;</button>
+            </div>
+            <div style="padding:12px 16px;">
+                <table style="width:100%;border-collapse:collapse;font-size:0.88rem;">
+                    <tr>
+                        <td style="padding:6px 0;"><kbd>Click</kbd></td>
+                        <td>Open PDF</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:6px 0;"><kbd>Ctrl+Click</kbd></td>
+                        <td>Copy BibTeX to clipboard</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:6px 0;"><kbd>Alt+Click</kbd></td>
+                        <td>Open file location</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:6px 0;"><kbd>Ctrl+Shift+Click</kbd></td>
+                        <td>Edit metadata</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:6px 0;"><kbd>Right-Click</kbd></td>
+                        <td>Edit metadata</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:6px 0;"><kbd>Enter</kbd></td>
+                        <td>Save & close modal</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:6px 0;"><kbd>Escape</kbd></td>
+                        <td>Close any modal</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
 </body>
 
 </html>

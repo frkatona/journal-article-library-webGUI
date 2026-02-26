@@ -40,12 +40,16 @@ pub struct AutoMeta {
     pub page_count: i32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct Metadata {
     pub title: String,
     pub authors: String,
     pub year: String,
     pub journal: String,
+    pub volume: String,
+    pub number: String,
+    pub pages: String,
     pub doi: String,
     #[serde(rename = "abstract")]
     pub abstract_text: String,
@@ -67,6 +71,10 @@ pub struct Article {
     pub metadata: Metadata,
     pub thumbnail: ThumbnailInfo,
     pub search_text: String,
+    #[serde(default)]
+    pub date_added: String,
+    #[serde(default)]
+    pub last_opened: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -118,6 +126,9 @@ pub struct MetadataPayload {
     pub authors: Option<String>,
     pub year: Option<String>,
     pub journal: Option<String>,
+    pub volume: Option<String>,
+    pub number: Option<String>,
+    pub pages: Option<String>,
     pub doi: Option<String>,
     #[serde(rename = "abstract")]
     pub abstract_text: Option<String>,
@@ -838,6 +849,9 @@ fn merge_metadata(auto: &AutoMeta, over: &serde_json::Value) -> Metadata {
         } else {
             normalize_text(&auto.journal)
         },
+        volume: get_str("volume"),
+        number: get_str("number"),
+        pages: get_str("pages"),
         doi: if over.get("doi").is_some() {
             get_str("doi")
         } else {
@@ -1005,6 +1019,26 @@ fn process_single_pdf(
         })
         .unwrap_or_default();
 
+    // date_added: read from override or set to now
+    let date_added = over.get("date_added")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| {
+            let now = Utc::now().to_rfc3339();
+            // Persist date_added in override so it survives reindexing
+            let mut ov = load_override(&state.overrides_dir, &article_id);
+            if let Some(obj) = ov.as_object_mut() {
+                obj.insert("date_added".into(), serde_json::Value::String(now.clone()));
+            }
+            save_override(&state.overrides_dir, &article_id, &ov);
+            now
+        });
+
+    let last_opened = over.get("last_opened")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_default();
+
     let mut article = Article {
         id: article_id,
         pdf_filename: pdf_path
@@ -1020,6 +1054,8 @@ fn process_single_pdf(
         metadata,
         thumbnail,
         search_text: String::new(),
+        date_added,
+        last_opened,
     };
     article.search_text = build_search_text(&article);
     Some(article)
@@ -1093,7 +1129,7 @@ fn load_index(state: &mut AppState) -> IndexPayload {
             }
         }
     }
-    index_articles(state, &state.default_strategy.clone(), false)
+    index_articles(state, &state.default_strategy.clone(), true)
 }
 
 fn find_article_mut<'a>(
@@ -1235,6 +1271,15 @@ fn save_metadata(
     if let Some(v) = &payload.journal {
         obj.insert("journal".into(), serde_json::Value::String(v.trim().to_string()));
     }
+    if let Some(v) = &payload.volume {
+        obj.insert("volume".into(), serde_json::Value::String(v.trim().to_string()));
+    }
+    if let Some(v) = &payload.number {
+        obj.insert("number".into(), serde_json::Value::String(v.trim().to_string()));
+    }
+    if let Some(v) = &payload.pages {
+        obj.insert("pages".into(), serde_json::Value::String(v.trim().to_string()));
+    }
     if let Some(v) = &payload.doi {
         obj.insert("doi".into(), serde_json::Value::String(v.trim().to_string()));
     }
@@ -1340,12 +1385,41 @@ fn upload_thumbnail(
 
 #[tauri::command]
 fn open_pdf(state: tauri::State<'_, Mutex<AppState>>, relpath: String) -> Result<(), String> {
+    let mut st = state.lock().map_err(|e| e.to_string())?;
+    let full_path = st.root_dir.join(&relpath);
+    if !full_path.exists() {
+        return Err(format!("File not found: {}", relpath));
+    }
+
+    // Update last_opened timestamp
+    let now = Utc::now().to_rfc3339();
+    let overrides_dir = st.overrides_dir.clone();
+    let index_path = st.index_path.clone();
+    if let Some(index) = st.index.as_mut() {
+        if let Some(article) = index.articles.iter_mut().find(|a| a.pdf_relpath == relpath) {
+            article.last_opened = now.clone();
+            let mut over = load_override(&overrides_dir, &article.id);
+            if let Some(obj) = over.as_object_mut() {
+                obj.insert("last_opened".into(), serde_json::Value::String(now));
+            }
+            save_override(&overrides_dir, &article.id, &over);
+        }
+        let json = serde_json::to_string_pretty(index).unwrap_or_default();
+        let _ = fs::write(&index_path, json);
+    }
+
+    opener::open(&full_path).map_err(|e| format!("Failed to open PDF: {}", e))
+}
+
+#[tauri::command]
+fn open_file_location(state: tauri::State<'_, Mutex<AppState>>, relpath: String) -> Result<(), String> {
     let st = state.lock().map_err(|e| e.to_string())?;
     let full_path = st.root_dir.join(&relpath);
     if !full_path.exists() {
         return Err(format!("File not found: {}", relpath));
     }
-    opener::open(&full_path).map_err(|e| format!("Failed to open PDF: {}", e))
+    let parent = full_path.parent().unwrap_or(&full_path);
+    opener::open(parent).map_err(|e| format!("Failed to open location: {}", e))
 }
 
 #[tauri::command]
@@ -1476,6 +1550,7 @@ pub fn run() {
             save_metadata,
             upload_thumbnail,
             open_pdf,
+            open_file_location,
             get_thumbnail_url,
             get_root_dir,
             import_pdf,
