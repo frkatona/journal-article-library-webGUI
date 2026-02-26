@@ -172,6 +172,7 @@ impl AppState {
     }
 
     fn ensure_dirs(&self) {
+        let _ = fs::create_dir_all(&self.articles_dir);
         let _ = fs::create_dir_all(&self.data_dir);
         let _ = fs::create_dir_all(&self.thumbnails_dir);
         let _ = fs::create_dir_all(&self.manual_thumbnails_dir);
@@ -294,8 +295,7 @@ fn extract_abstract_from_text(text: &str) -> String {
         return String::new();
     }
 
-    let abstract_re =
-        Regex::new(r"(?i)^abstract[\s\.:;-]*$|^abstract:|^abstract\s").unwrap();
+    let abstract_re = Regex::new(r"(?i)^abstract[\s\.:;-]*$|^abstract:|^abstract\s").unwrap();
     let mut start_idx: Option<usize> = None;
     for (idx, line) in lines.iter().take(100).enumerate() {
         if abstract_re.is_match(line) {
@@ -364,8 +364,10 @@ fn pdf_dict_string(doc: &PdfDoc, dict: &lopdf::Dictionary, key: &[u8]) -> String
                     Some(String::from_utf16_lossy(&chars))
                 } else {
                     // Try UTF-8, fall back to latin-1
-                    Some(String::from_utf8(bytes.clone())
-                        .unwrap_or_else(|_| bytes.iter().map(|&b| b as char).collect()))
+                    Some(
+                        String::from_utf8(bytes.clone())
+                            .unwrap_or_else(|_| bytes.iter().map(|&b| b as char).collect()),
+                    )
                 }
             }
             _ => None,
@@ -444,16 +446,13 @@ fn extract_auto_metadata(pdf_path: &Path) -> AutoMeta {
 
     // Extract metadata from the Info dictionary
     let (pdf_title, pdf_author, pdf_subject, pdf_keywords, pdf_creation, pdf_mod) =
-        if let Ok(info_dict) = doc.trailer.get(b"Info")
-            .and_then(|obj| {
-                match obj {
-                    Object::Reference(id) => doc.get_object(*id)
-                        .and_then(|o| o.as_dict().map(|d| d.clone())),
-                    Object::Dictionary(d) => Ok(d.clone()),
-                    _ => Err(lopdf::Error::ObjectNotFound),
-                }
-            })
-        {
+        if let Ok(info_dict) = doc.trailer.get(b"Info").and_then(|obj| match obj {
+            Object::Reference(id) => doc
+                .get_object(*id)
+                .and_then(|o| o.as_dict().map(|d| d.clone())),
+            Object::Dictionary(d) => Ok(d.clone()),
+            _ => Err(lopdf::Error::ObjectNotFound),
+        }) {
             (
                 pdf_dict_string(&doc, &info_dict, b"Title"),
                 pdf_dict_string(&doc, &info_dict, b"Author"),
@@ -463,7 +462,14 @@ fn extract_auto_metadata(pdf_path: &Path) -> AutoMeta {
                 pdf_dict_string(&doc, &info_dict, b"ModDate"),
             )
         } else {
-            (String::new(), String::new(), String::new(), String::new(), String::new(), String::new())
+            (
+                String::new(),
+                String::new(),
+                String::new(),
+                String::new(),
+                String::new(),
+                String::new(),
+            )
         };
 
     // Extract text for DOI and abstract
@@ -668,7 +674,9 @@ fn first_significant_embedded_image(pdf_path: &Path, max_pages: i32) -> Option<D
                 if (cs_name.contains("RGB") || cs_name == "DeviceRGB")
                     && img_data.len() >= (w * h * 3) as usize
                 {
-                    if let Some(rgb_img) = ImageBuffer::<Rgb<u8>, _>::from_raw(w, h, img_data.clone()) {
+                    if let Some(rgb_img) =
+                        ImageBuffer::<Rgb<u8>, _>::from_raw(w, h, img_data.clone())
+                    {
                         let dynamic = DynamicImage::ImageRgb8(rgb_img);
                         let score = embedded_image_score(&dynamic);
                         if score > best_score {
@@ -724,9 +732,15 @@ fn save_thumbnail_image(source: &DynamicImage, output_path: &Path) {
     let tgt_aspect = THUMBNAIL_W as f64 / THUMBNAIL_H as f64;
 
     let (cw, ch) = if src_aspect > tgt_aspect {
-        (THUMBNAIL_W, ((THUMBNAIL_W as f64 / src_aspect) as u32).max(1))
+        (
+            THUMBNAIL_W,
+            ((THUMBNAIL_W as f64 / src_aspect) as u32).max(1),
+        )
     } else {
-        (((THUMBNAIL_H as f64 * src_aspect) as u32).max(1), THUMBNAIL_H)
+        (
+            ((THUMBNAIL_H as f64 * src_aspect) as u32).max(1),
+            THUMBNAIL_H,
+        )
     };
     let contained = source.resize_exact(cw, ch, FilterType::Lanczos3);
 
@@ -1020,7 +1034,8 @@ fn process_single_pdf(
         .unwrap_or_default();
 
     // date_added: read from override or set to now
-    let date_added = over.get("date_added")
+    let date_added = over
+        .get("date_added")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
         .unwrap_or_else(|| {
@@ -1034,7 +1049,8 @@ fn process_single_pdf(
             now
         });
 
-    let last_opened = over.get("last_opened")
+    let last_opened = over
+        .get("last_opened")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
         .unwrap_or_default();
@@ -1098,9 +1114,8 @@ fn index_articles(state: &mut AppState, strategy: &str, fast: bool) -> IndexPayl
     articles.sort_by(|a, b| {
         let ya = normalize_text(&a.metadata.year);
         let yb = normalize_text(&b.metadata.year);
-        yb.cmp(&ya).then_with(|| {
-            normalize_text(&a.metadata.title).cmp(&normalize_text(&b.metadata.title))
-        })
+        yb.cmp(&ya)
+            .then_with(|| normalize_text(&a.metadata.title).cmp(&normalize_text(&b.metadata.title)))
     });
 
     let payload = IndexPayload {
@@ -1132,10 +1147,7 @@ fn load_index(state: &mut AppState) -> IndexPayload {
     index_articles(state, &state.default_strategy.clone(), true)
 }
 
-fn find_article_mut<'a>(
-    index: &'a mut IndexPayload,
-    article_id: &str,
-) -> Option<&'a mut Article> {
+fn find_article_mut<'a>(index: &'a mut IndexPayload, article_id: &str) -> Option<&'a mut Article> {
     index.articles.iter_mut().find(|a| a.id == article_id)
 }
 
@@ -1255,39 +1267,67 @@ fn save_metadata(
     let _index = load_index(&mut st);
 
     let mut existing = load_override(&st.overrides_dir, &article_id);
-    let obj = existing
-        .as_object_mut()
-        .ok_or("corrupt override")?;
+    let obj = existing.as_object_mut().ok_or("corrupt override")?;
 
     if let Some(v) = &payload.title {
-        obj.insert("title".into(), serde_json::Value::String(v.trim().to_string()));
+        obj.insert(
+            "title".into(),
+            serde_json::Value::String(v.trim().to_string()),
+        );
     }
     if let Some(v) = &payload.authors {
-        obj.insert("authors".into(), serde_json::Value::String(v.trim().to_string()));
+        obj.insert(
+            "authors".into(),
+            serde_json::Value::String(v.trim().to_string()),
+        );
     }
     if let Some(v) = &payload.year {
-        obj.insert("year".into(), serde_json::Value::String(v.trim().to_string()));
+        obj.insert(
+            "year".into(),
+            serde_json::Value::String(v.trim().to_string()),
+        );
     }
     if let Some(v) = &payload.journal {
-        obj.insert("journal".into(), serde_json::Value::String(v.trim().to_string()));
+        obj.insert(
+            "journal".into(),
+            serde_json::Value::String(v.trim().to_string()),
+        );
     }
     if let Some(v) = &payload.volume {
-        obj.insert("volume".into(), serde_json::Value::String(v.trim().to_string()));
+        obj.insert(
+            "volume".into(),
+            serde_json::Value::String(v.trim().to_string()),
+        );
     }
     if let Some(v) = &payload.number {
-        obj.insert("number".into(), serde_json::Value::String(v.trim().to_string()));
+        obj.insert(
+            "number".into(),
+            serde_json::Value::String(v.trim().to_string()),
+        );
     }
     if let Some(v) = &payload.pages {
-        obj.insert("pages".into(), serde_json::Value::String(v.trim().to_string()));
+        obj.insert(
+            "pages".into(),
+            serde_json::Value::String(v.trim().to_string()),
+        );
     }
     if let Some(v) = &payload.doi {
-        obj.insert("doi".into(), serde_json::Value::String(v.trim().to_string()));
+        obj.insert(
+            "doi".into(),
+            serde_json::Value::String(v.trim().to_string()),
+        );
     }
     if let Some(v) = &payload.abstract_text {
-        obj.insert("abstract".into(), serde_json::Value::String(v.trim().to_string()));
+        obj.insert(
+            "abstract".into(),
+            serde_json::Value::String(v.trim().to_string()),
+        );
     }
     if let Some(v) = &payload.notes {
-        obj.insert("notes".into(), serde_json::Value::String(v.trim().to_string()));
+        obj.insert(
+            "notes".into(),
+            serde_json::Value::String(v.trim().to_string()),
+        );
     }
     if let Some(tags) = &payload.tags {
         let arr: Vec<serde_json::Value> = tags
@@ -1412,7 +1452,10 @@ fn open_pdf(state: tauri::State<'_, Mutex<AppState>>, relpath: String) -> Result
 }
 
 #[tauri::command]
-fn open_file_location(state: tauri::State<'_, Mutex<AppState>>, relpath: String) -> Result<(), String> {
+fn open_file_location(
+    state: tauri::State<'_, Mutex<AppState>>,
+    relpath: String,
+) -> Result<(), String> {
     let st = state.lock().map_err(|e| e.to_string())?;
     let full_path = st.root_dir.join(&relpath);
     if !full_path.exists() {
@@ -1425,13 +1468,13 @@ fn open_file_location(state: tauri::State<'_, Mutex<AppState>>, relpath: String)
 #[tauri::command]
 fn open_articles_folder(state: tauri::State<'_, Mutex<AppState>>) -> Result<(), String> {
     let st = state.lock().map_err(|e| e.to_string())?;
-    
+
     // Strip `\\?\` prefix which often breaks `opener` on Windows
     let mut path_str = st.articles_dir.to_string_lossy().to_string();
     if path_str.starts_with("\\\\?\\") {
         path_str = path_str.replacen("\\\\?\\", "", 1);
     }
-    
+
     opener::open(&path_str).map_err(|e| format!("Failed to open articles folder: {}", e))
 }
 
@@ -1465,18 +1508,29 @@ fn import_pdf(
         .decode(&data)
         .map_err(|e| format!("Failed to decode base64: {}", e))?;
 
+    let file_size = bytes.len() as u64;
+
     // Determine output filename, deduplicating if needed
-    let safe_name = filename
-        .trim()
-        .replace('/', "_")
-        .replace('\\', "_");
-    let safe_name = if safe_name.is_empty() {
-        "imported.pdf".to_string()
+    let mut safe_name = filename.trim().replace('/', "_").replace('\\', "_");
+    if safe_name.is_empty() {
+        safe_name = "imported.pdf".to_string();
     } else if !safe_name.to_lowercase().ends_with(".pdf") {
-        format!("{}.pdf", safe_name)
-    } else {
-        safe_name
-    };
+        safe_name = format!("{}.pdf", safe_name);
+    }
+
+    // Duplicate check
+    if let Some(index) = st.index.as_ref() {
+        if let Some(existing) = index
+            .articles
+            .iter()
+            .find(|a| a.pdf_filename == safe_name && a.file_size == file_size)
+        {
+            return Ok(MutationResponse {
+                ok: true,
+                article: existing.clone(),
+            });
+        }
+    }
 
     let mut output_path = st.articles_dir.join(&safe_name);
     if output_path.exists() {
@@ -1503,8 +1557,7 @@ fn import_pdf(
         }
     }
 
-    fs::write(&output_path, &bytes)
-        .map_err(|e| format!("Failed to write PDF: {}", e))?;
+    fs::write(&output_path, &bytes).map_err(|e| format!("Failed to write PDF: {}", e))?;
 
     // Process the new PDF
     let strategy = st.default_strategy.clone();
@@ -1520,10 +1573,7 @@ fn import_pdf(
     let json = serde_json::to_string_pretty(index).unwrap_or_default();
     let _ = fs::write(&index_path, json);
 
-    Ok(MutationResponse {
-        ok: true,
-        article,
-    })
+    Ok(MutationResponse { ok: true, article })
 }
 
 #[tauri::command]
@@ -1545,7 +1595,13 @@ fn import_pdfs_from_paths(
             continue;
         }
 
-        let filename = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+        let file_size = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+
+        let filename = path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
         let mut safe_name = filename.trim().replace('/', "_").replace('\\', "_");
         if safe_name.is_empty() {
             safe_name = "imported.pdf".to_string();
@@ -1553,21 +1609,50 @@ fn import_pdfs_from_paths(
             safe_name = format!("{}.pdf", safe_name);
         }
 
+        // Duplicate check
+        let mut is_dup = false;
+        let mut existing_article = None;
+        if let Some(index) = st.index.as_ref() {
+            if let Some(existing) = index
+                .articles
+                .iter()
+                .find(|a| a.pdf_filename == safe_name && a.file_size == file_size)
+            {
+                is_dup = true;
+                existing_article = Some(existing.clone());
+            }
+        }
+        if is_dup {
+            results.push(MutationResponse {
+                ok: true,
+                article: existing_article.unwrap(),
+            });
+            continue;
+        }
+
         let mut output_path = st.articles_dir.join(&safe_name);
-        
+
         let path_parent = path.parent().and_then(|p| p.canonicalize().ok());
         let articles_can = st.articles_dir.canonicalize().ok();
-        
+
         // If file is already inside Articles manually, just process it.
         if path_parent.is_some() && path_parent == articles_can {
             output_path = path.to_path_buf();
         } else {
             if output_path.exists() {
-                let stem = output_path.file_stem().unwrap_or_default().to_string_lossy();
-                let ext = output_path.extension().unwrap_or_default().to_string_lossy();
+                let stem = output_path
+                    .file_stem()
+                    .unwrap_or_default()
+                    .to_string_lossy();
+                let ext = output_path
+                    .extension()
+                    .unwrap_or_default()
+                    .to_string_lossy();
                 let mut counter = 1u32;
                 loop {
-                    let candidate = st.articles_dir.join(format!("{}_{}.{}", stem, counter, ext));
+                    let candidate = st
+                        .articles_dir
+                        .join(format!("{}_{}.{}", stem, counter, ext));
                     if !candidate.exists() {
                         output_path = candidate;
                         break;
@@ -1577,7 +1662,10 @@ fn import_pdfs_from_paths(
             }
 
             if let Err(e) = fs::copy(&path, &output_path) {
-                return Err(format!("Failed to copy file from {:?} to {:?}: {}", path, output_path, e));
+                return Err(format!(
+                    "Failed to copy file from {:?} to {:?}: {}",
+                    path, output_path, e
+                ));
             }
         }
 
@@ -1589,7 +1677,10 @@ fn import_pdfs_from_paths(
             }
             results.push(MutationResponse { ok: true, article });
         } else {
-            return Err(format!("Failed to parse PDF metadata using standard extraction for {:?}", output_path));
+            return Err(format!(
+                "Failed to parse PDF metadata using standard extraction for {:?}",
+                output_path
+            ));
         }
     }
 
@@ -1611,27 +1702,29 @@ fn get_root_dir(state: tauri::State<'_, Mutex<AppState>>) -> Result<String, Stri
 // ── App Setup ───────────────────────────────────────────────────────────────
 
 pub fn run() {
-    let root_dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|pp| pp.to_path_buf()))
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-
-    let root_dir = if cfg!(debug_assertions) {
-        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        manifest_dir
-            .parent()
-            .map(|p| p.to_path_buf())
-            .unwrap_or(root_dir)
-    } else {
-        root_dir
-    };
-
-    let app_state = AppState::new(root_dir);
-    app_state.ensure_dirs();
-
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .manage(Mutex::new(app_state))
+        .setup(|app| {
+            use tauri::Manager;
+            let root_dir = if cfg!(debug_assertions) {
+                let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+                manifest_dir
+                    .parent()
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or_else(|| {
+                        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+                    })
+            } else {
+                app.path().app_local_data_dir().unwrap_or_else(|_| {
+                    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+                })
+            };
+
+            let app_state = AppState::new(root_dir);
+            app_state.ensure_dirs();
+            app.manage(Mutex::new(app_state));
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             get_articles,
             get_tags,

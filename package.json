@@ -1,7 +1,7 @@
 {
     "name": "literature-library",
     "private": true,
-    "version": "1.0.0",
+    "version": "0.8.1",
     "scripts": {
         "tauri": "tauri"
     },

@@ -1381,7 +1381,7 @@ function wireEvents() {
                 row.className = "tag-color-row";
                 const picker = document.createElement("input");
                 picker.type = "color";
-                picker.value = state.tagColors[tag] || "#52d0a3";
+                picker.value = state.tagColors[tag] || "#1a3145";
                 picker.addEventListener("input", () => {
                     state.tagColors[tag] = picker.value;
                     saveTagColors();
