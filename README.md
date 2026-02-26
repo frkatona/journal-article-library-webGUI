@@ -193,8 +193,10 @@ src-tauri/              # Rust backend
     - checkbox for color-blind palette
   - menu button color
   - [x] taskbar icon - remove black box background; add a bit more texture
-  - [ ] remove "upload manual thumbnail" and use its green color for the "paste from clipboard" option
-    - [ ] change "use auto thumbnail" to "extract image from file"
+  - [x] remove "upload manual thumbnail" and use its green color for the "paste from clipboard" option
+    - [x] change "use auto thumbnail" to "extract image from file"
+  - [x] address the chips component options taking space below the window for the default window size (is it a problem at 1080p?)
+  - [ ] remove name and description from top of page
 
 - features
   - [x] allow a left click down (but not a click release) to click out of the metadata modal
@@ -203,16 +205,16 @@ src-tauri/              # Rust backend
     - add checkbox to enable this automatic paste processing (enabled by default)
   - [ ] auto-rescale stored image when resolution is unecessarily high 
   - [ ] show a prompt to accept or undo the changes for drag-and-drop thumbnails
-  - [ ] in 'tags' field, a '+' button to add a tag from existing tags
-    - also fuzzy-search autofill prompting after each character and solidifying after entering them like listing email addresses in a gmail 'send' field
+  - [x] also fuzzy-search autofill prompting after each character and solidifying after entering them like listing email addresses in a gmail 'send' field
+
   - hotkeys
     - [x] 'esc', 'enter', or click out of box to exit metadata modal
     - [x] ctrl + shift + click to open 'edit metadata'
-    - [ ] alt + shift + click to open abstract
+    - [x] alt + shift + click to open abstract
     - [ ] ctrl + shift + alt + click to open DOI page (or maybe to search for other papers by that lab in google scholar?)
   - [x] add 'added date' to metadata.  allow editing, but fill it automatically with the day when a file is added or indexed for the first time.  Also, 'last selected date' (which updates every time the article is selected)
   - [ ] 'random article' button
-  - [ ] ctrl + scroll to resize cards (both dimensions)
+  - [x] ctrl + scroll to resize cards (both dimensions)
   
 - questions
   - is there a length limit on titles?  what about filenames?  should I process drag-and-drop pdfs to change the file name?  should I conduct references to the PDFs through some extracted hash in case files get renamed (and handle duplicates on index)?
@@ -223,14 +225,17 @@ src-tauri/              # Rust backend
     - same with copying and pasting abstract and having the line breaks carry over when they should just be a space (add a "paste from clipboard" button to the abstract and authors lines where it pastes processed version of the contents?  Just have the pasted values automatically get processed and have a right click menu option to paste raw?)
   - finding other inspiration and general clever ideas (design, UX, hotkey, speed, etc.) 
 
-- easter eggs
-  - game (temporary box destroyer), play a little jingle when opening files, have a ball bounce between the cards
-- network mode based on tags, authors (degrees of kevin bacon)
-- make a video showing the features (hotkeys, colors, thumbnail replacement, drag-and-drop)
-  - test run with Kristen
+- stretch or stupid
+  - easter eggs
+    - game (temporary box destroyer), play a little jingle when opening files, have a ball bounce between the cards
+  - 'check for updates' button
+  - network mode based on tags, authors (degrees of kevin bacon)
+  - make a video showing the features (hotkeys, colors, thumbnail replacement, drag-and-drop)
+    - test run with Kristen
 
 
-next prompt:
-some content copied from PDFs tend to carry unwanted characters and linebreaks, as well as undesirable inconsistencies.  process pasted text in the "authors" field to remove astrices and numbers and letter superscripts (mind that some individual letters will be intended as initials, and so perhaps this is best interpreted as standalone letters appearing between commas and strings with length > 1, or some other logic).  If possible, also consolidate common formatting inconsistencies, like "and" vs "&", oxford commas, and periods after initials.
 
-Similarly, in the 'abstract' field, most line breaks should be treated as spaces, except where the character preceding the line break is a hyphen.  Further, I'd like the sentences of each abstract split into 3 roughly equal-sentence-number sections with a double line break between each
+broken corrections:
+ - modal height scaling not working
+ - chips component should accept new tags
+ - ctrl+scroll should scale font size commensurately

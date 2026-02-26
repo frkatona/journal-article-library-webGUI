@@ -51,8 +51,7 @@ const dom = {
     modalClose: document.getElementById("modal-close"),
     modalThumbWrap: document.getElementById("modal-thumb-wrap"),
     modalThumb: document.getElementById("modal-thumb"),
-    thumbFile: document.getElementById("thumb-file"),
-    thumbUpload: document.getElementById("thumb-upload"),
+    thumbPaste: document.getElementById("thumb-paste"),
     thumbReset: document.getElementById("thumb-reset"),
     form: document.getElementById("metadata-form"),
     title: document.getElementById("f-title"),
@@ -75,7 +74,6 @@ const dom = {
     abstractMeta: document.getElementById("abstract-meta"),
     abstractText: document.getElementById("abstract-text"),
     highlightBtn: document.getElementById("highlight-btn"),
-    thumbPaste: document.getElementById("thumb-paste"),
     dropOverlay: document.getElementById("drop-overlay"),
     tintByTag: document.getElementById("tint-by-tag"),
     editTagColorsBtn: document.getElementById("edit-tag-colors-btn"),
@@ -684,6 +682,12 @@ function buildCard(article) {
             });
             return;
         }
+        if (evt.altKey && evt.shiftKey) {
+            evt.preventDefault();
+            evt.stopPropagation();
+            openAbstract(article);
+            return;
+        }
         if (evt.altKey) {
             evt.preventDefault();
             evt.stopPropagation();
@@ -1087,10 +1091,9 @@ async function fileToBase64(file) {
     });
 }
 
-async function uploadManualThumbnail(fileOverride = null) {
+async function uploadManualThumbnail(file) {
     if (!state.current) return;
     const currentId = state.current.id;
-    const file = fileOverride || dom.thumbFile.files?.[0];
     if (!file) {
         setStatus("Choose an image first.", true);
         return;
@@ -1145,7 +1148,6 @@ async function uploadManualThumbnail(fileOverride = null) {
         setTagChips(formSnapshot.tags);
         dom.notes.value = formSnapshot.notes;
 
-        dom.thumbFile.value = "";
         setStatus("Manual thumbnail saved.");
     } catch (err) {
         const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
@@ -1573,6 +1575,11 @@ function wireEvents() {
             if (evt.target === dom.tagInput) return;
             evt.preventDefault();
             saveMetadata(evt).then(() => closeEditor());
+        }
+        // Ctrl+P to paste thumbnail when modal is open
+        if (evt.key === "p" && evt.ctrlKey && !dom.modal.classList.contains("hidden")) {
+            evt.preventDefault();
+            dom.thumbPaste.click();
         }
     });
 }

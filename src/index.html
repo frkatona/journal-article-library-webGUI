@@ -134,17 +134,15 @@
         <div class="modal-card">
             <div class="modal-header">
                 <h2 id="modal-title">Edit Article</h2>
-                <button id="modal-close" type="button">Close</button>
+                <button id="modal-close" type="button" title="Escape">Close</button>
             </div>
             <div class="modal-layout">
                 <div id="modal-thumb-wrap" class="modal-thumb-wrap">
                     <img id="modal-thumb" src="" alt="Article thumbnail" />
-                    <p class="drop-hint">Choose a file or drag and drop an image here to auto-replace thumbnail.</p>
+                    <p class="drop-hint">Drag and drop an image here to replace thumbnail.</p>
                     <div class="thumb-tools">
-                        <input id="thumb-file" type="file" accept="image/*" />
-                        <button id="thumb-upload" type="button">Upload Manual Thumbnail</button>
-                        <button id="thumb-paste" type="button" class="ghost">Paste from Clipboard</button>
-                        <button id="thumb-reset" type="button" class="ghost">Use Auto Thumbnail</button>
+                        <button id="thumb-paste" type="button" title="Ctrl+P">Paste from Clipboard</button>
+                        <button id="thumb-reset" type="button" class="ghost">Extract Image from File</button>
                     </div>
                 </div>
                 <form id="metadata-form">
@@ -271,8 +269,20 @@
                         <td>Edit metadata</td>
                     </tr>
                     <tr>
+                        <td style="padding:6px 0;"><kbd>Alt+Shift+Click</kbd></td>
+                        <td>View abstract</td>
+                    </tr>
+                    <tr>
                         <td style="padding:6px 0;"><kbd>Right-Click</kbd></td>
                         <td>Edit metadata</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:6px 0;"><kbd>Ctrl+P</kbd></td>
+                        <td>Paste thumbnail (in modal)</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:6px 0;"><kbd>Ctrl+Scroll</kbd></td>
+                        <td>Resize cards</td>
                     </tr>
                     <tr>
                         <td style="padding:6px 0;"><kbd>Enter</kbd></td>
