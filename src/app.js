@@ -19,6 +19,7 @@ const state = {
     primarySort: window.localStorage.getItem("article-primary-sort") || "year_desc",
     secondarySort: window.localStorage.getItem("article-secondary-sort") || "title_asc",
     menuOpen: false,
+    highlightIncomplete: window.localStorage.getItem("article-highlight-incomplete") === "true",
 };
 
 const dom = {
@@ -60,6 +61,9 @@ const dom = {
     abstractTitle: document.getElementById("abstract-title"),
     abstractMeta: document.getElementById("abstract-meta"),
     abstractText: document.getElementById("abstract-text"),
+    highlightBtn: document.getElementById("highlight-btn"),
+    thumbPaste: document.getElementById("thumb-paste"),
+    dropOverlay: document.getElementById("drop-overlay"),
 };
 
 const SORT_KEYS = new Set([
@@ -327,10 +331,27 @@ function closeAbstract() {
     dom.abstractModal.classList.add("hidden");
 }
 
+function hasEmptyMetadata(article) {
+    const md = article.metadata || {};
+    const fields = [
+        normalizeWhitespace(md.title),
+        normalizeWhitespace(md.authors),
+        normalizeWhitespace(md.year),
+        normalizeWhitespace(md.journal),
+        normalizeWhitespace(md.doi),
+        normalizeWhitespace(typeof md.abstract_text === "string" ? md.abstract_text : (md.abstract || "")),
+    ];
+    const tagsEmpty = !md.tags || md.tags.length === 0 || md.tags.every((t) => !t.trim());
+    return fields.some((f) => !f) || tagsEmpty;
+}
+
 function buildCard(article) {
     const md = article.metadata || {};
     const card = document.createElement("article");
     card.className = "card";
+    if (state.highlightIncomplete && hasEmptyMetadata(article)) {
+        card.classList.add("card-incomplete");
+    }
     card.tabIndex = 0;
     card.setAttribute("role", "link");
     card.setAttribute("aria-label", `Open PDF: ${md.title || article.pdf_filename}`);
@@ -339,6 +360,47 @@ function buildCard(article) {
         if (evt.key === "Enter" || evt.key === " ") {
             evt.preventDefault();
             openPdf(article);
+        }
+    });
+
+    // Image drag-and-drop onto card for thumbnail replacement
+    ["dragenter", "dragover"].forEach((name) => {
+        card.addEventListener(name, (evt) => {
+            // Only react to image files
+            if (evt.dataTransfer && evt.dataTransfer.types.includes("Files")) {
+                evt.preventDefault();
+                evt.stopPropagation();
+                card.classList.add("drag-over");
+            }
+        });
+    });
+    ["dragleave", "dragend"].forEach((name) => {
+        card.addEventListener(name, (evt) => {
+            evt.preventDefault();
+            evt.stopPropagation();
+            card.classList.remove("drag-over");
+        });
+    });
+    card.addEventListener("drop", async (evt) => {
+        evt.preventDefault();
+        evt.stopPropagation();
+        card.classList.remove("drag-over");
+        const file = evt.dataTransfer?.files?.[0];
+        if (!file || !isImageFile(file)) return;
+        setStatus(`Updating thumbnail for "${md.title || article.pdf_filename}"...`);
+        try {
+            const base64Data = await fileToBase64(file);
+            await invoke("upload_thumbnail", {
+                articleId: article.id,
+                data: base64Data,
+            });
+            const thumbPath = articleThumbPath(article);
+            if (thumbPath) thumbCache.delete(thumbPath);
+            await loadArticles();
+            setStatus("Thumbnail updated.");
+        } catch (err) {
+            const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
+            setStatus(`Thumbnail update failed: ${message}`, true);
         }
     });
 
@@ -420,6 +482,9 @@ function buildDetailsTable(articles) {
         const md = article.metadata || {};
         const row = document.createElement("tr");
         row.className = "details-row";
+        if (state.highlightIncomplete && hasEmptyMetadata(article)) {
+            row.classList.add("card-incomplete");
+        }
         row.addEventListener("click", () => openPdf(article));
 
         const tdYear = document.createElement("td");
@@ -840,6 +905,103 @@ function wireEvents() {
         await uploadManualThumbnail(file);
     });
     dom.thumbReset.addEventListener("click", resetAutoThumbnail);
+
+    // Paste thumbnail from clipboard
+    dom.thumbPaste.addEventListener("click", async () => {
+        if (!state.current) return;
+        try {
+            const clipItems = await navigator.clipboard.read();
+            let imageBlob = null;
+            for (const item of clipItems) {
+                for (const type of item.types) {
+                    if (type.startsWith("image/")) {
+                        imageBlob = await item.getType(type);
+                        break;
+                    }
+                }
+                if (imageBlob) break;
+            }
+            if (!imageBlob) {
+                setStatus("No image found in clipboard.", true);
+                return;
+            }
+            const file = new File([imageBlob], "clipboard-image.png", { type: imageBlob.type });
+            previewSelectedThumb(file);
+            await uploadManualThumbnail(file);
+        } catch (err) {
+            const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
+            setStatus(`Clipboard paste failed: ${message}`, true);
+        }
+    });
+
+    // Highlight incomplete toggle
+    function updateHighlightBtn() {
+        dom.highlightBtn.classList.toggle("highlight-btn-active", state.highlightIncomplete);
+        dom.highlightBtn.textContent = state.highlightIncomplete ? "Highlighting Incomplete" : "Highlight Incomplete";
+    }
+    updateHighlightBtn();
+    dom.highlightBtn.addEventListener("click", () => {
+        state.highlightIncomplete = !state.highlightIncomplete;
+        window.localStorage.setItem("article-highlight-incomplete", state.highlightIncomplete ? "true" : "false");
+        updateHighlightBtn();
+        renderArticles();
+    });
+
+    // Body-level PDF drag-and-drop import
+    let dragCounter = 0;
+    document.body.addEventListener("dragenter", (evt) => {
+        // Don't show overlay if the edit modal is open (thumbnail drag should work instead)
+        if (!dom.modal.classList.contains("hidden")) return;
+        if (evt.dataTransfer && evt.dataTransfer.types.includes("Files")) {
+            evt.preventDefault();
+            dragCounter++;
+            dom.dropOverlay.classList.remove("hidden");
+        }
+    });
+    document.body.addEventListener("dragover", (evt) => {
+        if (!dom.modal.classList.contains("hidden")) return;
+        if (evt.dataTransfer && evt.dataTransfer.types.includes("Files")) {
+            evt.preventDefault();
+        }
+    });
+    document.body.addEventListener("dragleave", (evt) => {
+        dragCounter--;
+        if (dragCounter <= 0) {
+            dragCounter = 0;
+            dom.dropOverlay.classList.add("hidden");
+        }
+    });
+    document.body.addEventListener("drop", async (evt) => {
+        dragCounter = 0;
+        dom.dropOverlay.classList.add("hidden");
+        // Don't handle if modal is open
+        if (!dom.modal.classList.contains("hidden")) return;
+        evt.preventDefault();
+        const files = Array.from(evt.dataTransfer?.files || []);
+        const pdfs = files.filter((f) => f.name.toLowerCase().endsWith(".pdf"));
+        if (pdfs.length === 0) return;
+
+        setStatus(`Importing ${pdfs.length} PDF(s)...`);
+        let imported = 0;
+        for (const pdf of pdfs) {
+            try {
+                const base64Data = await fileToBase64(pdf);
+                await invoke("import_pdf", {
+                    filename: pdf.name,
+                    data: base64Data,
+                });
+                imported++;
+            } catch (err) {
+                const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
+                setStatus(`Failed to import ${pdf.name}: ${message}`, true);
+            }
+        }
+        if (imported > 0) {
+            thumbCache.clear();
+            await Promise.all([loadTags(), loadArticles()]);
+            setStatus(`Imported ${imported} PDF(s).`);
+        }
+    });
 
     document.addEventListener("click", (evt) => {
         if (!state.menuOpen) return;

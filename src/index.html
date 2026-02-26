@@ -93,6 +93,7 @@
                         </select>
                     </label>
                     <button id="reindex-btn" type="button">Reindex</button>
+                    <button id="highlight-btn" type="button" class="ghost">Highlight Incomplete</button>
                 </div>
             </div>
         </div>
@@ -118,6 +119,7 @@
                     <div class="thumb-tools">
                         <input id="thumb-file" type="file" accept="image/*" />
                         <button id="thumb-upload" type="button">Upload Manual Thumbnail</button>
+                        <button id="thumb-paste" type="button" class="ghost">Paste from Clipboard</button>
                         <button id="thumb-reset" type="button" class="ghost">Use Auto Thumbnail</button>
                     </div>
                 </div>
@@ -175,6 +177,10 @@
                 <div id="abstract-text"></div>
             </div>
         </div>
+    </div>
+
+    <div id="drop-overlay" class="hidden">
+        <div class="drop-message">Drop PDF files here to import</div>
     </div>
 
     <script src="app.js" defer></script>

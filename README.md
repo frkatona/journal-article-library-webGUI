@@ -180,8 +180,7 @@ src-tauri/              # Rust backend
 
 
 ## to-do
- - rebase from master to tauri
- - resize the 'edit' modal (currently the exit button is inaccessible at normal heights, <1080)
+ - have edit modal appear in front of the top bar  (currently the exit button is inaccessible at normal heights, <1080)
   - also allow a left click *down* to click out of it, not *up*
  - think on thumbnail images
   - where to store them (do they need separate storage?)
@@ -189,7 +188,8 @@ src-tauri/              # Rust backend
   - automatically check the custom folder and sidestep extraction if found?  Check based on exact filename, fuzzy, trailing hash from the file itself, or ?
   - auto-rescale stored image when resolution is unecessarily high 
  - add menu option to highlight which articles have unfilled fields (other than tags and notes)
- - fix the thumbnail not appearing as taskbar icon
+ - fix the app's icon not appearing in the taskbar
  - explore adding a database
  - explore pushing a build that can be launched from an executable
- - drag-and-drop pdfs into the app to add to library, as well as thumbnail images
+ - drag-and-drop pdfs into the app to add to library and images onto the cards to replace thumbnail images
+   - show a prompt to accept or undo the changes for drag-and-drop thumbnails

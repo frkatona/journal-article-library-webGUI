@@ -1314,6 +1314,82 @@ fn get_thumbnail_url(
 }
 
 #[tauri::command]
+fn import_pdf(
+    state: tauri::State<'_, Mutex<AppState>>,
+    filename: String,
+    data: String,
+) -> Result<MutationResponse, String> {
+    let mut st = state.lock().map_err(|e| e.to_string())?;
+    let _index = load_index(&mut st);
+    st.ensure_dirs();
+
+    // Decode the base64 PDF data
+    let bytes = B64
+        .decode(&data)
+        .map_err(|e| format!("Failed to decode base64: {}", e))?;
+
+    // Determine output filename, deduplicating if needed
+    let safe_name = filename
+        .trim()
+        .replace('/', "_")
+        .replace('\\', "_");
+    let safe_name = if safe_name.is_empty() {
+        "imported.pdf".to_string()
+    } else if !safe_name.to_lowercase().ends_with(".pdf") {
+        format!("{}.pdf", safe_name)
+    } else {
+        safe_name
+    };
+
+    let mut output_path = st.articles_dir.join(&safe_name);
+    if output_path.exists() {
+        let stem = output_path
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        let ext = output_path
+            .extension()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        let mut counter = 1u32;
+        loop {
+            let candidate = st
+                .articles_dir
+                .join(format!("{}_{}.{}", stem, counter, ext));
+            if !candidate.exists() {
+                output_path = candidate;
+                break;
+            }
+            counter += 1;
+        }
+    }
+
+    fs::write(&output_path, &bytes)
+        .map_err(|e| format!("Failed to write PDF: {}", e))?;
+
+    // Process the new PDF
+    let strategy = st.default_strategy.clone();
+    let article = process_single_pdf(&output_path, &st, &strategy)
+        .ok_or_else(|| "Failed to process imported PDF".to_string())?;
+
+    // Add to the in-memory index
+    let index_path = st.index_path.clone();
+    let index = st.index.as_mut().ok_or("no index loaded")?;
+    index.articles.push(article.clone());
+    index.article_count = index.articles.len();
+
+    let json = serde_json::to_string_pretty(index).unwrap_or_default();
+    let _ = fs::write(&index_path, json);
+
+    Ok(MutationResponse {
+        ok: true,
+        article,
+    })
+}
+
+#[tauri::command]
 fn get_root_dir(state: tauri::State<'_, Mutex<AppState>>) -> Result<String, String> {
     let st = state.lock().map_err(|e| e.to_string())?;
     Ok(st.root_dir.to_string_lossy().to_string())
@@ -1352,6 +1428,7 @@ pub fn run() {
             open_pdf,
             get_thumbnail_url,
             get_root_dir,
+            import_pdf,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
