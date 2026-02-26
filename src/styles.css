@@ -667,3 +667,89 @@ main {
     grid-template-columns: 1fr;
   }
 }
+
+/* Tag chip container */
+.tag-chip-container {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  min-height: 34px;
+  cursor: text;
+  position: relative;
+}
+
+.tag-chip-container:focus-within {
+  border-color: var(--accent);
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(82, 208, 163, 0.18);
+  color: var(--text);
+  border: 1px solid rgba(82, 208, 163, 0.4);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 0.82rem;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.tag-chip .chip-x {
+  cursor: pointer;
+  font-size: 0.9rem;
+  opacity: 0.6;
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.tag-chip .chip-x:hover {
+  opacity: 1;
+  color: var(--danger);
+}
+
+.tag-chip-input {
+  flex: 1 1 60px;
+  min-width: 60px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.88rem;
+  outline: none;
+  padding: 2px 4px;
+}
+
+.tag-autocomplete {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 0 0 6px 6px;
+  max-height: 160px;
+  overflow-y: auto;
+  z-index: 100;
+}
+
+.tag-autocomplete .ac-item {
+  padding: 5px 10px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.tag-autocomplete .ac-item:hover,
+.tag-autocomplete .ac-item.active {
+  background: rgba(82, 208, 163, 0.2);
+}
+
+.tag-autocomplete .ac-match {
+  font-weight: 700;
+  color: var(--accent);
+}

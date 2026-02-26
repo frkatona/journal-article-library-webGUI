@@ -188,9 +188,17 @@
                         <span>Abstract</span>
                         <textarea id="f-abstract" name="abstract" rows="5"></textarea>
                     </label>
+                    <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                        <input id="paste-cleanup" type="checkbox" checked />
+                        <span style="font-size:0.82rem;">Auto-clean pasted text</span>
+                    </label>
                     <label class="field">
-                        <span>Custom tags (comma separated)</span>
-                        <input id="f-tags" name="tags" type="text" />
+                        <span>Tags</span>
+                        <div id="tag-chip-container" class="tag-chip-container">
+                            <input id="f-tag-input" type="text" class="tag-chip-input" placeholder="Add tag..."
+                                autocomplete="off" />
+                            <div id="tag-autocomplete" class="tag-autocomplete hidden"></div>
+                        </div>
                     </label>
                     <label class="field">
                         <span>Notes</span>

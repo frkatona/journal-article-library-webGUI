@@ -23,6 +23,7 @@ const state = {
     highlightIncomplete: window.localStorage.getItem("article-highlight-incomplete") === "true",
     tintByTag: window.localStorage.getItem("article-tint-by-tag") === "true",
     tagColors: JSON.parse(window.localStorage.getItem("article-tag-colors") || "{}"),
+    acIndex: -1,
 };
 
 const dom = {
@@ -63,7 +64,10 @@ const dom = {
     pages: document.getElementById("f-pages"),
     doi: document.getElementById("f-doi"),
     abstract: document.getElementById("f-abstract"),
-    tags: document.getElementById("f-tags"),
+    pasteCleanup: document.getElementById("paste-cleanup"),
+    tagChipContainer: document.getElementById("tag-chip-container"),
+    tagInput: document.getElementById("f-tag-input"),
+    tagAutocomplete: document.getElementById("tag-autocomplete"),
     notes: document.getElementById("f-notes"),
     abstractModal: document.getElementById("abstract-modal"),
     abstractClose: document.getElementById("abstract-close"),
@@ -217,7 +221,190 @@ function normalizeWhitespace(text) {
     return (text || "").replace(/\s+/g, " ").trim();
 }
 
-// Get thumbnail data URL (cached)
+// Clean pasted author text from PDF copy
+function cleanAuthors(raw) {
+    let s = raw;
+    // Remove unicode superscript digits and letters (⁰¹²³⁴⁵⁶⁷⁸⁹ᵃᵇᶜᵈᵉ...)
+    s = s.replace(/[\u2070-\u209F\u00B2\u00B3\u00B9\u1D43-\u1D6A\u2071\u207F]/g, "");
+    // Remove asterisks, daggers, double daggers, section signs
+    s = s.replace(/[*†‡§¶]/g, "");
+    // Remove standalone numeric superscripts (digits sitting alone between words — e.g. "Smith1,2 Jones")
+    s = s.replace(/(?<=\w)\s*\d+(?:\s*[,;]\s*\d+)*(?=\s*[,;&]|\s+[A-Z]|\s*$)/g, "");
+    // Remove stray standalone single digits not part of years or words
+    s = s.replace(/(?<=,\s*)\d+\s*(?=,|$)/g, "");
+    // Remove trailing numbers after names
+    s = s.replace(/\b(\d+)\b(?!\s*\d{3})/g, (match, num) => {
+        // Keep 4-digit years, remove everything else
+        return num.length === 4 ? match : "";
+    });
+    // Collapse multiple spaces/commas
+    s = s.replace(/\s+/g, " ").trim();
+    s = s.replace(/,\s*,+/g, ",");
+    // Normalize "&" → "and"
+    s = s.replace(/\s*&\s*/g, " and ");
+    // Normalize line breaks → space
+    s = s.replace(/[\r\n]+/g, " ").trim();
+    // Split into individual author tokens by comma or "and"
+    let authors = s.split(/\s*,\s*/).map((a) => a.trim()).filter(Boolean);
+    // Handle "and" in last entry: "Smith and Jones" → ["Smith", "Jones"]
+    if (authors.length > 0) {
+        const last = authors[authors.length - 1];
+        const andParts = last.split(/\s+and\s+/i);
+        if (andParts.length === 2 && andParts[0].trim() && andParts[1].trim()) {
+            authors[authors.length - 1] = andParts[0].trim();
+            authors.push(andParts[1].trim());
+        }
+    }
+    // Remove stray single-letter superscripts: a lone single letter between authors
+    // that isn't part of an initial pattern (e.g., "a" between "Smith" and "Jones")
+    authors = authors.filter((a) => {
+        // Keep if it's longer than 1 char, or if it looks like an initial (A. or A)
+        if (a.length > 2) return true;
+        if (a.length === 0) return false;
+        // Single letter with optional period — could be initial or superscript
+        // Keep it if it has a period (initial), reject bare single letters
+        if (/^[a-z]$/i.test(a)) return false; // bare single letter = superscript artifact
+        return true;
+    });
+    // Ensure periods after initials: "J Smith" → "J. Smith", "A B Smith" → "A. B. Smith"
+    authors = authors.map((author) => {
+        return author.replace(/\b([A-Z])(?=\s|$)/g, "$1.");
+    });
+    // Rejoin with ", " and "and" before last
+    if (authors.length <= 1) return authors.join("");
+    if (authors.length === 2) return `${authors[0]} and ${authors[1]}`;
+    return `${authors.slice(0, -1).join(", ")}, and ${authors[authors.length - 1]}`;
+}
+
+// Clean pasted abstract text from PDF copy
+function cleanAbstract(raw) {
+    let s = raw;
+    // Join hyphenated line breaks (word-\n continuation)
+    s = s.replace(/-\s*[\r\n]+\s*/g, "");
+    // Replace remaining line breaks with space
+    s = s.replace(/[\r\n]+/g, " ");
+    // Remove stray super/subscript unicode chars
+    s = s.replace(/[\u2070-\u209F\u00B2\u00B3\u00B9\u1D43-\u1D6A\u2071\u207F]/g, "");
+    // Collapse whitespace
+    s = s.replace(/\s+/g, " ").trim();
+    // Split into sentences (keep the delimiter with the preceding sentence)
+    const sentences = s.match(/[^.!?]*[.!?]+(\s|$)/g) || [s];
+    const cleaned = sentences.map((sent) => sent.trim()).filter(Boolean);
+    if (cleaned.length <= 3) return cleaned.join(" ");
+    // Split into 3 roughly equal-size groups
+    const perGroup = Math.ceil(cleaned.length / 3);
+    const groups = [];
+    for (let i = 0; i < cleaned.length; i += perGroup) {
+        groups.push(cleaned.slice(i, i + perGroup).join(" "));
+    }
+    return groups.join("\n\n");
+}
+
+// ---- Tag chip system ----
+function getAllKnownTags() {
+    const set = new Set();
+    for (const article of state.articles) {
+        for (const tag of (article.metadata?.tags || [])) {
+            const t = tag.trim();
+            if (t) set.add(t);
+        }
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+}
+
+function addTagChip(tag) {
+    const t = tag.trim();
+    if (!t) return;
+    // Don't dupe
+    const existing = getTagChips();
+    if (existing.some((e) => e.toLowerCase() === t.toLowerCase())) return;
+    const chip = document.createElement("span");
+    chip.className = "tag-chip";
+    chip.dataset.tag = t;
+    chip.textContent = t;
+    const x = document.createElement("span");
+    x.className = "chip-x";
+    x.textContent = "×";
+    x.addEventListener("click", () => chip.remove());
+    chip.appendChild(x);
+    // Insert before the input
+    dom.tagChipContainer.insertBefore(chip, dom.tagInput);
+}
+
+function setTagChips(tags) {
+    // Remove existing chips
+    dom.tagChipContainer.querySelectorAll(".tag-chip").forEach((c) => c.remove());
+    for (const tag of tags) addTagChip(tag);
+}
+
+function getTagChips() {
+    return Array.from(dom.tagChipContainer.querySelectorAll(".tag-chip"))
+        .map((c) => c.dataset.tag)
+        .filter(Boolean);
+}
+
+function fuzzyMatch(tag, query) {
+    const lower = tag.toLowerCase();
+    const q = query.toLowerCase();
+    if (lower.includes(q)) return { match: true, score: lower.indexOf(q) === 0 ? 2 : 1, tag };
+    // Simple fuzzy: all query chars appear in order
+    let qi = 0;
+    for (let i = 0; i < lower.length && qi < q.length; i++) {
+        if (lower[i] === q[qi]) qi++;
+    }
+    if (qi === q.length) return { match: true, score: 0, tag };
+    return { match: false, score: -1, tag };
+}
+
+function updateTagAutocomplete(query) {
+    clearNode(dom.tagAutocomplete);
+    if (!query.trim()) {
+        dom.tagAutocomplete.classList.add("hidden");
+        state.acIndex = -1;
+        return;
+    }
+    const currentTags = new Set(getTagChips().map((t) => t.toLowerCase()));
+    const allTags = getAllKnownTags().filter((t) => !currentTags.has(t.toLowerCase()));
+    const matches = allTags
+        .map((t) => fuzzyMatch(t, query))
+        .filter((m) => m.match)
+        .sort((a, b) => b.score - a.score);
+    if (matches.length === 0) {
+        dom.tagAutocomplete.classList.add("hidden");
+        state.acIndex = -1;
+        return;
+    }
+    state.acIndex = 0;
+    const q = query.toLowerCase();
+    for (let i = 0; i < matches.length && i < 8; i++) {
+        const item = document.createElement("div");
+        item.className = "ac-item" + (i === 0 ? " active" : "");
+        // Highlight matching portion
+        const tag = matches[i].tag;
+        const idx = tag.toLowerCase().indexOf(q);
+        if (idx >= 0) {
+            item.innerHTML =
+                escapeHtml(tag.slice(0, idx)) +
+                `<span class="ac-match">${escapeHtml(tag.slice(idx, idx + q.length))}</span>` +
+                escapeHtml(tag.slice(idx + q.length));
+        } else {
+            item.textContent = tag;
+        }
+        item.dataset.tag = tag;
+        item.addEventListener("mousedown", (evt) => {
+            evt.preventDefault(); // keep focus on input
+            addTagChip(tag);
+            dom.tagInput.value = "";
+            dom.tagAutocomplete.classList.add("hidden");
+        });
+        dom.tagAutocomplete.appendChild(item);
+    }
+    dom.tagAutocomplete.classList.remove("hidden");
+}
+
+function escapeHtml(str) {
+    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
 async function getThumbDataUrl(relPath) {
     if (!relPath) return "";
     if (thumbCache.has(relPath)) return thumbCache.get(relPath);
@@ -800,7 +987,10 @@ function openEditor(article) {
     dom.pages.value = md.pages || "";
     dom.doi.value = md.doi || "";
     dom.abstract.value = md.abstract || "";
-    dom.tags.value = (md.tags || []).join(", ");
+    // Render tag chips
+    setTagChips(md.tags || []);
+    dom.tagInput.value = "";
+    dom.tagAutocomplete.classList.add("hidden");
     dom.notes.value = md.notes || "";
 
     // Load thumbnail into modal
@@ -837,10 +1027,7 @@ async function saveMetadata(evt) {
         pages: dom.pages.value.trim(),
         doi: dom.doi.value.trim(),
         abstract: abstractValue,
-        tags: dom.tags.value
-            .split(",")
-            .map((x) => x.trim())
-            .filter(Boolean),
+        tags: getTagChips(),
         notes: notesValue,
     };
 
@@ -924,7 +1111,7 @@ async function uploadManualThumbnail(fileOverride = null) {
         pages: dom.pages.value,
         doi: dom.doi.value,
         abstract: dom.abstract.value,
-        tags: dom.tags.value,
+        tags: getTagChips(),
         notes: dom.notes.value,
     };
 
@@ -955,7 +1142,7 @@ async function uploadManualThumbnail(fileOverride = null) {
         dom.pages.value = formSnapshot.pages;
         dom.doi.value = formSnapshot.doi;
         dom.abstract.value = formSnapshot.abstract;
-        dom.tags.value = formSnapshot.tags;
+        setTagChips(formSnapshot.tags);
         dom.notes.value = formSnapshot.notes;
 
         dom.thumbFile.value = "";
@@ -1033,6 +1220,94 @@ function wireEvents() {
         state.tag = dom.tagFilter.value.trim();
         await loadArticles();
     });
+
+    // Paste cleanup for authors field (gated by checkbox)
+    dom.authors.addEventListener("paste", (evt) => {
+        if (!dom.pasteCleanup.checked) return;
+        const text = evt.clipboardData?.getData("text/plain");
+        if (!text) return;
+        evt.preventDefault();
+        const cleaned = cleanAuthors(text);
+        document.execCommand("insertText", false, cleaned);
+        showToast("Authors cleaned from PDF paste");
+    });
+
+    // Paste cleanup for abstract field (gated by checkbox)
+    dom.abstract.addEventListener("paste", (evt) => {
+        if (!dom.pasteCleanup.checked) return;
+        const text = evt.clipboardData?.getData("text/plain");
+        if (!text) return;
+        evt.preventDefault();
+        const cleaned = cleanAbstract(text);
+        document.execCommand("insertText", false, cleaned);
+        showToast("Abstract cleaned from PDF paste");
+    });
+
+    // Tag input: autocomplete + chip creation
+    dom.tagInput.addEventListener("input", () => {
+        updateTagAutocomplete(dom.tagInput.value);
+    });
+    dom.tagInput.addEventListener("keydown", (evt) => {
+        const items = dom.tagAutocomplete.querySelectorAll(".ac-item");
+        if (evt.key === "Tab" || (evt.key === "Enter" && items.length > 0)) {
+            evt.preventDefault();
+            const activeIdx = Math.max(0, state.acIndex);
+            const active = items[activeIdx];
+            if (active) {
+                addTagChip(active.dataset.tag);
+                dom.tagInput.value = "";
+                dom.tagAutocomplete.classList.add("hidden");
+            }
+            return;
+        }
+        if (evt.key === "ArrowDown") {
+            evt.preventDefault();
+            if (items.length === 0) return;
+            state.acIndex = Math.min(state.acIndex + 1, items.length - 1);
+            items.forEach((it, i) => it.classList.toggle("active", i === state.acIndex));
+            return;
+        }
+        if (evt.key === "ArrowUp") {
+            evt.preventDefault();
+            if (items.length === 0) return;
+            state.acIndex = Math.max(state.acIndex - 1, 0);
+            items.forEach((it, i) => it.classList.toggle("active", i === state.acIndex));
+            return;
+        }
+        if (evt.key === "Backspace" && dom.tagInput.value === "") {
+            // Remove last chip
+            const chips = dom.tagChipContainer.querySelectorAll(".tag-chip");
+            if (chips.length > 0) chips[chips.length - 1].remove();
+            return;
+        }
+        if (evt.key === ",") {
+            evt.preventDefault();
+            const val = dom.tagInput.value.trim();
+            if (val) addTagChip(val);
+            dom.tagInput.value = "";
+            dom.tagAutocomplete.classList.add("hidden");
+        }
+    });
+    dom.tagInput.addEventListener("blur", () => {
+        // Small delay so mousedown on autocomplete item fires first
+        setTimeout(() => dom.tagAutocomplete.classList.add("hidden"), 150);
+    });
+    // Click on chip container focuses the input
+    dom.tagChipContainer.addEventListener("click", () => dom.tagInput.focus());
+
+    // Ctrl+scroll to resize cards
+    document.addEventListener("wheel", (evt) => {
+        if (!evt.ctrlKey) return;
+        // Don't resize when inside modal or menu
+        if (!dom.modal.classList.contains("hidden")) return;
+        evt.preventDefault();
+        const delta = evt.deltaY > 0 ? -10 : 10;
+        applyCardHeight(state.cardHeight + delta);
+        applyCardWidth(state.cardWidth + delta);
+        window.localStorage.setItem("article-card-height", String(state.cardHeight));
+        window.localStorage.setItem("article-card-width", String(state.cardWidth));
+    }, { passive: false });
+
     // View mode toggle
     dom.viewModeToggle.checked = state.viewMode === "details";
     dom.viewModeToggle.addEventListener("change", () => {
@@ -1293,8 +1568,9 @@ function wireEvents() {
             dom.hotkeysModal.classList.add("hidden");
         }
         if (evt.key === "Enter" && !dom.modal.classList.contains("hidden")) {
-            // Don't trigger if user is in a textarea
+            // Don't trigger if user is in a textarea or the tag input
             if (evt.target.tagName === "TEXTAREA") return;
+            if (evt.target === dom.tagInput) return;
             evt.preventDefault();
             saveMetadata(evt).then(() => closeEditor());
         }

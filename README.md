@@ -193,10 +193,13 @@ src-tauri/              # Rust backend
     - checkbox for color-blind palette
   - menu button color
   - [x] taskbar icon - remove black box background; add a bit more texture
+  - [ ] remove "upload manual thumbnail" and use its green color for the "paste from clipboard" option
+    - [ ] change "use auto thumbnail" to "extract image from file"
 
 - features
   - [x] allow a left click down (but not a click release) to click out of the metadata modal
   - [x] process pasted input to the "authors" and abstract" fields to try to fix common PDF copy-paste issues (astrices, number/letter superscripts, consistency in '.' after initials, 'and' vs '&',oxford commas, and line breaks)
+    - [ ] sometimes logic breaking characters (I think citations in the abstracts...perhaps consider cases where the authors are separated, though probably not worth it)
     - add checkbox to enable this automatic paste processing (enabled by default)
   - [ ] auto-rescale stored image when resolution is unecessarily high 
   - [ ] show a prompt to accept or undo the changes for drag-and-drop thumbnails
@@ -205,18 +208,20 @@ src-tauri/              # Rust backend
   - hotkeys
     - [x] 'esc', 'enter', or click out of box to exit metadata modal
     - [x] ctrl + shift + click to open 'edit metadata'
+    - [ ] alt + shift + click to open abstract
     - [ ] ctrl + shift + alt + click to open DOI page (or maybe to search for other papers by that lab in google scholar?)
   - [x] add 'added date' to metadata.  allow editing, but fill it automatically with the day when a file is added or indexed for the first time.  Also, 'last selected date' (which updates every time the article is selected)
   - [ ] 'random article' button
   - [ ] ctrl + scroll to resize cards (both dimensions)
   
 - questions
-  - where are these thumbnail images going?  they're not populating the folder
+  - is there a length limit on titles?  what about filenames?  should I process drag-and-drop pdfs to change the file name?  should I conduct references to the PDFs through some extracted hash in case files get renamed (and handle duplicates on index)?
+  - [x] where are these thumbnail images going?  they're not populating the folder
   - when does scaling become a concern?  what is involved in implementing a database?
   - how long does compiling to executable take and how far is that from a zip that anyone can open?  On what devices?  Macs?  Phones?
   - is there no better existing method for extracting PDF data?  Even some recommended screenshot text analysis?
     - same with copying and pasting abstract and having the line breaks carry over when they should just be a space (add a "paste from clipboard" button to the abstract and authors lines where it pastes processed version of the contents?  Just have the pasted values automatically get processed and have a right click menu option to paste raw?)
-  - general ideas
+  - finding other inspiration and general clever ideas (design, UX, hotkey, speed, etc.) 
 
 - easter eggs
   - game (temporary box destroyer), play a little jingle when opening files, have a ball bounce between the cards
