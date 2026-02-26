@@ -43,16 +43,10 @@ body {
   z-index: 10;
 }
 
-.title-wrap h1 {
-  margin: 0;
-  font-size: 1.4rem;
-  letter-spacing: 0.03em;
-}
-
-.subtitle {
-  margin: 4px 0 12px;
-  color: var(--muted);
-  font-size: 0.92rem;
+main {
+  padding: 20px;
+  position: relative;
+  z-index: 1;
 }
 
 .controls {
@@ -402,7 +396,7 @@ main {
 
 .modal-card {
   width: min(980px, 100%);
-  max-height: calc(100vh - 28px);
+  height: clamp(400px, 85vh, 900px);
   overflow: auto;
   border: 1px solid var(--line);
   border-radius: 12px;

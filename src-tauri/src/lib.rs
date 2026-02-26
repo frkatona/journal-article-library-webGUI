@@ -1423,6 +1423,19 @@ fn open_file_location(state: tauri::State<'_, Mutex<AppState>>, relpath: String)
 }
 
 #[tauri::command]
+fn open_articles_folder(state: tauri::State<'_, Mutex<AppState>>) -> Result<(), String> {
+    let st = state.lock().map_err(|e| e.to_string())?;
+    
+    // Strip `\\?\` prefix which often breaks `opener` on Windows
+    let mut path_str = st.articles_dir.to_string_lossy().to_string();
+    if path_str.starts_with("\\\\?\\") {
+        path_str = path_str.replacen("\\\\?\\", "", 1);
+    }
+    
+    opener::open(&path_str).map_err(|e| format!("Failed to open articles folder: {}", e))
+}
+
+#[tauri::command]
 fn get_thumbnail_url(
     state: tauri::State<'_, Mutex<AppState>>,
     rel_path: String,
@@ -1514,6 +1527,82 @@ fn import_pdf(
 }
 
 #[tauri::command]
+fn import_pdfs_from_paths(
+    state: tauri::State<'_, Mutex<AppState>>,
+    paths: Vec<String>,
+) -> Result<Vec<MutationResponse>, String> {
+    let mut st = state.lock().map_err(|e| e.to_string())?;
+    // Ensure index is loaded and dir exists
+    let _index = load_index(&mut st);
+    st.ensure_dirs();
+
+    let mut results = Vec::new();
+    let strategy = st.default_strategy.clone();
+
+    for path_str in paths {
+        let path = Path::new(&path_str);
+        if !path.exists() || !path.is_file() {
+            continue;
+        }
+
+        let filename = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+        let mut safe_name = filename.trim().replace('/', "_").replace('\\', "_");
+        if safe_name.is_empty() {
+            safe_name = "imported.pdf".to_string();
+        } else if !safe_name.to_lowercase().ends_with(".pdf") {
+            safe_name = format!("{}.pdf", safe_name);
+        }
+
+        let mut output_path = st.articles_dir.join(&safe_name);
+        
+        let path_parent = path.parent().and_then(|p| p.canonicalize().ok());
+        let articles_can = st.articles_dir.canonicalize().ok();
+        
+        // If file is already inside Articles manually, just process it.
+        if path_parent.is_some() && path_parent == articles_can {
+            output_path = path.to_path_buf();
+        } else {
+            if output_path.exists() {
+                let stem = output_path.file_stem().unwrap_or_default().to_string_lossy();
+                let ext = output_path.extension().unwrap_or_default().to_string_lossy();
+                let mut counter = 1u32;
+                loop {
+                    let candidate = st.articles_dir.join(format!("{}_{}.{}", stem, counter, ext));
+                    if !candidate.exists() {
+                        output_path = candidate;
+                        break;
+                    }
+                    counter += 1;
+                }
+            }
+
+            if let Err(e) = fs::copy(&path, &output_path) {
+                return Err(format!("Failed to copy file from {:?} to {:?}: {}", path, output_path, e));
+            }
+        }
+
+        if let Some(article) = process_single_pdf(&output_path, &st, &strategy, true) {
+            if let Some(index) = st.index.as_mut() {
+                index.articles.retain(|a| a.id != article.id);
+                index.articles.push(article.clone());
+                index.article_count = index.articles.len();
+            }
+            results.push(MutationResponse { ok: true, article });
+        } else {
+            return Err(format!("Failed to parse PDF metadata using standard extraction for {:?}", output_path));
+        }
+    }
+
+    if let Some(index) = st.index.as_ref() {
+        if let Ok(json) = serde_json::to_string_pretty(index) {
+            let _ = fs::write(&st.index_path, json);
+        }
+    }
+
+    Ok(results)
+}
+
+#[tauri::command]
 fn get_root_dir(state: tauri::State<'_, Mutex<AppState>>) -> Result<String, String> {
     let st = state.lock().map_err(|e| e.to_string())?;
     Ok(st.root_dir.to_string_lossy().to_string())
@@ -1551,9 +1640,11 @@ pub fn run() {
             upload_thumbnail,
             open_pdf,
             open_file_location,
+            open_articles_folder,
             get_thumbnail_url,
             get_root_dir,
             import_pdf,
+            import_pdfs_from_paths,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -22,11 +22,13 @@ const state = {
     menuOpen: false,
     highlightIncomplete: window.localStorage.getItem("article-highlight-incomplete") === "true",
     tintByTag: window.localStorage.getItem("article-tint-by-tag") === "true",
+    colorIntensity: Number.parseInt(window.localStorage.getItem("article-color-intensity") || "13", 10),
     tagColors: JSON.parse(window.localStorage.getItem("article-tag-colors") || "{}"),
     acIndex: -1,
 };
 
 const dom = {
+    topbar: document.getElementById("topbar"),
     settingsWrap: document.getElementById("settings-wrap"),
     menuToggle: document.getElementById("menu-toggle"),
     settingsMenu: document.getElementById("settings-menu"),
@@ -38,6 +40,8 @@ const dom = {
     cardWidthValue: document.getElementById("card-width-value"),
     cardFontSlider: document.getElementById("card-font-slider"),
     cardFontValue: document.getElementById("card-font-value"),
+    colorIntensitySlider: document.getElementById("color-intensity-slider"),
+    colorIntensityValue: document.getElementById("color-intensity-value"),
     fontFamilySelect: document.getElementById("font-family-select"),
     searchInput: document.getElementById("search-input"),
     tagFilter: document.getElementById("tag-filter"),
@@ -45,12 +49,17 @@ const dom = {
     viewModeToggle: document.getElementById("view-mode-toggle"),
     parsePdfs: document.getElementById("parse-pdfs"),
     reindexBtn: document.getElementById("reindex-btn"),
+    openArticlesBtn: document.getElementById("open-articles-btn"),
     statusLine: document.getElementById("status-line"),
     grid: document.getElementById("grid"),
     modal: document.getElementById("edit-modal"),
     modalClose: document.getElementById("modal-close"),
     modalThumbWrap: document.getElementById("modal-thumb-wrap"),
     modalThumb: document.getElementById("modal-thumb"),
+    emptyState: document.getElementById("empty-state"),
+    emptyUploadBtn: document.getElementById("empty-upload-btn"),
+    emptyReindexBtn: document.getElementById("empty-reindex-btn"),
+    emptyFileInput: document.getElementById("empty-file-input"),
     thumbPaste: document.getElementById("thumb-paste"),
     thumbReset: document.getElementById("thumb-reset"),
     form: document.getElementById("metadata-form"),
@@ -68,6 +77,7 @@ const dom = {
     tagInput: document.getElementById("f-tag-input"),
     tagAutocomplete: document.getElementById("tag-autocomplete"),
     notes: document.getElementById("f-notes"),
+    autoHideTopbar: document.getElementById("auto-hide-topbar"),
     abstractModal: document.getElementById("abstract-modal"),
     abstractClose: document.getElementById("abstract-close"),
     abstractTitle: document.getElementById("abstract-title"),
@@ -620,7 +630,8 @@ function getCardTint(article) {
         hSum += h; sSum += s; lSum += l;
     }
     const n = tags.length;
-    return `hsla(${Math.round(hSum / n)}, ${Math.round(sSum / n)}%, ${Math.round(lSum / n)}%, 0.13)`;
+    let alpha = state.colorIntensity / 100;
+    return `hsla(${Math.round(hSum / n)}, ${Math.round(sSum / n)}%, ${Math.round(lSum / n)}%, ${alpha})`;
 }
 
 function saveTagColors() {
@@ -923,6 +934,14 @@ function buildDetailsTable(articles) {
 function renderArticles() {
     clearNode(dom.grid);
     dom.grid.classList.toggle("details-mode", state.viewMode === "details");
+
+    if (state.articles.length === 0 && !state.query && !state.tag) {
+        dom.emptyState.classList.remove("hidden");
+        return;
+    } else {
+        dom.emptyState.classList.add("hidden");
+    }
+
     const sortedArticles = sortArticles(state.articles);
     if (!sortedArticles.length) {
         const empty = document.createElement("p");
@@ -1262,6 +1281,16 @@ function wireEvents() {
             }
             return;
         }
+        if (evt.key === "Enter" && items.length === 0) {
+            const val = dom.tagInput.value.trim();
+            if (val) {
+                evt.preventDefault();
+                addTagChip(val);
+                dom.tagInput.value = "";
+                dom.tagAutocomplete.classList.add("hidden");
+                return;
+            }
+        }
         if (evt.key === "ArrowDown") {
             evt.preventDefault();
             if (items.length === 0) return;
@@ -1304,10 +1333,13 @@ function wireEvents() {
         if (!dom.modal.classList.contains("hidden")) return;
         evt.preventDefault();
         const delta = evt.deltaY > 0 ? -10 : 10;
+        const fontDelta = evt.deltaY > 0 ? -1 : 1;
         applyCardHeight(state.cardHeight + delta);
         applyCardWidth(state.cardWidth + delta);
+        applyCardFont(state.cardFont + fontDelta);
         window.localStorage.setItem("article-card-height", String(state.cardHeight));
         window.localStorage.setItem("article-card-width", String(state.cardWidth));
+        window.localStorage.setItem("article-card-font", String(state.cardFont));
     }, { passive: false });
 
     // View mode toggle
@@ -1403,6 +1435,14 @@ function wireEvents() {
         applyCardFont(dom.cardFontSlider.value);
         window.localStorage.setItem("article-card-font", String(state.cardFont));
     });
+    if (dom.colorIntensitySlider) {
+        dom.colorIntensitySlider.addEventListener("input", () => {
+            state.colorIntensity = Number.parseInt(dom.colorIntensitySlider.value, 10);
+            if (dom.colorIntensityValue) dom.colorIntensityValue.textContent = state.colorIntensity;
+            window.localStorage.setItem("article-color-intensity", String(state.colorIntensity));
+            renderArticles();
+        });
+    }
     if (dom.fontFamilySelect) {
         dom.fontFamilySelect.addEventListener("change", () => {
             applyFontFamily(dom.fontFamilySelect.value);
@@ -1410,15 +1450,16 @@ function wireEvents() {
         });
     }
     dom.reindexBtn.addEventListener("click", doReindex);
+    if (dom.openArticlesBtn) {
+        dom.openArticlesBtn.addEventListener("click", () => {
+            invoke("open_articles_folder").catch(err => {
+                setStatus(`Failed to open folder: ${err}`, true);
+            });
+        });
+    }
     dom.modalClose.addEventListener("click", closeEditor);
     dom.abstractClose.addEventListener("click", closeAbstract);
     dom.form.addEventListener("submit", saveMetadata);
-    dom.thumbUpload.addEventListener("click", () => uploadManualThumbnail());
-    dom.thumbFile.addEventListener("change", async () => {
-        const file = dom.thumbFile.files?.[0];
-        if (!file) return;
-        await uploadManualThumbnail(file);
-    });
 
     ["dragenter", "dragover"].forEach((name) => {
         dom.modalThumbWrap.addEventListener(name, (evt) => {
@@ -1485,8 +1526,78 @@ function wireEvents() {
         renderArticles();
     });
 
+    // Empty state buttons
+    dom.emptyReindexBtn.addEventListener("click", doReindex);
+    dom.emptyUploadBtn.addEventListener("click", () => dom.emptyFileInput.click());
+    dom.emptyFileInput.addEventListener("change", async (evt) => {
+        const files = Array.from(evt.target.files || []);
+        const pdfs = files.filter((f) => f.name.toLowerCase().endsWith(".pdf"));
+        if (pdfs.length === 0) return;
+
+        setStatus(`Importing ${pdfs.length} PDF(s)...`);
+        try {
+            for (const pdf of pdfs) {
+                const base64Data = await fileToBase64(pdf);
+                await invoke("import_pdf", {
+                    filename: pdf.name,
+                    data: base64Data,
+                });
+            }
+            dom.emptyFileInput.value = "";
+            await loadTags();
+            await loadArticles();
+            setStatus(`Imported ${pdfs.length} PDF(s).`);
+        } catch (err) {
+            const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
+            setStatus(`Import failed: ${message}`, true);
+        }
+    });
+
     // Body-level PDF drag-and-drop import
     let dragCounter = 0;
+
+    // Tauri Native File Drop (needed for release builds where Webview2 blocks HTML5 drop)
+    if (window.__TAURI__ && window.__TAURI__.event) {
+        window.__TAURI__.event.listen("tauri://drag-enter", (evt) => {
+            if (!dom.modal.classList.contains("hidden")) return;
+            dragCounter++;
+            dom.dropOverlay.classList.remove("hidden");
+        });
+        window.__TAURI__.event.listen("tauri://drag-leave", () => {
+            dragCounter--;
+            if (dragCounter <= 0) {
+                dragCounter = 0;
+                dom.dropOverlay.classList.add("hidden");
+            }
+        });
+
+        const handleNativeDrop = async (evt) => {
+            dragCounter = 0;
+            dom.dropOverlay.classList.add("hidden");
+            if (!dom.modal.classList.contains("hidden")) return;
+
+            const paths = evt.payload.paths || [];
+            if (!paths || paths.length === 0) return;
+            const pdfPaths = paths.filter(p => p.toLowerCase().endsWith(".pdf"));
+            if (pdfPaths.length === 0) return;
+
+            setStatus(`Importing ${pdfPaths.length} PDF(s)...`);
+            try {
+                await invoke("import_pdfs_from_paths", { paths: pdfPaths });
+                await loadTags();
+                await loadArticles();
+                setStatus(`Imported ${pdfPaths.length} PDF(s).`);
+            } catch (err) {
+                const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
+                setStatus(`Import failed: ${message}`, true);
+            }
+        };
+
+        window.__TAURI__.event.listen("tauri://drop", handleNativeDrop);
+        window.__TAURI__.event.listen("tauri://drag-drop", handleNativeDrop);
+        window.__TAURI__.event.listen("tauri://file-drop", handleNativeDrop);
+    }
+
     document.body.addEventListener("dragenter", (evt) => {
         // Don't show overlay if the edit modal is open
         if (!dom.modal.classList.contains("hidden")) return;
@@ -1569,6 +1680,18 @@ function wireEvents() {
             dom.tagColorEditor.classList.add("hidden");
             dom.hotkeysModal.classList.add("hidden");
         }
+
+        // Ctrl+Tab to toggle hamburger menu or Tab to focus search (if not auto-completing tags)
+        if (evt.key === "Tab") {
+            if (evt.ctrlKey) {
+                evt.preventDefault();
+                setMenuOpen(!state.menuOpen);
+            } else if (state.acIndex === -1 && !state.menuOpen && dom.modal.classList.contains("hidden")) {
+                evt.preventDefault();
+                dom.searchInput.focus();
+            }
+        }
+
         if (evt.key === "Enter" && !dom.modal.classList.contains("hidden")) {
             // Don't trigger if user is in a textarea or the tag input
             if (evt.target.tagName === "TEXTAREA") return;

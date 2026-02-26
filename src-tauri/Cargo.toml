@@ -24,6 +24,7 @@ walkdir = "2"
 opener = "0.7"
 base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
+tauri-plugin-dialog = "2.6.0"
 
 [profile.release]
 strip = true

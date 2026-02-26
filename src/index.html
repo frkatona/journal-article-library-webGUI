@@ -9,11 +9,7 @@
 </head>
 
 <body>
-    <header class="topbar">
-        <div class="title-wrap">
-            <h1>FRK PDF Manager</h1>
-            <p class="subtitle">Local PDF search with custom thumbnails</p>
-        </div>
+    <header id="topbar" class="topbar">
         <div class="controls">
             <label class="field">
                 <span>Search</span>
@@ -103,10 +99,15 @@
                         <span style="font-size:0.82rem;">Parse PDFs</span>
                     </label>
                     <button id="reindex-btn" type="button">Reindex</button>
+                    <button id="open-articles-btn" type="button" class="ghost">Open Articles Folder</button>
                     <button id="highlight-btn" type="button" class="ghost">Highlight Incomplete</button>
                     <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
                         <input id="tint-by-tag" type="checkbox" />
                         <span style="font-size:0.82rem;">Tint by Tag</span>
+                    </label>
+                    <label class="field">
+                        <span>Color Intensity <strong id="color-intensity-value">13</strong>%</span>
+                        <input id="color-intensity-slider" type="range" min="0" max="100" step="1" value="13" />
                     </label>
                     <button id="edit-tag-colors-btn" type="button" class="ghost">Edit Tag Colors</button>
                     <div class="view-toggle" style="padding:4px 0;">
@@ -128,6 +129,19 @@
             <p id="status-line">Loading...</p>
         </section>
         <section id="grid" class="grid" aria-live="polite"></section>
+
+        <div id="empty-state" class="hidden"
+            style="text-align: center; margin-top: 80px; padding: 40px; border: 2px dashed var(--line); border-radius: 12px; margin-inline: 40px;">
+            <h2 style="margin-bottom: 24px; color: var(--fg);">No articles found</h2>
+            <p style="margin-bottom: 32px; color: var(--fg-dim);">Drag and drop PDF files anywhere, select them
+                manually, or place them in the 'Articles' folder.</p>
+            <div style="display: flex; gap: 16px; justify-content: center;">
+                <button id="empty-upload-btn" type="button"
+                    style="background: var(--accent); color: #000; font-weight: 600;">Upload File(s)</button>
+                <button id="empty-reindex-btn" type="button" class="ghost">Reindex Folder</button>
+                <input type="file" id="empty-file-input" accept=".pdf" multiple class="hidden" />
+            </div>
+        </div>
     </main>
 
     <div id="edit-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">

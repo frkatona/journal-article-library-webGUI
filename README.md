@@ -233,9 +233,19 @@ src-tauri/              # Rust backend
   - make a video showing the features (hotkeys, colors, thumbnail replacement, drag-and-drop)
     - test run with Kristen
 
-
-
 broken corrections:
- - modal height scaling not working
- - chips component should accept new tags
- - ctrl+scroll should scale font size commensurately
+ - [x] modal height scaling not working
+ - [x] chips component should accept new tags
+ - [x] ctrl+scroll should scale font size commensurately
+
+CLI warnings:
+- [x] Warn The bundle identifier "com.literature-library.app" set in `"tauri.conf.json" identifier` ends with `.app`. This is not recommended because it conflicts with the application bundle extension on macOS.
+
+
+- [x] when there are 0 articles, show "reindex" and "upload file/folder" buttons
+- [x] release build not allowing PDF drag and drop
+- [x] remove header text titles to save space in the static top bar
+- [x] Tab hotkey to focus search field / Ctrl+Tab to toggle hamburger menu
+
+
+- [ ] have the export named "FRK-PDF-Manager-v0.9.1-setup.exe"
