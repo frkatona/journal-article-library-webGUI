@@ -249,3 +249,11 @@ CLI warnings:
 - [x] Tab hotkey to focus search field / Ctrl+Tab to toggle hamburger menu
 - [x] Implement robust Crossref API querying for precision metadata during PDF import via regex extracted DOIs
 - [x] Add 'Fetch via DOI' button natively to the individual metadata edit modal- [ ] have the export named "FRK-PDF-Manager-v0.9.1-setup.exe"
+
+
+- [x] in the tag filter dropdown in the top bar, let the user check boxes for which tags to show, as well as buttons for 'select all' and 'clear all'
+
+- [x] save metadata each time a field is exited
+- [x] button to reset each tag's color, as well as "reset all colors"
+- [x] save a 15 minute backup of the json and include a "reset to last autosave: <time>" along with "x minutes to next backup"
+- [ ] toggle 'lock dimensions' in card resizing, default enabled

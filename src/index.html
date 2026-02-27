@@ -15,11 +15,18 @@
                 <span>Search</span>
                 <input id="search-input" type="search" placeholder="title, author, abstract, DOI, tags, notes..." />
             </label>
-            <label class="field">
-                <span>Tag</span>
-                <select id="tag-filter">
-                    <option value="">All tags</option>
-                </select>
+            <label class="field" style="position:relative;" id="tag-filter-container">
+                <span>Tag Filter</span>
+                <div id="tag-filter-btn" class="custom-select-btn">All tags (<span id="tag-filter-count">0</span>)</div>
+                <div id="tag-filter-menu" class="custom-select-menu hidden">
+                    <div class="tag-filter-actions">
+                        <button type="button" id="tag-filter-all" class="ghost"
+                            style="padding:4px 8px; font-size:0.8rem;">Select All</button>
+                        <button type="button" id="tag-filter-none" class="ghost"
+                            style="padding:4px 8px; font-size:0.8rem;">Clear All</button>
+                    </div>
+                    <div id="tag-filter-list" class="tag-filter-list"></div>
+                </div>
             </label>
 
             <label class="field compact sort-field">
@@ -103,6 +110,8 @@
                         </label>
                         <button id="reindex-btn" type="button">Reindex</button>
                         <button id="open-articles-btn" type="button" class="ghost">Open Articles Folder</button>
+                        <button id="restore-backup-btn" type="button" class="ghost" style="color:var(--accent);">Restore
+                            Backup</button>
                         <button id="highlight-btn" type="button" class="ghost">Highlight Incomplete</button>
                         <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
                             <input id="tint-by-tag" type="checkbox" />
@@ -250,6 +259,20 @@
     </div>
 
     <script src="app.js" defer></script>
+    <script>
+        window.addEventListener("error", function (e) {
+            const errDiv = document.createElement("div");
+            errDiv.style.position = "fixed";
+            errDiv.style.top = "10px";
+            errDiv.style.left = "10px";
+            errDiv.style.backgroundColor = "red";
+            errDiv.style.color = "white";
+            errDiv.style.padding = "10px";
+            errDiv.style.zIndex = "99999";
+            errDiv.innerText = e.message + " at " + e.filename + ":" + e.lineno;
+            document.body.appendChild(errDiv);
+        });
+    </script>
 
     <!-- Tag Color Editor Panel -->
     <div id="tag-color-editor" class="modal hidden" role="dialog" aria-modal="true">
@@ -259,10 +282,30 @@
                 <button id="tag-color-close" class="close-btn" type="button">&times;</button>
             </div>
             <div id="tag-color-list" class="tag-color-list"></div>
+            <div style="padding:12px; border-top:1px solid var(--line); display:flex; justify-content:flex-end;">
+                <button id="tag-color-reset-all" type="button" class="secondary"
+                    style="font-size:0.85rem; padding:6px 12px;">Reset All Colors</button>
+            </div>
         </div>
     </div>
 
-    <!-- Toast -->
+    <!-- Restore Backup Modal -->
+    <div id="backup-modal" class="modal-overlay hidden">
+        <div class="modal-content" style="max-width: 400px; text-align: center;">
+            <button id="backup-close" class="modal-close" aria-label="Close">×</button>
+            <h2 style="margin-top:0;">Restore Data Backup</h2>
+            <p class="meta" style="margin-bottom:20px;">
+                The application automatically backs up your metadata every 10 minutes.
+                Select a backup to instantly restore your library index.
+            </p>
+            <div id="backup-options" style="display:flex; flex-direction:column; gap:10px;">
+                <!-- Buttons injected via JS -->
+            </div>
+            <p id="backup-status" class="meta" style="margin-top:15px; color:var(--accent); display:none;"></p>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
     <div id="toast" class="toast hidden"></div>
 
     <!-- Hotkeys Modal -->

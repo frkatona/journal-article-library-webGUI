@@ -1,5 +1,5 @@
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use image::imageops::FilterType;
 use image::{DynamicImage, GenericImageView, ImageBuffer, Rgb, RgbImage};
 use lopdf::{Document as PdfDoc, Object};
@@ -1218,7 +1218,7 @@ fn find_article_mut<'a>(index: &'a mut IndexPayload, article_id: &str) -> Option
 fn get_articles(
     state: tauri::State<'_, Mutex<AppState>>,
     query: Option<String>,
-    tag: Option<String>,
+    tags: Option<Vec<String>>,
     limit: Option<usize>,
     offset: Option<usize>,
 ) -> Result<ArticlesResponse, String> {
@@ -1226,7 +1226,8 @@ fn get_articles(
     let index = load_index(&mut st);
 
     let query_str = query.unwrap_or_default().trim().to_lowercase();
-    let tag_str = tag.unwrap_or_default().trim().to_lowercase();
+    let tags_list = tags.unwrap_or_default();
+    let tags_lower: Vec<String> = tags_list.into_iter().map(|t| t.trim().to_lowercase()).filter(|t| !t.is_empty()).collect();
     let limit = limit.unwrap_or(200).max(1).min(500);
     let offset = offset.unwrap_or(0);
 
@@ -1240,12 +1241,12 @@ fn get_articles(
         });
     }
 
-    if !tag_str.is_empty() {
+    if !tags_lower.is_empty() {
         rows.retain(|a| {
             a.metadata
                 .tags
                 .iter()
-                .any(|t| t.trim().to_lowercase() == tag_str)
+                .any(|t| tags_lower.contains(&t.trim().to_lowercase()))
         });
     }
 
@@ -1873,6 +1874,95 @@ fn get_root_dir(state: tauri::State<'_, Mutex<AppState>>) -> Result<String, Stri
     Ok(st.root_dir.to_string_lossy().to_string())
 }
 
+// ── Backups ─────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+pub struct BackupInfo {
+    pub name: String,
+    pub timestamp: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BackupsResponse {
+    pub backups: Vec<BackupInfo>,
+}
+
+#[tauri::command]
+fn create_backup(state: tauri::State<'_, Mutex<AppState>>) -> Result<bool, String> {
+    let st = state.lock().map_err(|e| e.to_string())?;
+    if !st.index_path.exists() {
+        return Ok(false);
+    }
+    
+    let b1 = st.data_dir.join("index.backup1.json");
+    let b2 = st.data_dir.join("index.backup2.json");
+
+    // Rotate b1 to b2 if b1 exists
+    if b1.exists() {
+        let _ = fs::copy(&b1, &b2);
+    }
+    // Copy current to b1
+    match fs::copy(&st.index_path, &b1) {
+        Ok(_) => Ok(true),
+        Err(e) => Err(format!("Failed to create backup: {}", e)),
+    }
+}
+
+#[tauri::command]
+fn get_backups(state: tauri::State<'_, Mutex<AppState>>) -> Result<BackupsResponse, String> {
+    let st = state.lock().map_err(|e| e.to_string())?;
+    let b1 = st.data_dir.join("index.backup1.json");
+    let b2 = st.data_dir.join("index.backup2.json");
+
+    let mut backups = Vec::new();
+
+    for (name, path) in [("backup1", b1), ("backup2", b2)] {
+        let timestamp = if path.exists() {
+            fs::metadata(&path)
+                .and_then(|m| m.modified())
+                .map(|sys_time| {
+                    let dt: DateTime<Utc> = sys_time.into();
+                    dt.to_rfc3339()
+                })
+                .ok()
+        } else {
+            None
+        };
+        backups.push(BackupInfo {
+            name: name.to_string(),
+            timestamp,
+        });
+    }
+
+    Ok(BackupsResponse { backups })
+}
+
+#[tauri::command]
+fn restore_backup(
+    state: tauri::State<'_, Mutex<AppState>>,
+    backup_name: String,
+) -> Result<bool, String> {
+    let mut st = state.lock().map_err(|e| e.to_string())?;
+    let backup_file = match backup_name.as_str() {
+        "backup1" => st.data_dir.join("index.backup1.json"),
+        "backup2" => st.data_dir.join("index.backup2.json"),
+        _ => return Err("Invalid backup name".into()),
+    };
+
+    if !backup_file.exists() {
+        return Err("Backup file does not exist".into());
+    }
+
+    match fs::copy(&backup_file, &st.index_path) {
+        Ok(_) => {
+            // Force memory reload of index
+            st.index = None;
+            Ok(true)
+        }
+        Err(e) => Err(format!("Failed to restore backup: {}", e)),
+    }
+}
+
 // ── App Setup ───────────────────────────────────────────────────────────────
 
 pub fn run() {
@@ -1913,6 +2003,9 @@ pub fn run() {
             import_pdf,
             import_pdfs_from_paths,
             fetch_doi_metadata,
+            create_backup,
+            get_backups,
+            restore_backup,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

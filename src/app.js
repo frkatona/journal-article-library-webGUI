@@ -6,7 +6,7 @@ const thumbCache = new Map();
 
 const state = {
     query: "",
-    tag: "",
+    tags: [],
     strategy: "hybrid",
     articles: [],
     total: 0,
@@ -25,6 +25,7 @@ const state = {
     colorIntensity: Number.parseInt(window.localStorage.getItem("article-color-intensity") || "13", 10),
     tagColors: JSON.parse(window.localStorage.getItem("article-tag-colors") || "{}"),
     acIndex: -1,
+    isEscaping: false,
 };
 
 const dom = {
@@ -44,7 +45,13 @@ const dom = {
     colorIntensityValue: document.getElementById("color-intensity-value"),
     fontFamilySelect: document.getElementById("font-family-select"),
     searchInput: document.getElementById("search-input"),
-    tagFilter: document.getElementById("tag-filter"),
+    tagFilterContainer: document.getElementById("tag-filter-container"),
+    tagFilterBtn: document.getElementById("tag-filter-btn"),
+    tagFilterCount: document.getElementById("tag-filter-count"),
+    tagFilterMenu: document.getElementById("tag-filter-menu"),
+    tagFilterList: document.getElementById("tag-filter-list"),
+    tagFilterAll: document.getElementById("tag-filter-all"),
+    tagFilterNone: document.getElementById("tag-filter-none"),
     strategySelect: document.getElementById("strategy-select"),
     viewModeToggle: document.getElementById("view-mode-toggle"),
     parsePdfs: document.getElementById("parse-pdfs"),
@@ -60,6 +67,11 @@ const dom = {
     emptyUploadBtn: document.getElementById("empty-upload-btn"),
     emptyReindexBtn: document.getElementById("empty-reindex-btn"),
     emptyFileInput: document.getElementById("empty-file-input"),
+    restoreBackupBtn: document.getElementById("restore-backup-btn"),
+    backupModal: document.getElementById("backup-modal"),
+    backupClose: document.getElementById("backup-close"),
+    backupOptions: document.getElementById("backup-options"),
+    backupStatus: document.getElementById("backup-status"),
     thumbPaste: document.getElementById("thumb-paste"),
     thumbReset: document.getElementById("thumb-reset"),
     form: document.getElementById("metadata-form"),
@@ -936,7 +948,7 @@ function renderArticles() {
     clearNode(dom.grid);
     dom.grid.classList.toggle("details-mode", state.viewMode === "details");
 
-    if (state.articles.length === 0 && !state.query && !state.tag) {
+    if (state.articles.length === 0 && !state.query && state.tags.length === 0) {
         dom.emptyState.classList.remove("hidden");
         return;
     } else {
@@ -961,29 +973,78 @@ function renderArticles() {
 async function loadTags() {
     const result = await invoke("get_tags");
     const options = result.tags || [];
-    const current = state.tag;
 
-    clearNode(dom.tagFilter);
-    const all = document.createElement("option");
-    all.value = "";
-    all.textContent = "All tags";
-    dom.tagFilter.appendChild(all);
+    // If the list is empty, build it from scratch
+    if (dom.tagFilterList.children.length === 0) {
+        options.forEach((tagRow) => {
+            const row = document.createElement("label");
+            const cb = document.createElement("input");
+            cb.type = "checkbox";
+            cb.value = tagRow.name;
+            cb.checked = state.tags.includes(tagRow.name);
 
-    options.forEach((row) => {
-        const opt = document.createElement("option");
-        opt.value = row.name;
-        opt.textContent = `${row.name} (${row.count})`;
-        dom.tagFilter.appendChild(opt);
-    });
+            cb.addEventListener("change", (evt) => {
+                evt.stopPropagation();
+                if (cb.checked) {
+                    if (!state.tags.includes(tagRow.name)) state.tags.push(tagRow.name);
+                } else {
+                    state.tags = state.tags.filter(t => t !== tagRow.name);
+                }
+                updateTagFilterUI();
 
-    dom.tagFilter.value = current;
+                // Keep the menu live but reload articles matching the new filter
+                loadArticles();
+            });
+
+            // Prevent label click from closing the dropdown by clicking "outside"
+            row.addEventListener("click", (evt) => {
+                evt.stopPropagation();
+            });
+
+            const span = document.createElement("span");
+            span.className = "tag-count-span";
+            span.textContent = `${tagRow.name} (${tagRow.count})`;
+
+            row.appendChild(cb);
+            row.appendChild(span);
+            dom.tagFilterList.appendChild(row);
+        });
+    } else {
+        // Otherwise, just update the existing elements to prevent DOM destruction
+        // mapping counts and checked states to avoid closing the menu natively
+        const labels = Array.from(dom.tagFilterList.querySelectorAll("label"));
+        const optionsMap = new Map();
+        options.forEach(o => optionsMap.set(o.name, o.count));
+
+        labels.forEach(row => {
+            const cb = row.querySelector("input[type='checkbox']");
+            const span = row.querySelector(".tag-count-span");
+            if (!cb || !span) return;
+            cb.checked = state.tags.includes(cb.value);
+            const count = optionsMap.get(cb.value) || 0;
+            span.textContent = `${cb.value} (${count})`;
+        });
+    }
+
+    updateTagFilterUI();
+}
+
+function updateTagFilterUI() {
+    dom.tagFilterCount.textContent = state.tags.length;
+    if (state.tags.length === 0) {
+        dom.tagFilterBtn.textContent = "All tags (0)";
+    } else if (state.tags.length === 1) {
+        dom.tagFilterBtn.textContent = `${state.tags[0]} (1)`;
+    } else {
+        dom.tagFilterBtn.textContent = `Multiple (${state.tags.length})`;
+    }
 }
 
 async function loadArticles() {
     setStatus("Loading articles...");
     const res = await invoke("get_articles", {
         query: state.query || null,
-        tag: state.tag || null,
+        tags: state.tags.length > 0 ? state.tags : null,
         limit: 500,
         offset: 0,
     });
@@ -1076,10 +1137,9 @@ async function saveMetadata(evt) {
 
         state.current = savedArticle;
         renderArticles();
-        openEditor(savedArticle);
 
         await loadTags();
-        setStatus("Metadata saved.");
+        setStatus("Metadata autosaved.");
     } catch (err) {
         const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
         setStatus(`Save failed: ${message}`, true);
@@ -1238,10 +1298,6 @@ function wireEvents() {
     setMenuOpen(false);
 
     dom.searchInput.addEventListener("input", debouncedSearch);
-    dom.tagFilter.addEventListener("change", async () => {
-        state.tag = dom.tagFilter.value.trim();
-        await loadArticles();
-    });
 
     // Paste cleanup for authors field (gated by checkbox)
     dom.authors.addEventListener("paste", (evt) => {
@@ -1390,8 +1446,48 @@ function wireEvents() {
                 });
                 const label = document.createElement("span");
                 label.textContent = tag;
+
+                const btnContainer = document.createElement("div");
+                btnContainer.style.display = "flex";
+                btnContainer.style.gap = "4px";
+                btnContainer.style.marginLeft = "auto";
+
+                const btnCopy = document.createElement("button");
+                btnCopy.type = "button";
+                btnCopy.className = "ghost";
+                btnCopy.style.padding = "2px 6px";
+                btnCopy.style.fontSize = "0.75rem";
+                btnCopy.textContent = "Copy";
+                btnCopy.title = "Copy hex value";
+                btnCopy.addEventListener("click", () => {
+                    navigator.clipboard.writeText(picker.value).then(() => {
+                        showToast("Color copied to clipboard!");
+                    }).catch(() => {
+                        showToast("Failed to copy color.");
+                    });
+                });
+
+                const btnReset = document.createElement("button");
+                btnReset.type = "button";
+                btnReset.className = "ghost";
+                btnReset.style.padding = "2px 6px";
+                btnReset.style.fontSize = "0.75rem";
+                btnReset.style.color = "var(--danger)";
+                btnReset.textContent = "Reset";
+                btnReset.title = "Reset to default color";
+                btnReset.addEventListener("click", () => {
+                    picker.value = "#1a3145";
+                    delete state.tagColors[tag]; // Remove from state
+                    saveTagColors();
+                    renderArticles();
+                });
+
+                btnContainer.appendChild(btnCopy);
+                btnContainer.appendChild(btnReset);
+
                 row.appendChild(picker);
                 row.appendChild(label);
+                row.appendChild(btnContainer);
                 dom.tagColorList.appendChild(row);
             }
         }
@@ -1400,6 +1496,112 @@ function wireEvents() {
     dom.tagColorClose.addEventListener("click", () => {
         dom.tagColorEditor.classList.add("hidden");
     });
+
+    // Reset All Tag Colors
+    const resetAllBtn = document.getElementById("tag-color-reset-all");
+    if (resetAllBtn) {
+        resetAllBtn.addEventListener("click", () => {
+            if (confirm("Are you sure you want to reset all tag colors to the default?")) {
+                state.tagColors = {};
+                saveTagColors();
+                renderArticles();
+                dom.editTagColorsBtn.click(); // re-render the list
+                showToast("All custom tag colors have been reset.");
+            }
+        });
+    }
+
+    // Backups
+    let backupTimer = null;
+    let nextBackupTime = Date.now() + 600000;
+
+    function scheduleBackup() {
+        clearInterval(backupTimer);
+        nextBackupTime = Date.now() + 600000;
+        backupTimer = setInterval(async () => {
+            try {
+                await invoke("create_backup");
+                nextBackupTime = Date.now() + 600000;
+                console.log("Automatic backup created.");
+                if (dom.backupModal && !dom.backupModal.classList.contains("hidden")) {
+                    loadBackupOptions(); // refresh modal if open
+                }
+            } catch (err) {
+                console.error("Backup failed:", err);
+            }
+        }, 600000); // 10 minutes
+    }
+
+    // Start interval
+    scheduleBackup();
+
+    dom.restoreBackupBtn.addEventListener("click", () => {
+        setMenuOpen(false);
+        loadBackupOptions();
+        dom.backupModal.classList.remove("hidden");
+    });
+
+    dom.backupClose.addEventListener("click", () => {
+        dom.backupModal.classList.add("hidden");
+        dom.backupStatus.style.display = "none";
+    });
+
+    async function loadBackupOptions() {
+        clearNode(dom.backupOptions);
+        try {
+            const res = await invoke("get_backups");
+            const backups = res.backups || [];
+            if (backups.length === 0 || backups.every(b => !b.timestamp)) {
+                dom.backupOptions.innerHTML = `<p class="meta">No backups available yet.</p>`;
+                return;
+            }
+
+            for (const b of backups) {
+                if (!b.timestamp) continue;
+                const btn = document.createElement("button");
+                btn.type = "button";
+                btn.className = "ghost";
+                btn.style.textAlign = "left";
+                btn.style.justifyContent = "space-between";
+                btn.style.display = "flex";
+
+                const timeStr = prettyDate(b.timestamp);
+                btn.innerHTML = `<span>Restore <strong>${b.name}</strong></span> <span class="meta">${timeStr}</span>`;
+
+                btn.addEventListener("click", async () => {
+                    dom.backupStatus.style.display = "block";
+                    dom.backupStatus.textContent = `Restoring ${b.name}...`;
+                    try {
+                        await invoke("restore_backup", { backupName: b.name });
+                        dom.backupStatus.textContent = `Successfully restored. Reloading library...`;
+                        setTimeout(async () => {
+                            await loadTags();
+                            await loadArticles();
+                            dom.backupModal.classList.add("hidden");
+                            dom.backupStatus.style.display = "none";
+                            showToast("Library restored from backup.");
+                        }, 1000);
+                    } catch (err) {
+                        dom.backupStatus.style.color = "var(--danger)";
+                        dom.backupStatus.textContent = `Failed to restore: ${err}`;
+                    }
+                });
+                dom.backupOptions.appendChild(btn);
+            }
+
+            // Also show time until next scheduled backup
+            const minutesLeft = Math.max(0, Math.ceil((nextBackupTime - Date.now()) / 60000));
+            const nextInfo = document.createElement("p");
+            nextInfo.className = "meta";
+            nextInfo.style.marginTop = "10px";
+            nextInfo.textContent = `Next automatic backup in ~${minutesLeft} minute(s).`;
+            dom.backupOptions.appendChild(nextInfo);
+
+        } catch (err) {
+            dom.backupOptions.innerHTML = `<p class="meta" style="color:var(--danger)">Failed to fetch backups.</p>`;
+        }
+    }
+
     // Hotkeys modal
     dom.hotkeysBtn.addEventListener("click", () => {
         dom.hotkeysModal.classList.remove("hidden");
@@ -1436,6 +1638,44 @@ function wireEvents() {
         applyCardFont(dom.cardFontSlider.value);
         window.localStorage.setItem("article-card-font", String(state.cardFont));
     });
+    // Tag Filter Custom Dropdown
+    dom.tagFilterBtn.addEventListener("click", (evt) => {
+        evt.preventDefault();
+        evt.stopPropagation();
+        dom.tagFilterMenu.classList.toggle("hidden");
+    });
+
+    dom.tagFilterAll.addEventListener("click", () => {
+        const cbs = dom.tagFilterList.querySelectorAll("input[type='checkbox']");
+        state.tags = [];
+        cbs.forEach(cb => {
+            cb.checked = true;
+            state.tags.push(cb.value);
+        });
+        updateTagFilterUI();
+        loadArticles();
+    });
+
+    dom.tagFilterNone.addEventListener("click", () => {
+        const cbs = dom.tagFilterList.querySelectorAll("input[type='checkbox']");
+        cbs.forEach(cb => cb.checked = false);
+        state.tags = [];
+        updateTagFilterUI();
+        loadArticles();
+    });
+
+    // Close dropdown when clicking outside
+    document.addEventListener("click", (evt) => {
+        if (!dom.tagFilterContainer.contains(evt.target)) {
+            dom.tagFilterMenu.classList.add("hidden");
+        }
+    });
+
+    // Prevent clicks inside the menu from bubbling up to document
+    dom.tagFilterMenu.addEventListener("click", (evt) => {
+        evt.stopPropagation();
+    });
+
     if (dom.colorIntensitySlider) {
         dom.colorIntensitySlider.addEventListener("input", () => {
             state.colorIntensity = Number.parseInt(dom.colorIntensitySlider.value, 10);
@@ -1712,14 +1952,38 @@ function wireEvents() {
         });
     });
 
-    // Global keyboard handlers
+    // Keydown for Modal Escape / Search Focus
     document.addEventListener("keydown", (evt) => {
         if (evt.key === "Escape") {
-            if (state.menuOpen) setMenuOpen(false);
-            if (!dom.modal.classList.contains("hidden")) closeEditor();
-            if (!dom.abstractModal.classList.contains("hidden")) closeAbstract();
-            dom.tagColorEditor.classList.add("hidden");
-            dom.hotkeysModal.classList.add("hidden");
+            // Priority: autocomplete -> color editor -> abstract -> edit modal -> hotkeys -> backup modal
+            if (!dom.tagAutocomplete.classList.contains("hidden")) {
+                dom.tagAutocomplete.classList.add("hidden");
+                return;
+            }
+            if (!dom.tagColorEditor.classList.contains("hidden")) {
+                dom.tagColorEditor.classList.add("hidden");
+                return;
+            }
+            if (!dom.abstractModal.classList.contains("hidden")) {
+                closeAbstract();
+                return;
+            }
+            if (!dom.modal.classList.contains("hidden")) {
+                state.isEscaping = true;
+                closeEditor();
+                // Reset flag shortly after
+                setTimeout(() => { state.isEscaping = false; }, 100);
+                return;
+            }
+            if (!dom.hotkeysModal.classList.contains("hidden")) {
+                dom.hotkeysModal.classList.add("hidden");
+                return;
+            }
+            if (!dom.backupModal.classList.contains("hidden")) {
+                dom.backupModal.classList.add("hidden");
+                return;
+            }
+            if (state.menuOpen) setMenuOpen(false); // Fallback for menu
         }
 
         // Ctrl+Tab to toggle hamburger menu or Tab to focus search (if not auto-completing tags)
@@ -1727,10 +1991,20 @@ function wireEvents() {
             if (evt.ctrlKey) {
                 evt.preventDefault();
                 setMenuOpen(!state.menuOpen);
-            } else if (state.acIndex === -1 && !state.menuOpen && dom.modal.classList.contains("hidden")) {
+            } else if (!dom.tagAutocomplete || dom.tagAutocomplete.classList.contains("hidden")) {
                 evt.preventDefault();
                 dom.searchInput.focus();
+                // if topbar was hidden from auto-hide, trigger its reappearance
+                if (dom.topbar.style.top !== "0px") {
+                    document.dispatchEvent(new MouseEvent("mousemove"));
+                }
             }
+        }
+
+        // Global search shortcut
+        if ((evt.ctrlKey || evt.metaKey) && evt.key === "f") {
+            evt.preventDefault();
+            dom.searchInput.focus();
         }
 
         if (evt.key === "Enter" && !dom.modal.classList.contains("hidden")) {
@@ -1744,6 +2018,21 @@ function wireEvents() {
         if (evt.key === "p" && evt.ctrlKey && !dom.modal.classList.contains("hidden")) {
             evt.preventDefault();
             dom.thumbPaste.click();
+        }
+    });
+
+    // Auto-save metadata on blur
+    const autoSaveInputs = [dom.title, dom.authors, dom.year, dom.journal, dom.volume, dom.issue, dom.pages, dom.doi, dom.abstract, dom.notes];
+    autoSaveInputs.forEach(input => {
+        if (input) {
+            input.addEventListener("blur", (evt) => {
+                // If closing modal via Escape, don't trigger auto-save
+                if (state.isEscaping) return;
+                // Form submit logic prevents default blur if triggered by form submit, but manual click out triggers this
+                if (state.current && !dom.modal.classList.contains("hidden")) {
+                    saveMetadata(evt);
+                }
+            });
         }
     });
 }
