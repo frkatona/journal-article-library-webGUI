@@ -245,7 +245,7 @@ CLI warnings:
 - [x] when there are 0 articles, show "reindex" and "upload file/folder" buttons
 - [x] release build not allowing PDF drag and drop
 - [x] remove header text titles to save space in the static top bar
+- [x] auto-hide top bar like windows taskbar (with setting in menu)
 - [x] Tab hotkey to focus search field / Ctrl+Tab to toggle hamburger menu
-
-
-- [ ] have the export named "FRK-PDF-Manager-v0.9.1-setup.exe"
+- [x] Implement robust Crossref API querying for precision metadata during PDF import via regex extracted DOIs
+- [x] Add 'Fetch via DOI' button natively to the individual metadata edit modal- [ ] have the export named "FRK-PDF-Manager-v0.9.1-setup.exe"

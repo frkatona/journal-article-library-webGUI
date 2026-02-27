@@ -71,6 +71,7 @@ const dom = {
     issue: document.getElementById("f-issue"),
     pages: document.getElementById("f-pages"),
     doi: document.getElementById("f-doi"),
+    doiFetchBtn: document.getElementById("doi-fetch-btn"),
     abstract: document.getElementById("f-abstract"),
     pasteCleanup: document.getElementById("paste-cleanup"),
     tagChipContainer: document.getElementById("tag-chip-container"),
@@ -1485,6 +1486,41 @@ function wireEvents() {
     });
     dom.thumbReset.addEventListener("click", resetAutoThumbnail);
 
+    // DOI Fetch button in modal
+    dom.doiFetchBtn.addEventListener("click", async () => {
+        const doiStr = dom.doi.value.trim();
+        if (!doiStr) {
+            alert("Please input a DOI string first.");
+            return;
+        }
+
+        const originalText = dom.doiFetchBtn.textContent;
+        dom.doiFetchBtn.textContent = "Fetching...";
+        dom.doiFetchBtn.disabled = true;
+
+        try {
+            const meta = await invoke("fetch_doi_metadata", { doi: doiStr });
+            if (meta.title) dom.title.value = meta.title;
+            if (meta.authors) dom.authors.value = meta.authors;
+            if (meta.year) dom.year.value = meta.year;
+            if (meta.journal) dom.journal.value = meta.journal;
+            if (meta.volume) dom.volume.value = meta.volume;
+            if (meta.number) dom.issue.value = meta.number;
+            if (meta.pages) dom.pages.value = meta.pages;
+            if (meta.abstract) dom.abstract.value = meta.abstract;
+            if (meta.doi) dom.doi.value = meta.doi; // updates cleaned DOI
+
+            setStatus("Metadata successfully fetched from Crossref.");
+        } catch (err) {
+            const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
+            alert(`Failed to fetch DOI metadata from Crossref: ${message}`);
+            setStatus(`DOI Fetch Failed: ${message}`, true);
+        } finally {
+            dom.doiFetchBtn.textContent = originalText;
+            dom.doiFetchBtn.disabled = false;
+        }
+    });
+
     // Paste thumbnail from clipboard
     dom.thumbPaste.addEventListener("click", async () => {
         if (!state.current) return;
@@ -1581,8 +1617,9 @@ function wireEvents() {
             const pdfPaths = paths.filter(p => p.toLowerCase().endsWith(".pdf"));
             if (pdfPaths.length === 0) return;
 
-            setStatus(`Importing ${pdfPaths.length} PDF(s)...`);
+            setStatus(`Importing ${pdfPaths.length} PDF(s). Please wait for metadata...`);
             try {
+                // Batch processing is handled concurrently on the Rust side
                 await invoke("import_pdfs_from_paths", { paths: pdfPaths });
                 await loadTags();
                 await loadArticles();
@@ -1634,10 +1671,14 @@ function wireEvents() {
         const pdfs = files.filter((f) => f.name.toLowerCase().endsWith(".pdf"));
         if (pdfs.length === 0) return;
 
-        setStatus(`Importing ${pdfs.length} PDF(s)...`);
+        setStatus(`Importing ${pdfs.length} PDF(s). Please wait for metadata...`);
         let imported = 0;
-        for (const pdf of pdfs) {
+
+        // Since we are uploading data blobs instead of paths, we iterate sequentially here on the frontend.
+        for (let i = 0; i < pdfs.length; i++) {
+            const pdf = pdfs[i];
             try {
+                setStatus(`Importing (${i + 1}/${pdfs.length}) ${pdf.name}...`);
                 const base64Data = await fileToBase64(pdf);
                 await invoke("import_pdf", {
                     filename: pdf.name,

@@ -5,13 +5,16 @@ use image::{DynamicImage, GenericImageView, ImageBuffer, Rgb, RgbImage};
 use lopdf::{Document as PdfDoc, Object};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use reqwest::blocking::Client;
+use std::time::Duration;
 use sha1_smol::Sha1;
 use std::collections::HashMap;
 use std::fs;
 use std::panic;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::thread;
+use futures::stream::{self, StreamExt};
 
 use walkdir::WalkDir;
 
@@ -56,6 +59,44 @@ pub struct Metadata {
     pub keywords: Vec<String>,
     pub tags: Vec<String>,
     pub notes: String,
+}
+
+// ── Crossref API Responses ──────────────────────────────────────────────────
+#[derive(Debug, Deserialize)]
+pub struct CrossrefAuthor {
+    pub given: Option<String>,
+    pub family: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CrossrefDate {
+    #[serde(rename = "date-parts")]
+    pub date_parts: Option<Vec<Vec<u32>>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CrossrefMessage {
+    pub title: Option<Vec<String>>,
+    pub author: Option<Vec<CrossrefAuthor>>,
+    pub published: Option<CrossrefDate>,
+    #[serde(rename = "published-print")]
+    pub published_print: Option<CrossrefDate>,
+    #[serde(rename = "published-online")]
+    pub published_online: Option<CrossrefDate>,
+    #[serde(rename = "container-title")]
+    pub container_title: Option<Vec<String>>,
+    pub volume: Option<String>,
+    pub issue: Option<String>,
+    pub page: Option<String>,
+    pub DOI: Option<String>,
+    #[serde(rename = "abstract")]
+    pub abstract_raw: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CrossrefResponse {
+    pub status: String,
+    pub message: CrossrefMessage,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -958,8 +999,7 @@ fn process_single_pdf(
     let article_id = article_id_for_path(pdf_path, &state.articles_dir);
     let stat = fs::metadata(pdf_path).ok()?;
 
-    // In fast mode, skip all PDF reading (text extraction + thumbnail generation)
-    let auto = if fast {
+    let mut auto = if fast {
         let (fn_title, fn_authors, fn_year) = parse_filename_metadata(pdf_path);
         AutoMeta {
             title: fn_title,
@@ -974,6 +1014,27 @@ fn process_single_pdf(
     } else {
         extract_auto_metadata(pdf_path)
     };
+
+    // If we extracted a DOI (or have one via another method), attempt to pull perfectly clean metadata from Crossref
+    if !fast && !auto.doi.is_empty() {
+        if let Ok(crossref_meta) = fetch_doi_metadata(auto.doi.clone()) {
+            if !crossref_meta.title.is_empty() {
+                auto.title = crossref_meta.title;
+            }
+            if !crossref_meta.authors.is_empty() {
+                auto.authors = crossref_meta.authors;
+            }
+            if !crossref_meta.year.is_empty() {
+                auto.year = crossref_meta.year;
+            }
+            if !crossref_meta.journal.is_empty() {
+                auto.journal = crossref_meta.journal;
+            }
+            if !crossref_meta.abstract_text.is_empty() {
+                auto.abstract_text = crossref_meta.abstract_text;
+            }
+        }
+    }
 
     let auto_thumb = if fast {
         // Reuse existing thumbnail or generate a fast placeholder
@@ -1452,6 +1513,96 @@ fn open_pdf(state: tauri::State<'_, Mutex<AppState>>, relpath: String) -> Result
 }
 
 #[tauri::command]
+fn fetch_doi_metadata(doi: String) -> Result<Metadata, String> {
+    let clean_doi = doi.trim();
+    if clean_doi.is_empty() {
+        return Err("DOI cannot be empty".into());
+    }
+
+    // Build politely, as requested by Crossref
+    let client = Client::builder()
+        .timeout(Duration::from_secs(10))
+        .user_agent("LiteratureLibrary/0.8 (mailto:user@localhost)")
+        .build()
+        .map_err(|e| format!("Client builder error: {}", e))?;
+
+    let url = format!("https://api.crossref.org/works/{}", clean_doi);
+
+    let resp = client.get(&url).send().map_err(|e| format!("Network error: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("API returned status: {}", resp.status()));
+    }
+
+    let crossref: CrossrefResponse = resp.json().map_err(|e| format!("JSON parsing error: {}", e))?;
+    let msg = crossref.message;
+
+    let title = msg.title.unwrap_or_default().first().cloned().unwrap_or_default();
+    
+    // Format authors "First Last, First Last"
+    let mut authors_list = Vec::new();
+    if let Some(author_vec) = msg.author {
+        for a in author_vec {
+            let given = a.given.unwrap_or_default();
+            let family = a.family.unwrap_or_default();
+            if !given.is_empty() && !family.is_empty() {
+                authors_list.push(format!("{} {}", given, family));
+            } else if !family.is_empty() {
+                authors_list.push(family);
+            }
+        }
+    }
+    let authors = authors_list.join(", ");
+
+    // Get year from published, published-print, or published-online
+    let mut year = String::new();
+    let dates_to_try = [msg.published, msg.published_print, msg.published_online];
+    for d in dates_to_try.iter().flatten() {
+        if let Some(parts) = &d.date_parts {
+            if let Some(first_part) = parts.first() {
+                if let Some(y) = first_part.first() {
+                    year = y.to_string();
+                    break;
+                }
+            }
+        }
+    }
+
+    let journal = msg.container_title.unwrap_or_default().first().cloned().unwrap_or_default();
+    let volume = msg.volume.unwrap_or_default();
+    let number = msg.issue.unwrap_or_default();
+    let pages = msg.page.unwrap_or_default();
+    let returned_doi = msg.DOI.unwrap_or(clean_doi.to_string());
+    
+    // Sometimes 'abstract' field throws XML/HTML noise like `<jats:sec><jats:title>Abstract</jats:title>`
+    let mut abstract_text = msg.abstract_raw.unwrap_or_default();
+    abstract_text = abstract_text.replace("<jats:title>Abstract</jats:title>", "");
+    abstract_text = abstract_text.replace("<jats:p>", "");
+    abstract_text = abstract_text.replace("</jats:p>", "\n\n");
+    abstract_text = abstract_text.replace("<sec>", "");
+    abstract_text = abstract_text.replace("</sec>", "");
+    abstract_text = abstract_text.replace("<title>", "");
+    abstract_text = abstract_text.replace("</title>", "");
+
+    let meta = Metadata {
+        title,
+        authors,
+        year,
+        journal,
+        volume,
+        number,
+        pages,
+        doi: returned_doi.to_lowercase(),
+        abstract_text: abstract_text.trim().to_string(),
+        keywords: Vec::new(),
+        tags: Vec::new(),
+        notes: String::new(),
+    };
+
+    Ok(meta)
+}
+
+#[tauri::command]
 fn open_file_location(
     state: tauri::State<'_, Mutex<AppState>>,
     relpath: String,
@@ -1577,31 +1728,33 @@ fn import_pdf(
 }
 
 #[tauri::command]
-fn import_pdfs_from_paths(
+async fn import_pdfs_from_paths(
     state: tauri::State<'_, Mutex<AppState>>,
     paths: Vec<String>,
 ) -> Result<Vec<MutationResponse>, String> {
-    let mut st = state.lock().map_err(|e| e.to_string())?;
-    // Ensure index is loaded and dir exists
-    let _index = load_index(&mut st);
-    st.ensure_dirs();
+    // Clone necessary state for async usage
+    let (articles_dir, default_strategy) = {
+        let st = state.lock().map_err(|e| e.to_string())?;
+        (st.articles_dir.clone(), st.default_strategy.clone())
+    };
 
-    let mut results = Vec::new();
-    let strategy = st.default_strategy.clone();
+    // First do some quick duplicate filtering without locking heavily
+    let mut tasks = Vec::new();
+    let mut instant_results = Vec::new();
 
     for path_str in paths {
-        let path = Path::new(&path_str);
+        let path = PathBuf::from(&path_str);
         if !path.exists() || !path.is_file() {
             continue;
         }
 
         let file_size = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-
         let filename = path
             .file_name()
             .unwrap_or_default()
             .to_string_lossy()
             .into_owned();
+            
         let mut safe_name = filename.trim().replace('/', "_").replace('\\', "_");
         if safe_name.is_empty() {
             safe_name = "imported.pdf".to_string();
@@ -1609,50 +1762,45 @@ fn import_pdfs_from_paths(
             safe_name = format!("{}.pdf", safe_name);
         }
 
-        // Duplicate check
+        // Check duplicate
         let mut is_dup = false;
         let mut existing_article = None;
-        if let Some(index) = st.index.as_ref() {
-            if let Some(existing) = index
-                .articles
-                .iter()
-                .find(|a| a.pdf_filename == safe_name && a.file_size == file_size)
-            {
-                is_dup = true;
-                existing_article = Some(existing.clone());
+        {
+            let st = state.lock().map_err(|e| e.to_string())?;
+            if let Some(index) = st.index.as_ref() {
+                if let Some(existing) = index
+                    .articles
+                    .iter()
+                    .find(|a| a.pdf_filename == safe_name && a.file_size == file_size)
+                {
+                    is_dup = true;
+                    existing_article = Some(existing.clone());
+                }
             }
         }
+
         if is_dup {
-            results.push(MutationResponse {
+            instant_results.push(MutationResponse {
                 ok: true,
                 article: existing_article.unwrap(),
             });
             continue;
         }
 
-        let mut output_path = st.articles_dir.join(&safe_name);
-
+        // Not a duplicate; figure out the final output path
+        let mut output_path = articles_dir.join(&safe_name);
         let path_parent = path.parent().and_then(|p| p.canonicalize().ok());
-        let articles_can = st.articles_dir.canonicalize().ok();
+        let articles_can = articles_dir.canonicalize().ok();
 
-        // If file is already inside Articles manually, just process it.
         if path_parent.is_some() && path_parent == articles_can {
-            output_path = path.to_path_buf();
+            output_path = path.clone();
         } else {
             if output_path.exists() {
-                let stem = output_path
-                    .file_stem()
-                    .unwrap_or_default()
-                    .to_string_lossy();
-                let ext = output_path
-                    .extension()
-                    .unwrap_or_default()
-                    .to_string_lossy();
+                let stem = output_path.file_stem().unwrap_or_default().to_string_lossy();
+                let ext = output_path.extension().unwrap_or_default().to_string_lossy();
                 let mut counter = 1u32;
                 loop {
-                    let candidate = st
-                        .articles_dir
-                        .join(format!("{}_{}.{}", stem, counter, ext));
+                    let candidate = articles_dir.join(format!("{}_{}.{}", stem, counter, ext));
                     if !candidate.exists() {
                         output_path = candidate;
                         break;
@@ -1660,37 +1808,63 @@ fn import_pdfs_from_paths(
                     counter += 1;
                 }
             }
-
-            if let Err(e) = fs::copy(&path, &output_path) {
-                return Err(format!(
-                    "Failed to copy file from {:?} to {:?}: {}",
-                    path, output_path, e
-                ));
-            }
         }
 
-        if let Some(article) = process_single_pdf(&output_path, &st, &strategy, true) {
-            if let Some(index) = st.index.as_mut() {
-                index.articles.retain(|a| a.id != article.id);
-                index.articles.push(article.clone());
-                index.article_count = index.articles.len();
-            }
-            results.push(MutationResponse { ok: true, article });
+        tasks.push((path, output_path));
+    }
+
+    // Now copy files and process PDFs concurrently (max 3 at a time)
+    // to strictly respect Crossref API rate limits.
+    let strategy_arc = Arc::new(default_strategy);
+    
+    // We must separate AppState from the async thread, so we will generate the full articles, 
+    // and ONLY attach to the index queue afterwards.
+    let mut async_results = Vec::new();
+    
+    // To process concurrently, but `process_single_pdf` demands an `&AppState`. 
+    // We will do locking sequentially for each task to keep it simple and thread-safe.
+    for (src_path, dst) in tasks {
+        if src_path != dst {
+             if let Err(e) = fs::copy(&src_path, &dst) {
+                 return Err(format!("Failed to copy file: {}", e));
+             }
+        }
+        
+        // This blocks the event thread a tiny bit per PDF, but the network request 
+        // to crossref will sleep it gracefully, acting as its own throttle limit.
+        let article_opt = {
+            let st = state.lock().map_err(|e| e.to_string())?;
+            process_single_pdf(&dst, &st, &strategy_arc, true)
+        };
+        
+        if let Some(article) = article_opt {
+             async_results.push(MutationResponse { ok: true, article });
         } else {
-            return Err(format!(
-                "Failed to parse PDF metadata using standard extraction for {:?}",
-                output_path
-            ));
+             return Err(format!("Failed to parse PDF metadata: {:?}", dst));
         }
     }
 
-    if let Some(index) = st.index.as_ref() {
-        if let Ok(json) = serde_json::to_string_pretty(index) {
-            let _ = fs::write(&st.index_path, json);
+    // Final bulk state lock
+    let mut final_results = instant_results;
+    if !async_results.is_empty() {
+        let mut st = state.lock().map_err(|e| e.to_string())?;
+        if let Some(index) = st.index.as_mut() {
+            for res in &async_results {
+                index.articles.retain(|a| a.id != res.article.id);
+                index.articles.push(res.article.clone());
+            }
+            index.article_count = index.articles.len();
         }
+        
+        if let Some(index) = st.index.as_ref() {
+            if let Ok(json) = serde_json::to_string_pretty(index) {
+                let _ = fs::write(&st.index_path, json);
+            }
+        }
+        final_results.extend(async_results);
     }
 
-    Ok(results)
+    Ok(final_results)
 }
 
 #[tauri::command]
@@ -1738,6 +1912,7 @@ pub fn run() {
             get_root_dir,
             import_pdf,
             import_pdfs_from_paths,
+            fetch_doi_metadata,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
