@@ -64,39 +64,19 @@
                     <option value="none">None</option>
                 </select>
             </label>
-            <div class="settings-wrap" style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
-                <div id="settings-wrap" style="position: relative;">
-                    <span
-                        style="font-size: 0.75rem; color: var(--muted); font-weight: 600; cursor: default; line-height: 1; padding-right: 4px; display: block; text-align: right; letter-spacing: 0.03em;">v0.8.1</span>
-                    <button id="menu-toggle" class="menu-toggle" type="button" aria-expanded="false"
-                        aria-controls="settings-menu">
-                        <span class="menu-bars" aria-hidden="true"></span>
-                        <span>Menu</span>
+            <div class="settings-wrap" style="display: flex; align-items: center; gap: 8px;">
+                <div id="settings-wrap-files" style="position: relative;">
+                    <button id="files-menu-toggle" class="menu-toggle" type="button" aria-expanded="false"
+                        aria-controls="files-menu" style="padding: 4px 10px; font-weight: 600;">
+                        <span>Files</span>
                     </button>
-                    <div id="settings-menu" class="settings-menu hidden" role="menu">
-                        <label class="field">
-                            <span>Card Height <strong id="card-height-value">138</strong>px</span>
-                            <input id="card-height-slider" type="range" min="100" max="640" step="2" value="138" />
-                        </label>
-                        <label class="field">
-                            <span>Card Width <strong id="card-width-value">200</strong>px</span>
-                            <input id="card-width-slider" type="range" min="120" max="600" step="2" value="200" />
-                        </label>
-                        <label class="field">
-                            <span>Card Font <strong id="card-font-value">14</strong>px</span>
-                            <input id="card-font-slider" type="range" min="10" max="32" step="1" value="14" />
-                        </label>
-                        <label class="field">
-                            <span>Interface Font</span>
-                            <select id="font-family-select">
-                                <option value="segoe">Segoe UI</option>
-                                <option value="arial">Arial</option>
-                                <option value="georgia">Georgia</option>
-                                <option value="trebuchet">Trebuchet MS</option>
-                                <option value="courier">Courier New</option>
-                            </select>
-                        </label>
-                        <label class="field">
+                    <div id="files-menu" class="settings-menu hidden" role="menu">
+                        <div class="menu-section-header"
+                            style="font-size: 0.75rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; padding: 4px 8px; margin-bottom: 4px;">
+                            File Management</div>
+                        <button id="open-articles-btn" type="button" class="ghost">Open Articles Folder</button>
+                        <button id="highlight-btn" type="button" class="ghost">Highlight Incomplete</button>
+                        <label class="field" style="margin-top: 4px;">
                             <span>Auto Thumbnail</span>
                             <select id="strategy-select">
                                 <option value="hybrid">Hybrid</option>
@@ -108,11 +88,52 @@
                             <input id="parse-pdfs" type="checkbox" />
                             <span style="font-size:0.82rem;">Parse PDFs</span>
                         </label>
-                        <button id="reindex-btn" type="button">Reindex</button>
-                        <button id="open-articles-btn" type="button" class="ghost">Open Articles Folder</button>
+
+                        <hr style="border: none; border-top: 1px dashed var(--danger); margin: 8px 0; opacity: 0.5;" />
+
                         <button id="restore-backup-btn" type="button" class="ghost" style="color:var(--accent);">Restore
                             Backup</button>
-                        <button id="highlight-btn" type="button" class="ghost">Highlight Incomplete</button>
+                        <button id="reindex-btn" type="button">Reindex</button>
+                    </div>
+                </div>
+
+                <div id="settings-wrap-display" style="position: relative;">
+                    <button id="display-menu-toggle" class="menu-toggle" type="button" aria-expanded="false"
+                        aria-controls="display-menu" style="padding: 4px 10px; font-weight: 600;">
+                        <span>Display</span>
+                    </button>
+                    <div id="display-menu" class="settings-menu hidden" role="menu">
+                        <div class="view-toggle"
+                            style="padding: 8px; display: flex; justify-content: center; margin-bottom: 8px;">
+                            <span class="view-toggle-label">Cards</span>
+                            <label class="toggle-switch">
+                                <input id="view-mode-toggle" type="checkbox" />
+                                <span class="toggle-track"></span>
+                            </label>
+                            <span class="view-toggle-label">List</span>
+                        </div>
+                        <label class="field">
+                            <span>Font</span>
+                            <select id="font-family-select">
+                                <option value="segoe">Segoe UI</option>
+                                <option value="arial">Arial</option>
+                                <option value="georgia">Georgia</option>
+                                <option value="trebuchet">Trebuchet MS</option>
+                                <option value="courier">Courier New</option>
+                            </select>
+                        </label>
+                        <label class="field" style="margin-top: 4px;">
+                            <span>Card Height <strong id="card-height-value">138</strong>px</span>
+                            <input id="card-height-slider" type="range" min="100" max="640" step="2" value="138" />
+                        </label>
+                        <label class="field">
+                            <span>Card Width <strong id="card-width-value">200</strong>px</span>
+                            <input id="card-width-slider" type="range" min="120" max="600" step="2" value="200" />
+                        </label>
+                        <label class="field">
+                            <span>Card Font <strong id="card-font-value">14</strong>px</span>
+                            <input id="card-font-slider" type="range" min="10" max="32" step="1" value="14" />
+                        </label>
                         <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
                             <input id="tint-by-tag" type="checkbox" />
                             <span style="font-size:0.82rem;">Tint by Tag</span>
@@ -122,17 +143,11 @@
                             <input id="color-intensity-slider" type="range" min="0" max="100" step="1" value="13" />
                         </label>
                         <button id="edit-tag-colors-btn" type="button" class="ghost">Edit Tag Colors</button>
-                        <div class="view-toggle" style="padding:4px 0;">
-                            <span class="view-toggle-label">Cards</span>
-                            <label class="toggle-switch">
-                                <input id="view-mode-toggle" type="checkbox" />
-                                <span class="toggle-track"></span>
-                            </label>
-                            <span class="view-toggle-label">List</span>
-                        </div>
-                        <button id="hotkeys-btn" type="button" class="ghost">Hotkeys</button>
                     </div>
                 </div>
+
+                <button id="hotkeys-btn" type="button" class="icon-toggle" aria-label="Keyboard Shortcuts"
+                    style="border-radius:50%; width: 34px; height: 34px; padding: 0; display:flex; align-items:center; justify-content:center; font-weight: bold; font-size: 1.1rem; border: 1px solid var(--line); background: var(--bg-soft); color: var(--muted);">?</button>
             </div>
     </header>
 
@@ -358,6 +373,11 @@
                         <td>Close any modal</td>
                     </tr>
                 </table>
+                <div
+                    style="text-align: center; margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px;">
+                    <span
+                        style="font-size: 0.8rem; color: var(--muted); font-weight: 600; cursor: default; letter-spacing: 0.03em;">v0.8.1</span>
+                </div>
             </div>
         </div>
     </div>

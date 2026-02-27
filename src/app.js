@@ -19,7 +19,8 @@ const state = {
     fontFamily: window.localStorage.getItem("article-font-family") || "segoe",
     primarySort: window.localStorage.getItem("article-primary-sort") || "year_desc",
     secondarySort: window.localStorage.getItem("article-secondary-sort") || "title_asc",
-    menuOpen: false,
+    displayMenuOpen: false,
+    filesMenuOpen: false,
     highlightIncomplete: window.localStorage.getItem("article-highlight-incomplete") === "true",
     tintByTag: window.localStorage.getItem("article-tint-by-tag") === "true",
     colorIntensity: Number.parseInt(window.localStorage.getItem("article-color-intensity") || "13", 10),
@@ -30,9 +31,12 @@ const state = {
 
 const dom = {
     topbar: document.getElementById("topbar"),
-    settingsWrap: document.getElementById("settings-wrap"),
-    menuToggle: document.getElementById("menu-toggle"),
-    settingsMenu: document.getElementById("settings-menu"),
+    settingsWrapDisplay: document.getElementById("settings-wrap-display"),
+    displayMenuToggle: document.getElementById("display-menu-toggle"),
+    displayMenu: document.getElementById("display-menu"),
+    settingsWrapFiles: document.getElementById("settings-wrap-files"),
+    filesMenuToggle: document.getElementById("files-menu-toggle"),
+    filesMenu: document.getElementById("files-menu"),
     primarySort: document.getElementById("primary-sort"),
     secondarySort: document.getElementById("secondary-sort"),
     cardHeightSlider: document.getElementById("card-height-slider"),
@@ -206,10 +210,18 @@ function applyFontFamily(value) {
     }
 }
 
-function setMenuOpen(isOpen) {
-    state.menuOpen = Boolean(isOpen);
-    dom.settingsMenu.classList.toggle("hidden", !state.menuOpen);
-    dom.menuToggle.setAttribute("aria-expanded", state.menuOpen ? "true" : "false");
+function setDisplayMenuOpen(isOpen) {
+    state.displayMenuOpen = Boolean(isOpen);
+    dom.displayMenu.classList.toggle("hidden", !state.displayMenuOpen);
+    dom.displayMenuToggle.setAttribute("aria-expanded", state.displayMenuOpen ? "true" : "false");
+    if (isOpen && state.filesMenuOpen) setFilesMenuOpen(false);
+}
+
+function setFilesMenuOpen(isOpen) {
+    state.filesMenuOpen = Boolean(isOpen);
+    dom.filesMenu.classList.toggle("hidden", !state.filesMenuOpen);
+    dom.filesMenuToggle.setAttribute("aria-expanded", state.filesMenuOpen ? "true" : "false");
+    if (isOpen && state.displayMenuOpen) setDisplayMenuOpen(false);
 }
 
 function setStatus(text, isWarning = false) {
@@ -1260,7 +1272,7 @@ async function resetAutoThumbnail() {
 async function doReindex() {
     const strategy = dom.strategySelect.value;
     const fast = !dom.parsePdfs.checked;
-    setMenuOpen(false);
+    setFilesMenuOpen(false);
     setStatus(`Reindexing with ${strategy} strategy${fast ? " (fast mode)" : ""}...`);
     dom.reindexBtn.disabled = true;
     try {
@@ -1295,7 +1307,8 @@ function wireEvents() {
     applyCardWidth(state.cardWidth);
     applyCardFont(state.cardFont);
     applyFontFamily(state.fontFamily);
-    setMenuOpen(false);
+    setDisplayMenuOpen(false);
+    setFilesMenuOpen(false);
 
     dom.searchInput.addEventListener("input", debouncedSearch);
 
@@ -1536,7 +1549,7 @@ function wireEvents() {
     scheduleBackup();
 
     dom.restoreBackupBtn.addEventListener("click", () => {
-        setMenuOpen(false);
+        setFilesMenuOpen(false);
         loadBackupOptions();
         dom.backupModal.classList.remove("hidden");
     });
@@ -1569,6 +1582,9 @@ function wireEvents() {
                 btn.innerHTML = `<span>Restore <strong>${b.name}</strong></span> <span class="meta">${timeStr}</span>`;
 
                 btn.addEventListener("click", async () => {
+                    if (!window.confirm(`Are you sure you want to restore the backup from ${timeStr}? This will overwrite your current library.`)) {
+                        return;
+                    }
                     dom.backupStatus.style.display = "block";
                     dom.backupStatus.textContent = `Restoring ${b.name}...`;
                     try {
@@ -1605,10 +1621,13 @@ function wireEvents() {
     // Hotkeys modal
     dom.hotkeysBtn.addEventListener("click", () => {
         dom.hotkeysModal.classList.remove("hidden");
+        dom.hotkeysModal.querySelector(".modal-card").classList.add("starry-bg");
     });
-    dom.hotkeysClose.addEventListener("click", () => {
+    const closeHotkeys = () => {
         dom.hotkeysModal.classList.add("hidden");
-    });
+        dom.hotkeysModal.querySelector(".modal-card").classList.remove("starry-bg");
+    };
+    dom.hotkeysClose.addEventListener("click", closeHotkeys);
     dom.primarySort.addEventListener("change", () => {
         state.primarySort = normalizeSortKey(dom.primarySort.value, "year_desc");
         dom.primarySort.value = state.primarySort;
@@ -1621,10 +1640,15 @@ function wireEvents() {
         window.localStorage.setItem("article-secondary-sort", state.secondarySort);
         renderArticles();
     });
-    dom.menuToggle.addEventListener("click", (evt) => {
+    dom.displayMenuToggle.addEventListener("click", (evt) => {
         evt.preventDefault();
         evt.stopPropagation();
-        setMenuOpen(!state.menuOpen);
+        setDisplayMenuOpen(!state.displayMenuOpen);
+    });
+    dom.filesMenuToggle.addEventListener("click", (evt) => {
+        evt.preventDefault();
+        evt.stopPropagation();
+        setFilesMenuOpen(!state.filesMenuOpen);
     });
     dom.cardHeightSlider.addEventListener("input", () => {
         applyCardHeight(dom.cardHeightSlider.value);
@@ -1938,9 +1962,12 @@ function wireEvents() {
     });
 
     document.addEventListener("click", (evt) => {
-        if (!state.menuOpen) return;
-        if (dom.settingsWrap.contains(evt.target)) return;
-        setMenuOpen(false);
+        if (state.displayMenuOpen && !dom.settingsWrapDisplay.contains(evt.target)) {
+            setDisplayMenuOpen(false);
+        }
+        if (state.filesMenuOpen && !dom.settingsWrapFiles.contains(evt.target)) {
+            setFilesMenuOpen(false);
+        }
     });
 
     // Mousedown on modal backdrops to close
@@ -1976,21 +2003,22 @@ function wireEvents() {
                 return;
             }
             if (!dom.hotkeysModal.classList.contains("hidden")) {
-                dom.hotkeysModal.classList.add("hidden");
+                closeHotkeys();
                 return;
             }
             if (!dom.backupModal.classList.contains("hidden")) {
                 dom.backupModal.classList.add("hidden");
                 return;
             }
-            if (state.menuOpen) setMenuOpen(false); // Fallback for menu
+            if (state.displayMenuOpen) setDisplayMenuOpen(false);
+            if (state.filesMenuOpen) setFilesMenuOpen(false);
         }
 
         // Ctrl+Tab to toggle hamburger menu or Tab to focus search (if not auto-completing tags)
         if (evt.key === "Tab") {
             if (evt.ctrlKey) {
                 evt.preventDefault();
-                setMenuOpen(!state.menuOpen);
+                setDisplayMenuOpen(!state.displayMenuOpen);
             } else if (!dom.tagAutocomplete || dom.tagAutocomplete.classList.contains("hidden")) {
                 evt.preventDefault();
                 dom.searchInput.focus();

@@ -257,3 +257,11 @@ CLI warnings:
 - [x] button to reset each tag's color, as well as "reset all colors"
 - [x] save a 15 minute backup of the json and include a "reset to last autosave: <time>" along with "x minutes to next backup"
 - [ ] toggle 'lock dimensions' in card resizing, default enabled
+
+- [x] move the hotkey button to the top bar with the text "?" and move the current version to that modal below the hotkeys.  add a starry night animation to the modal when the user lingers on it for more than 10 seconds
+
+- [x] reorder the menu options into two sections separated by a lines: style and files
+
+- [x] "reindex" should be the bottom choice, with "restore backup" above it, and both of them should require a confirmation dialog
+
+- [ ] add a button with height to set the height of the cards so the thumbnails don't need black borders

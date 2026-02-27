@@ -581,7 +581,7 @@ main {
 .toggle-track {
   position: absolute;
   inset: 0;
-  background: var(--surface);
+  background: rgba(255, 255, 255, 0.15);
   border: 1px solid var(--border);
   border-radius: 12px;
   transition: background 0.2s;
@@ -825,4 +825,37 @@ button.secondary {
 .tag-autocomplete .ac-match {
   font-weight: 700;
   color: var(--accent);
+}
+
+/* Starry Night Animation */
+@keyframes panStars {
+  0% {
+    background-position: 0 0;
+  }
+
+  100% {
+    background-position: -1000px 500px;
+  }
+}
+
+.starry-bg {
+  /* Creating a starry background effect using radial gradients */
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(1px 1px at 20px 30px, #ffffff, rgba(0, 0, 0, 0)),
+    radial-gradient(2px 2px at 40px 70px, rgba(255, 255, 255, 0.8), rgba(0, 0, 0, 0)),
+    radial-gradient(1px 1px at 50px 160px, #ffffff, rgba(0, 0, 0, 0)),
+    radial-gradient(1.5px 1.5px at 90px 40px, rgba(200, 220, 255, 0.9), rgba(0, 0, 0, 0)),
+    radial-gradient(2px 2px at 130px 80px, #ffffff, rgba(0, 0, 0, 0)),
+    radial-gradient(1px 1px at 160px 120px, rgba(255, 255, 255, 0.8), rgba(0, 0, 0, 0)),
+    radial-gradient(2.5px 2.5px at 180px 30px, rgba(255, 230, 200, 1), rgba(0, 0, 0, 0)),
+    radial-gradient(1px 1px at 200px 110px, #ffffff, rgba(0, 0, 0, 0)),
+    radial-gradient(1.5px 1.5px at 250px 70px, rgba(255, 255, 255, 0.7), rgba(0, 0, 0, 0)),
+    radial-gradient(1px 1px at 280px 160px, #ffffff, rgba(0, 0, 0, 0)),
+    radial-gradient(2px 2px at 320px 40px, rgba(220, 240, 255, 0.9), rgba(0, 0, 0, 0)),
+    radial-gradient(1px 1px at 360px 100px, #ffffff, rgba(0, 0, 0, 0)),
+    radial-gradient(1.5px 1.5px at 400px 150px, rgba(255, 255, 255, 0.8), rgba(0, 0, 0, 0));
+  background-size: 400px 200px;
+  animation: panStars 40s linear infinite;
+  transition: background 2s ease-in-out;
 }
