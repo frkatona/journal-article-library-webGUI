@@ -287,3 +287,5 @@ CLI warnings:
 - [ ] turn 'filter incomplete' from button to a filter
 
 - [ ] extend color coloration and hotkeys for opening the abstract and metadata modals to the rows in the list view
+
+- [ ] pull DOIs from references for each paper and show their year + author + title in the abstract viewer
