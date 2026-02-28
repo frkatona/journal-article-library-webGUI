@@ -88,6 +88,10 @@
                             <input id="parse-pdfs" type="checkbox" />
                             <span style="font-size:0.82rem;">Parse PDFs</span>
                         </label>
+                        <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                            <input id="show-errors-checkbox" type="checkbox" checked />
+                            <span style="font-size:0.82rem;">Show errors globally</span>
+                        </label>
 
                         <hr style="border: none; border-top: 1px dashed var(--danger); margin: 8px 0; opacity: 0.5;" />
 
@@ -249,6 +253,8 @@
                         <textarea id="f-notes" name="notes" rows="4"></textarea>
                     </label>
                     <div class="modal-actions">
+                        <button id="meta-remove" type="button" class="danger" style="margin-right: auto;">Remove
+                            Article</button>
                         <button id="meta-save" type="submit">Save Metadata</button>
                     </div>
                 </form>
@@ -274,20 +280,13 @@
     </div>
 
     <script src="app.js" defer></script>
-    <script>
-        window.addEventListener("error", function (e) {
-            const errDiv = document.createElement("div");
-            errDiv.style.position = "fixed";
-            errDiv.style.top = "10px";
-            errDiv.style.left = "10px";
-            errDiv.style.backgroundColor = "red";
-            errDiv.style.color = "white";
-            errDiv.style.padding = "10px";
-            errDiv.style.zIndex = "99999";
-            errDiv.innerText = e.message + " at " + e.filename + ":" + e.lineno;
-            document.body.appendChild(errDiv);
-        });
-    </script>
+    <!-- Global Error Banner -->
+    <div id="error-banner"
+        style="position: fixed; bottom: 0; left: 0; right: 0; background: var(--danger, #dc3545); color: white; padding: 12px 20px; z-index: 99999; display: none; justify-content: space-between; align-items: center; box-shadow: 0 -2px 10px rgba(0,0,0,0.2);">
+        <span id="error-banner-text" style="font-family: monospace; font-size: 0.85rem; word-break: break-word;"></span>
+        <button id="error-banner-close" type="button"
+            style="background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer; padding: 0; line-height: 1;">&times;</button>
+    </div>
 
     <!-- Tag Color Editor Panel -->
     <div id="tag-color-editor" class="modal hidden" role="dialog" aria-modal="true">
@@ -373,6 +372,19 @@
                         <td>Close any modal</td>
                     </tr>
                 </table>
+                <div style="margin-top: 20px; border-top: 1px solid var(--line); padding-top: 12px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span
+                            style="font-size: 0.8rem; color: var(--muted); font-weight: 600; letter-spacing: 0.03em;">Error
+                            Log</span>
+                        <button id="error-log-clear" type="button" class="ghost"
+                            style="font-size: 0.75rem; padding: 2px 6px;">Clear</button>
+                    </div>
+                    <ul id="error-log-list"
+                        style="margin-top: 8px; padding-left: 0; list-style: none; max-height: 100px; overflow-y: auto; font-family: monospace; font-size: 0.75rem; color: var(--danger); word-break: break-all; display: flex; flex-direction: column; gap: 4px;">
+                        <!-- JS injected -->
+                    </ul>
+                </div>
                 <div
                     style="text-align: center; margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px;">
                     <span

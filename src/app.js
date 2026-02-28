@@ -27,6 +27,7 @@ const state = {
     tagColors: JSON.parse(window.localStorage.getItem("article-tag-colors") || "{}"),
     acIndex: -1,
     isEscaping: false,
+    showErrorsGlobally: window.localStorage.getItem("article-show-errors") !== "false",
 };
 
 const dom = {
@@ -100,6 +101,7 @@ const dom = {
     abstractTitle: document.getElementById("abstract-title"),
     abstractMeta: document.getElementById("abstract-meta"),
     abstractText: document.getElementById("abstract-text"),
+    metaRemove: document.getElementById("meta-remove"),
     highlightBtn: document.getElementById("highlight-btn"),
     dropOverlay: document.getElementById("drop-overlay"),
     tintByTag: document.getElementById("tint-by-tag"),
@@ -111,8 +113,13 @@ const dom = {
     hotkeysBtn: document.getElementById("hotkeys-btn"),
     hotkeysModal: document.getElementById("hotkeys-modal"),
     hotkeysClose: document.getElementById("hotkeys-close"),
+    errorBanner: document.getElementById("error-banner"),
+    errorBannerText: document.getElementById("error-banner-text"),
+    errorBannerClose: document.getElementById("error-banner-close"),
+    showErrorsCheckbox: document.getElementById("show-errors-checkbox"),
+    errorLogList: document.getElementById("error-log-list"),
+    errorLogClear: document.getElementById("error-log-clear"),
 };
-
 const SORT_KEYS = new Set([
     "year_desc",
     "year_asc",
@@ -227,6 +234,9 @@ function setFilesMenuOpen(isOpen) {
 function setStatus(text, isWarning = false) {
     dom.statusLine.textContent = text;
     dom.statusLine.classList.toggle("warning", isWarning);
+    if (isWarning) {
+        logGlobalError(text, "", "");
+    }
 }
 
 function debounce(fn, waitMs) {
@@ -862,8 +872,42 @@ function buildDetailsTable(articles) {
 
     const table = document.createElement("table");
     table.className = "details-table";
-    table.innerHTML =
-        "<thead><tr><th>Year</th><th>Authors</th><th>Title</th><th>Journal</th><th>DOI</th><th>Actions</th></tr></thead>";
+
+    const thead = document.createElement("thead");
+    const trHead = document.createElement("tr");
+    const cols = [
+        { label: "Year", sortKey: "year" },
+        { label: "Authors", sortKey: "authors" },
+        { label: "Title", sortKey: "title" },
+        { label: "Journal", sortKey: "journal" },
+        { label: "DOI", sortKey: "doi" },
+        { label: "Actions", sortKey: null }
+    ];
+    cols.forEach(col => {
+        const th = document.createElement("th");
+        th.textContent = col.label;
+        if (col.sortKey) {
+            th.style.cursor = "pointer";
+            th.title = `Sort by ${col.label}`;
+            const isPrimary = state.primarySort.startsWith(col.sortKey);
+            if (isPrimary) {
+                th.textContent += state.primarySort.endsWith("_desc") ? " ▼" : " ▲";
+            }
+            th.addEventListener("click", () => {
+                if (state.primarySort.startsWith(col.sortKey)) {
+                    state.primarySort = state.primarySort.endsWith("_desc") ? `${col.sortKey}_asc` : `${col.sortKey}_desc`;
+                } else {
+                    state.primarySort = col.sortKey === "year" ? "year_desc" : `${col.sortKey}_asc`;
+                }
+                dom.primarySort.value = state.primarySort;
+                window.localStorage.setItem("article-primary-sort", state.primarySort);
+                renderArticles();
+            });
+        }
+        trHead.appendChild(th);
+    });
+    thead.appendChild(trHead);
+    table.appendChild(thead);
 
     const body = document.createElement("tbody");
     articles.forEach((article) => {
@@ -1103,7 +1147,7 @@ function openEditor(article) {
 function closeEditor() {
     state.current = null;
     dom.modal.classList.add("hidden");
-    dom.thumbFile.value = "";
+    if (dom.thumbFile) dom.thumbFile.value = "";
     dom.modalThumbWrap.classList.remove("drag-active");
 }
 
@@ -1725,6 +1769,26 @@ function wireEvents() {
     dom.modalClose.addEventListener("click", closeEditor);
     dom.abstractClose.addEventListener("click", closeAbstract);
     dom.form.addEventListener("submit", saveMetadata);
+    dom.metaRemove.addEventListener("click", async () => {
+        if (!state.current) return;
+        const md = state.current.metadata || {};
+        const title = md.title || state.current.pdf_filename;
+        if (!confirm(`Are you sure you want to permanently remove "${title}"? This will delete the PDF file and cannot be undone.`)) {
+            return;
+        }
+        setStatus("Removing article...");
+        try {
+            await invoke("remove_article", { articleId: state.current.id });
+            closeEditor();
+            const thumbPath = articleThumbPath(state.current);
+            if (thumbPath) thumbCache.delete(thumbPath);
+            await Promise.all([loadTags(), loadArticles()]);
+            setStatus("Article removed.");
+        } catch (err) {
+            const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
+            setStatus(`Failed to remove article: ${message}`, true);
+        }
+    });
 
     ["dragenter", "dragover"].forEach((name) => {
         dom.modalThumbWrap.addEventListener(name, (evt) => {
@@ -2016,6 +2080,7 @@ function wireEvents() {
 
         // Ctrl+Tab to toggle hamburger menu or Tab to focus search (if not auto-completing tags)
         if (evt.key === "Tab") {
+            if (!dom.modal.classList.contains("hidden")) return;
             if (evt.ctrlKey) {
                 evt.preventDefault();
                 setDisplayMenuOpen(!state.displayMenuOpen);
@@ -2023,7 +2088,7 @@ function wireEvents() {
                 evt.preventDefault();
                 dom.searchInput.focus();
                 // if topbar was hidden from auto-hide, trigger its reappearance
-                if (dom.topbar.style.top !== "0px") {
+                if (dom.topbar && dom.topbar.style.top !== "0px") {
                     document.dispatchEvent(new MouseEvent("mousemove"));
                 }
             }
@@ -2063,7 +2128,55 @@ function wireEvents() {
             });
         }
     });
+
+    if (dom.errorBannerClose) {
+        dom.errorBannerClose.addEventListener("click", () => {
+            dom.errorBanner.style.display = "none";
+        });
+    }
+    if (dom.errorLogClear) {
+        dom.errorLogClear.addEventListener("click", () => {
+            if (dom.errorLogList) dom.errorLogList.innerHTML = "";
+        });
+    }
+    if (dom.showErrorsCheckbox) {
+        dom.showErrorsCheckbox.checked = state.showErrorsGlobally;
+        dom.showErrorsCheckbox.addEventListener("change", () => {
+            state.showErrorsGlobally = dom.showErrorsCheckbox.checked;
+            window.localStorage.setItem("article-show-errors", String(state.showErrorsGlobally));
+            if (!state.showErrorsGlobally && dom.errorBanner) {
+                dom.errorBanner.style.display = "none";
+            }
+        });
+    }
 }
+
+function logGlobalError(message, source, lineno) {
+    const time = new Date().toLocaleTimeString();
+    const li = document.createElement("li");
+    let text = `[${time}] ${message}`;
+    if (source) text += ` (${source}:${lineno})`;
+    li.textContent = text;
+    if (dom.errorLogList) {
+        dom.errorLogList.prepend(li);
+        while (dom.errorLogList.children.length > 50) {
+            dom.errorLogList.removeChild(dom.errorLogList.lastChild);
+        }
+    }
+
+    if (state.showErrorsGlobally) {
+        if (dom.errorBannerText) dom.errorBannerText.textContent = message;
+        if (dom.errorBanner) dom.errorBanner.style.display = "flex";
+    }
+}
+
+window.addEventListener("error", (e) => {
+    logGlobalError(e.message, e.filename, e.lineno);
+});
+
+window.addEventListener("unhandledrejection", (e) => {
+    logGlobalError(e.reason?.message || String(e.reason));
+});
 
 async function init() {
     wireEvents();

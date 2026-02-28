@@ -226,10 +226,8 @@ src-tauri/              # Rust backend
   - finding other inspiration and general clever ideas (design, UX, hotkey, speed, etc.) 
 
 - stretch or stupid
-  - easter eggs
-    - game (temporary box destroyer), play a little jingle when opening files, have a ball bounce between the cards
   - 'check for updates' button
-  - network mode based on tags, authors (degrees of kevin bacon)
+  - network mode to cluster based on shared tags, a la obsidian
   - make a video showing the features (hotkeys, colors, thumbnail replacement, drag-and-drop)
     - test run with Kristen
 
@@ -264,4 +262,28 @@ CLI warnings:
 
 - [x] "reindex" should be the bottom choice, with "restore backup" above it, and both of them should require a confirmation dialog
 
-- [ ] add a button with height to set the height of the cards so the thumbnails don't need black borders
+- [ ] add a checkbox with height to auto-set height of cards to remove black borders from thumbnails
+
+- [ ] maybe include a resizing/cropping feature to the 'paste thumbnail image' to encourage getting large screenshots and cropping in
+
+- [x] fix bug where tab move cursor to search bar even in the edit modal
+  - [ ] bug: not tabbing from the chips field to the next field
+
+- [x] "remove article" option in metadata (with confirmation dialog)
+
+- [x] intrusive red error bar: have it fade after a few seconds or show it at the bottom with an 'x' to close it, but store a log in the '?' button modal and have a checkbox in files to disable showing errors outside of '?'
+  - Uncaught TypeError: Cannot set properties of undefined (setting 'value') at http://tauri.localhost/app.js:1106
+
+- [ ] in 'list' view, have clicking on the columns primary sort by that column
+
+- [ ] include toggle in filter dropdown for checking to mean 'include' or 'exclude' (default 'include')
+
+- [ ] prompt user with metadata modal on import of new PDF 
+
+- [ ] add button to left of 'fetch data' for 'fetch DOI'
+
+- [ ] on re-index, check for duplicate DOIs and prompt user "remove the following duplicates? :"
+
+- [ ] turn 'filter incomplete' from button to a filter
+
+- [ ] extend color coloration and hotkeys for opening the abstract and metadata modals to the rows in the list view

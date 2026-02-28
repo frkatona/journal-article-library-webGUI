@@ -1486,6 +1486,45 @@ fn upload_thumbnail(
 }
 
 #[tauri::command]
+fn remove_article(
+    state: tauri::State<'_, Mutex<AppState>>,
+    article_id: String,
+) -> Result<bool, String> {
+    let mut st = state.lock().map_err(|e| e.to_string())?;
+    let _index = load_index(&mut st);
+
+    let article_opt = st.index.as_ref().and_then(|idx| idx.articles.iter().find(|a| a.id == article_id).cloned());
+    let article = article_opt.ok_or("Article not found")?;
+
+    // Delete PDF
+    let pdf_path = st.root_dir.join(&article.pdf_relpath);
+    let _ = fs::remove_file(pdf_path);
+
+    // Delete manual thumbnail
+    let manual_thumb = st.manual_thumbnails_dir.join(format!("{}.jpg", article_id));
+    let _ = fs::remove_file(manual_thumb);
+
+    // Delete auto thumbnail
+    let auto_thumb = st.root_dir.join(&article.auto_thumbnail.path);
+    let _ = fs::remove_file(auto_thumb);
+
+    // Delete override meta
+    let override_file = st.overrides_dir.join(format!("{}.json", article_id));
+    let _ = fs::remove_file(override_file);
+
+    // Remove from index
+    let index_path = st.index_path.clone();
+    let index = st.index.as_mut().ok_or("no index loaded")?;
+    index.articles.retain(|a| a.id != article_id);
+    index.article_count = index.articles.len();
+
+    let json = serde_json::to_string_pretty(index).unwrap_or_default();
+    let _ = fs::write(&index_path, json);
+
+    Ok(true)
+}
+
+#[tauri::command]
 fn open_pdf(state: tauri::State<'_, Mutex<AppState>>, relpath: String) -> Result<(), String> {
     let mut st = state.lock().map_err(|e| e.to_string())?;
     let full_path = st.root_dir.join(&relpath);
@@ -1995,6 +2034,7 @@ pub fn run() {
             reindex,
             save_metadata,
             upload_thumbnail,
+            remove_article,
             open_pdf,
             open_file_location,
             open_articles_folder,
