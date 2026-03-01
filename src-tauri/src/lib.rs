@@ -1219,6 +1219,8 @@ fn get_articles(
     state: tauri::State<'_, Mutex<AppState>>,
     query: Option<String>,
     tags: Option<Vec<String>>,
+    match_mode: Option<String>,
+    filter_incomplete: Option<bool>,
     limit: Option<usize>,
     offset: Option<usize>,
 ) -> Result<ArticlesResponse, String> {
@@ -1231,6 +1233,9 @@ fn get_articles(
     let limit = limit.unwrap_or(200).max(1).min(500);
     let offset = offset.unwrap_or(0);
 
+    let match_mode = match_mode.unwrap_or_else(|| "include".to_string());
+    let filter_incomplete = filter_incomplete.unwrap_or(false);
+
     let mut rows: Vec<Article> = index.articles.clone();
 
     if !query_str.is_empty() {
@@ -1242,11 +1247,25 @@ fn get_articles(
     }
 
     if !tags_lower.is_empty() {
+        if match_mode == "any" {
+            rows.retain(|a| {
+                let article_tags: Vec<String> = a.metadata.tags.iter().map(|t| t.trim().to_lowercase()).collect();
+                tags_lower.iter().any(|t| article_tags.contains(t))
+            });
+        } else {
+            rows.retain(|a| {
+                let article_tags: Vec<String> = a.metadata.tags.iter().map(|t| t.trim().to_lowercase()).collect();
+                tags_lower.iter().all(|t| article_tags.contains(t))
+            });
+        }
+    }
+
+    if filter_incomplete {
         rows.retain(|a| {
-            a.metadata
-                .tags
-                .iter()
-                .any(|t| tags_lower.contains(&t.trim().to_lowercase()))
+            let md = &a.metadata;
+            let has_abstract = !md.abstract_text.trim().is_empty();
+            let has_tags = !md.tags.is_empty();
+            !(has_abstract && has_tags)
         });
     }
 
@@ -1948,6 +1967,62 @@ fn create_backup(state: tauri::State<'_, Mutex<AppState>>) -> Result<bool, Strin
 }
 
 #[tauri::command]
+fn get_article_text_front(
+    state: tauri::State<'_, Mutex<AppState>>,
+    article_id: String,
+) -> Result<String, String> {
+    let mut st = state.lock().map_err(|e| e.to_string())?;
+    let index = load_index(&mut st);
+    let article = index
+        .articles
+        .iter()
+        .find(|a| a.id == article_id)
+        .ok_or_else(|| "Article not found".to_string())?;
+
+    let pdf_path = st.articles_dir.join(&article.pdf_filename);
+    if !pdf_path.exists() {
+        return Err("PDF file not found".into());
+    }
+
+    match pdf_extract::extract_text(&pdf_path) {
+        Ok(text) => {
+            let prefix: String = text.chars().take(10000).collect();
+            Ok(prefix)
+        }
+        Err(e) => Err(format!("Failed to extract text from PDF: {:?}", e)),
+    }
+}
+
+#[tauri::command]
+fn get_article_text_back(
+    state: tauri::State<'_, Mutex<AppState>>,
+    article_id: String,
+) -> Result<String, String> {
+    let mut st = state.lock().map_err(|e| e.to_string())?;
+    let index = load_index(&mut st);
+    let article = index
+        .articles
+        .iter()
+        .find(|a| a.id == article_id)
+        .ok_or_else(|| "Article not found".to_string())?;
+
+    let pdf_path = st.articles_dir.join(&article.pdf_filename);
+    if !pdf_path.exists() {
+        return Err("PDF file not found".into());
+    }
+
+    match pdf_extract::extract_text(&pdf_path) {
+        Ok(text) => {
+            let total_chars = text.chars().count();
+            let start = total_chars.saturating_sub(15000);
+            let suffix: String = text.chars().skip(start).collect();
+            Ok(suffix)
+        }
+        Err(e) => Err(format!("Failed to extract text from PDF: {:?}", e)),
+    }
+}
+
+#[tauri::command]
 fn get_backups(state: tauri::State<'_, Mutex<AppState>>) -> Result<BackupsResponse, String> {
     let st = state.lock().map_err(|e| e.to_string())?;
     let b1 = st.data_dir.join("index.backup1.json");
@@ -2043,6 +2118,8 @@ pub fn run() {
             import_pdf,
             import_pdfs_from_paths,
             fetch_doi_metadata,
+            get_article_text_front,
+            get_article_text_back,
             create_backup,
             get_backups,
             restore_backup,

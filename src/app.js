@@ -14,6 +14,7 @@ const state = {
     current: null,
     viewMode: window.localStorage.getItem("article-view-mode") || "preview",
     cardHeight: Number.parseInt(window.localStorage.getItem("article-card-height") || "138", 10),
+    autoFitHeight: window.localStorage.getItem("article-autofit-height") === "true",
     cardWidth: Number.parseInt(window.localStorage.getItem("article-card-width") || "200", 10),
     cardFont: Number.parseInt(window.localStorage.getItem("article-card-font") || "14", 10),
     fontFamily: window.localStorage.getItem("article-font-family") || "segoe",
@@ -21,7 +22,6 @@ const state = {
     secondarySort: window.localStorage.getItem("article-secondary-sort") || "title_asc",
     displayMenuOpen: false,
     filesMenuOpen: false,
-    highlightIncomplete: window.localStorage.getItem("article-highlight-incomplete") === "true",
     tintByTag: window.localStorage.getItem("article-tint-by-tag") === "true",
     colorIntensity: Number.parseInt(window.localStorage.getItem("article-color-intensity") || "13", 10),
     tagColors: JSON.parse(window.localStorage.getItem("article-tag-colors") || "{}"),
@@ -42,6 +42,7 @@ const dom = {
     secondarySort: document.getElementById("secondary-sort"),
     cardHeightSlider: document.getElementById("card-height-slider"),
     cardHeightValue: document.getElementById("card-height-value"),
+    cardHeightAutofit: document.getElementById("card-height-autofit"),
     cardWidthSlider: document.getElementById("card-width-slider"),
     cardWidthValue: document.getElementById("card-width-value"),
     cardFontSlider: document.getElementById("card-font-slider"),
@@ -99,10 +100,14 @@ const dom = {
     abstractModal: document.getElementById("abstract-modal"),
     abstractClose: document.getElementById("abstract-close"),
     abstractTitle: document.getElementById("abstract-title"),
+    duplicateModal: document.getElementById("duplicate-modal"),
+    duplicateClose: document.getElementById("duplicate-close"),
+    duplicateList: document.getElementById("duplicate-list"),
     abstractMeta: document.getElementById("abstract-meta"),
     abstractText: document.getElementById("abstract-text"),
+    abstractReferencesSection: document.getElementById("abstract-references-section"),
+    abstractReferencesList: document.getElementById("abstract-references-list"),
     metaRemove: document.getElementById("meta-remove"),
-    highlightBtn: document.getElementById("highlight-btn"),
     dropOverlay: document.getElementById("drop-overlay"),
     tintByTag: document.getElementById("tint-by-tag"),
     editTagColorsBtn: document.getElementById("edit-tag-colors-btn"),
@@ -172,6 +177,8 @@ function applyCardHeight(value) {
     document.documentElement.style.setProperty("--thumb-height", `${thumbHeight}px`);
     dom.cardHeightSlider.value = String(cardHeight);
     dom.cardHeightValue.textContent = String(cardHeight);
+    dom.grid.classList.toggle("autofit-cards", Boolean(state.autoFitHeight));
+    dom.cardHeightSlider.disabled = Boolean(state.autoFitHeight);
 }
 
 function clampCardWidth(value) {
@@ -681,7 +688,39 @@ function openAbstract(article) {
     dom.abstractMeta.textContent = metaBits.join(" | ");
     const abstractText = typeof md.abstract === "string" ? md.abstract.trim() : "";
     dom.abstractText.textContent = abstractText || "No abstract available.";
+
+    if (dom.abstractReferencesSection) {
+        dom.abstractReferencesSection.style.display = "none";
+        clearNode(dom.abstractReferencesList);
+    }
+
     dom.abstractModal.classList.remove("hidden");
+
+    if (dom.abstractReferencesSection) {
+        invoke("get_article_text_back", { articleId: article.id }).then(text => {
+            if (!text) return;
+            const matches = text.match(/\b10\.\d{4,9}\/[-._;()/:A-Za-z0-9]+\b/g) || [];
+            const uniqueDois = [...new Set(matches)];
+            const ownDoi = normalizeWhitespace(md.doi);
+            const refDois = uniqueDois.filter(d => d && d !== ownDoi);
+
+            if (refDois.length > 0) {
+                refDois.forEach(doi => {
+                    const link = document.createElement("a");
+                    link.href = `https://doi.org/${doi}`;
+                    link.target = "_blank";
+                    link.textContent = doi;
+                    link.style.display = "block";
+                    link.style.color = "var(--accent)";
+                    link.style.textDecoration = "none";
+                    link.addEventListener("mouseover", () => link.style.textDecoration = "underline");
+                    link.addEventListener("mouseout", () => link.style.textDecoration = "none");
+                    dom.abstractReferencesList.appendChild(link);
+                });
+                dom.abstractReferencesSection.style.display = "block";
+            }
+        }).catch(err => console.warn("Failed to extract backend text:", err));
+    }
 }
 
 function closeAbstract() {
@@ -917,7 +956,30 @@ function buildDetailsTable(articles) {
         if (state.highlightIncomplete && hasEmptyMetadata(article)) {
             row.classList.add("card-incomplete");
         }
+
+        row.tabIndex = 0;
+        const tint = getCardTint(article);
+        if (tint) {
+            row.style.backgroundColor = tint;
+        }
+
         row.addEventListener("click", () => openPdf(article));
+        row.addEventListener("keydown", (evt) => {
+            if (evt.target !== row) return;
+            if (evt.key === "e" || evt.key === "E") {
+                evt.preventDefault();
+                evt.stopPropagation();
+                openEditor(article);
+            } else if (evt.key === "a" || evt.key === "A") {
+                evt.preventDefault();
+                evt.stopPropagation();
+                openAbstract(article);
+            } else if (evt.key === "Enter" || evt.key === " ") {
+                evt.preventDefault();
+                evt.stopPropagation();
+                openPdf(article);
+            }
+        });
 
         const tdYear = document.createElement("td");
         tdYear.textContent = normalizeWhitespace(md.year) || "-";
@@ -1324,12 +1386,100 @@ async function doReindex() {
         thumbCache.clear();
         await Promise.all([loadTags(), loadArticles()]);
         setStatus("Reindex complete.");
+        if (state.articles.length > 0) {
+            checkDuplicates();
+        }
     } catch (err) {
         const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
         setStatus(`Reindex failed: ${message}`, true);
     } finally {
         dom.reindexBtn.disabled = false;
     }
+}
+
+async function checkDuplicates() {
+    // Group articles by DOI
+    const doiMap = new Map();
+    for (const article of state.articles) {
+        const doi = (article.metadata && article.metadata.doi || "").trim();
+        if (!doi) continue;
+        if (!doiMap.has(doi)) doiMap.set(doi, []);
+        doiMap.get(doi).push(article);
+    }
+
+    const duplicates = [];
+    for (const [doi, list] of doiMap.entries()) {
+        if (list.length > 1) {
+            duplicates.push({ doi, articles: list });
+        }
+    }
+
+    if (duplicates.length === 0) return;
+
+    // Show modal
+    clearNode(dom.duplicateList);
+    for (const group of duplicates) {
+        const groupEl = document.createElement("div");
+        groupEl.style.border = "1px solid var(--line)";
+        groupEl.style.padding = "10px";
+        groupEl.style.borderRadius = "6px";
+
+        const header = document.createElement("h3");
+        header.style.margin = "0 0 10px 0";
+        header.style.fontSize = "1rem";
+        header.textContent = `DOI: ${group.doi}`;
+        groupEl.appendChild(header);
+
+        for (const article of group.articles) {
+            const row = document.createElement("div");
+            row.style.display = "flex";
+            row.style.justifyContent = "space-between";
+            row.style.alignItems = "center";
+            row.style.padding = "6px 0";
+            row.style.borderTop = "1px solid var(--line)";
+
+            const info = document.createElement("div");
+            const title = document.createElement("div");
+            title.style.fontWeight = "bold";
+            title.textContent = article.metadata?.title || article.pdf_filename;
+            const meta = document.createElement("div");
+            meta.className = "meta";
+            meta.textContent = article.pdf_filename;
+            info.appendChild(title);
+            info.appendChild(meta);
+
+            const delBtn = document.createElement("button");
+            delBtn.type = "button";
+            delBtn.className = "danger";
+            delBtn.style.padding = "4px 8px";
+            delBtn.style.fontSize = "0.8rem";
+            delBtn.textContent = "Remove";
+            delBtn.addEventListener("click", async () => {
+                if (!confirm(`Permanently remove ${article.pdf_filename}?`)) return;
+                try {
+                    await invoke("remove_article", { articleId: article.id });
+                    row.remove();
+                    state.articles = state.articles.filter(a => a.id !== article.id);
+                    renderArticles();
+                    if (groupEl.querySelectorAll("button").length <= 1) {
+                        groupEl.remove();
+                    }
+                    if (dom.duplicateList.querySelectorAll("h3").length === 0) {
+                        dom.duplicateModal.classList.add("hidden");
+                    }
+                } catch (err) {
+                    alert(`Failed to remove: ${err}`);
+                }
+            });
+
+            row.appendChild(info);
+            row.appendChild(delBtn);
+            groupEl.appendChild(row);
+        }
+        dom.duplicateList.appendChild(groupEl);
+    }
+
+    dom.duplicateModal.classList.remove("hidden");
 }
 
 const debouncedSearch = debounce(async () => {
@@ -1698,6 +1848,16 @@ function wireEvents() {
         applyCardHeight(dom.cardHeightSlider.value);
         window.localStorage.setItem("article-card-height", String(state.cardHeight));
     });
+
+    if (dom.cardHeightAutofit) {
+        dom.cardHeightAutofit.checked = state.autoFitHeight;
+        dom.cardHeightAutofit.addEventListener("change", () => {
+            state.autoFitHeight = dom.cardHeightAutofit.checked;
+            window.localStorage.setItem("article-autofit-height", String(state.autoFitHeight));
+            applyCardHeight(state.cardHeight);
+        });
+    }
+
     dom.cardWidthSlider.addEventListener("input", () => {
         applyCardWidth(dom.cardWidthSlider.value);
         window.localStorage.setItem("article-card-width", String(state.cardWidth));
@@ -1816,15 +1976,32 @@ function wireEvents() {
 
     // DOI Fetch button in modal
     dom.doiFetchBtn.addEventListener("click", async () => {
-        const doiStr = dom.doi.value.trim();
-        if (!doiStr) {
-            alert("Please input a DOI string first.");
-            return;
-        }
-
+        let doiStr = dom.doi.value.trim();
         const originalText = dom.doiFetchBtn.textContent;
         dom.doiFetchBtn.textContent = "Fetching...";
         dom.doiFetchBtn.disabled = true;
+
+        if (!doiStr) {
+            try {
+                const text = await invoke("get_article_text_front", { articleId: state.current.id });
+                const match = text.match(/\b10\.\d{4,9}\/[-._;()/:A-Za-z0-9]+\b/);
+                if (match) {
+                    doiStr = match[0];
+                    dom.doi.value = doiStr;
+                    setStatus("DOI found in PDF text.");
+                } else {
+                    alert("No DOI found in PDF text. Please input a DOI string manually.");
+                    dom.doiFetchBtn.textContent = originalText;
+                    dom.doiFetchBtn.disabled = false;
+                    return;
+                }
+            } catch (err) {
+                alert(`Failed to extract text from PDF: ${err}`);
+                dom.doiFetchBtn.textContent = originalText;
+                dom.doiFetchBtn.disabled = false;
+                return;
+            }
+        }
 
         try {
             const meta = await invoke("fetch_doi_metadata", { doi: doiStr });
@@ -1877,18 +2054,6 @@ function wireEvents() {
         }
     });
 
-    // Highlight incomplete toggle
-    function updateHighlightBtn() {
-        dom.highlightBtn.classList.toggle("highlight-btn-active", state.highlightIncomplete);
-        dom.highlightBtn.textContent = state.highlightIncomplete ? "Highlighting Incomplete" : "Highlight Incomplete";
-    }
-    updateHighlightBtn();
-    dom.highlightBtn.addEventListener("click", () => {
-        state.highlightIncomplete = !state.highlightIncomplete;
-        window.localStorage.setItem("article-highlight-incomplete", state.highlightIncomplete ? "true" : "false");
-        updateHighlightBtn();
-        renderArticles();
-    });
 
     // Empty state buttons
     dom.emptyReindexBtn.addEventListener("click", doReindex);
@@ -1900,17 +2065,25 @@ function wireEvents() {
 
         setStatus(`Importing ${pdfs.length} PDF(s)...`);
         try {
+            let lastImportedArticle = null;
             for (const pdf of pdfs) {
                 const base64Data = await fileToBase64(pdf);
-                await invoke("import_pdf", {
+                const res = await invoke("import_pdf", {
                     filename: pdf.name,
                     data: base64Data,
                 });
+                if (res && res.article) {
+                    lastImportedArticle = res.article;
+                }
             }
             dom.emptyFileInput.value = "";
             await loadTags();
             await loadArticles();
             setStatus(`Imported ${pdfs.length} PDF(s).`);
+            if (pdfs.length === 1 && lastImportedArticle) {
+                const newArticle = state.articles.find(a => a.id === lastImportedArticle.id);
+                if (newArticle) openEditor(newArticle);
+            }
         } catch (err) {
             const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
             setStatus(`Import failed: ${message}`, true);
@@ -1948,10 +2121,17 @@ function wireEvents() {
             setStatus(`Importing ${pdfPaths.length} PDF(s). Please wait for metadata...`);
             try {
                 // Batch processing is handled concurrently on the Rust side
-                await invoke("import_pdfs_from_paths", { paths: pdfPaths });
+                const importedList = await invoke("import_pdfs_from_paths", { paths: pdfPaths });
                 await loadTags();
                 await loadArticles();
                 setStatus(`Imported ${pdfPaths.length} PDF(s).`);
+                if (importedList && importedList.length === 1 && importedList[0].article) {
+                    const newArticleId = importedList[0].article.id;
+                    const newArticle = state.articles.find(a => a.id === newArticleId);
+                    if (newArticle) {
+                        openEditor(newArticle);
+                    }
+                }
             } catch (err) {
                 const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
                 setStatus(`Import failed: ${message}`, true);
@@ -2001,6 +2181,7 @@ function wireEvents() {
 
         setStatus(`Importing ${pdfs.length} PDF(s). Please wait for metadata...`);
         let imported = 0;
+        let lastImportedArticle = null;
 
         // Since we are uploading data blobs instead of paths, we iterate sequentially here on the frontend.
         for (let i = 0; i < pdfs.length; i++) {
@@ -2008,10 +2189,13 @@ function wireEvents() {
             try {
                 setStatus(`Importing (${i + 1}/${pdfs.length}) ${pdf.name}...`);
                 const base64Data = await fileToBase64(pdf);
-                await invoke("import_pdf", {
+                const res = await invoke("import_pdf", {
                     filename: pdf.name,
                     data: base64Data,
                 });
+                if (res && res.article) {
+                    lastImportedArticle = res.article;
+                }
                 imported++;
             } catch (err) {
                 const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
@@ -2022,6 +2206,10 @@ function wireEvents() {
             thumbCache.clear();
             await Promise.all([loadTags(), loadArticles()]);
             setStatus(`Imported ${imported} PDF(s).`);
+            if (pdfs.length === 1 && lastImportedArticle) {
+                const newArticle = state.articles.find(a => a.id === lastImportedArticle.id);
+                if (newArticle) openEditor(newArticle);
+            }
         }
     });
 
@@ -2034,8 +2222,13 @@ function wireEvents() {
         }
     });
 
+    if (dom.duplicateClose) {
+        dom.duplicateClose.addEventListener("click", () => dom.duplicateModal.classList.add("hidden"));
+    }
+
     // Mousedown on modal backdrops to close
-    [dom.modal, dom.abstractModal, dom.tagColorEditor, dom.hotkeysModal].forEach((modalEl) => {
+    [dom.modal, dom.abstractModal, dom.tagColorEditor, dom.hotkeysModal, dom.duplicateModal].forEach((modalEl) => {
+        if (!modalEl) return;
         modalEl.addEventListener("mousedown", (evt) => {
             if (evt.target === modalEl) {
                 modalEl.classList.add("hidden");
@@ -2046,7 +2239,7 @@ function wireEvents() {
     // Keydown for Modal Escape / Search Focus
     document.addEventListener("keydown", (evt) => {
         if (evt.key === "Escape") {
-            // Priority: autocomplete -> color editor -> abstract -> edit modal -> hotkeys -> backup modal
+            // Priority: autocomplete -> color editor -> abstract -> duplicate/edit modal -> hotkeys -> backup modal
             if (!dom.tagAutocomplete.classList.contains("hidden")) {
                 dom.tagAutocomplete.classList.add("hidden");
                 return;
@@ -2057,6 +2250,10 @@ function wireEvents() {
             }
             if (!dom.abstractModal.classList.contains("hidden")) {
                 closeAbstract();
+                return;
+            }
+            if (!dom.duplicateModal.classList.contains("hidden")) {
+                dom.duplicateModal.classList.add("hidden");
                 return;
             }
             if (!dom.modal.classList.contains("hidden")) {

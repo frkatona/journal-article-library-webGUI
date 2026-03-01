@@ -194,6 +194,16 @@ main {
   grid-template-columns: 1fr;
 }
 
+.grid.autofit-cards .card {
+  height: max-content;
+  min-height: max-content;
+}
+
+.grid.autofit-cards .thumb {
+  height: auto;
+  max-height: 480px;
+}
+
 .card {
   border: 1px solid var(--line);
   border-radius: 12px;

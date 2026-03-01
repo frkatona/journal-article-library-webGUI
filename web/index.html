@@ -19,11 +19,22 @@
         <span>Search</span>
         <input id="search-input" type="search" placeholder="title, author, abstract, DOI, tags, notes..." />
       </label>
-      <label class="field">
+      <label class="field compact">
         <span>Tag</span>
         <select id="tag-filter">
           <option value="">All tags</option>
         </select>
+      </label>
+      <label class="field compact sort-field">
+        <span>Tag Filter Mode</span>
+        <select id="tag-filter-mode">
+          <option value="include">Include</option>
+          <option value="exclude">Exclude</option>
+        </select>
+      </label>
+      <label class="field compact" style="flex-direction:row;align-items:center;gap:8px;padding-top:24px;">
+        <input id="filter-incomplete" type="checkbox" />
+        <span style="font-size:0.82rem; color: var(--accent-2);">Incomplete</span>
       </label>
       <label class="field compact">
         <span>View</span>
@@ -66,7 +77,13 @@
         </button>
         <div id="settings-menu" class="settings-menu hidden" role="menu">
           <label class="field">
-            <span>Card Height <strong id="card-height-value">138</strong>px</span>
+            <div style="display:flex; justify-content:space-between; align-items:flex-end;">
+              <span>Card Height <strong id="card-height-value">138</strong>px</span>
+              <label style="display:flex; align-items:center; gap:4px; font-size:0.8rem; cursor:pointer;"
+                title="Auto-scale heights to remove letterboxing">
+                <input id="card-height-autofit" type="checkbox" /> Auto-fit
+              </label>
+            </div>
             <input id="card-height-slider" type="range" min="100" max="640" step="2" value="138" />
           </label>
           <label class="field">
@@ -153,9 +170,13 @@
               <input id="f-journal" name="journal" type="text" />
             </label>
           </div>
-          <label class="field">
+          <label class="field compact">
             <span>DOI</span>
-            <input id="f-doi" name="doi" type="text" />
+            <div style="display:flex;gap:8px;">
+              <input id="f-doi" name="doi" type="text" style="flex:1;" />
+              <button id="doi-fetch-btn" type="button" class="accent" style="padding: 0 12px; font-weight: bold;"
+                title="Fetch metadata via Crossref using this DOI">Fetch</button>
+            </div>
           </label>
           <label class="field">
             <span>Abstract</span>
@@ -187,6 +208,28 @@
       <div class="abstract-body">
         <p id="abstract-meta" class="meta"></p>
         <div id="abstract-text"></div>
+        <div id="abstract-references-section" class="meta"
+          style="margin-top:20px; border-top:1px solid var(--line); padding-top:10px; display:none;">
+          <h3 style="font-size:0.9rem; margin-bottom:8px;">Referenced DOIs</h3>
+          <div id="abstract-references-list" style="display:flex; flex-direction:column; gap:4px;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Duplicate Check Modal -->
+  <div id="duplicate-modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card" style="max-width:600px;">
+      <div class="modal-header">
+        <h2>Duplicate DOIs Found</h2>
+        <button id="duplicate-close" class="close-btn" type="button">&times;</button>
+      </div>
+      <div style="padding: 12px 16px;">
+        <p class="meta" style="margin-bottom:12px;">The following articles share the same DOI. You can remove
+          duplicates.</p>
+        <div id="duplicate-list"
+          style="display:flex; flex-direction:column; gap:16px; max-height:400px; overflow-y:auto; padding-right:8px;">
+        </div>
       </div>
     </div>
   </div>

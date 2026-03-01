@@ -205,6 +205,7 @@ src-tauri/              # Rust backend
     - add checkbox to enable this automatic paste processing (enabled by default)
   - [ ] auto-rescale stored image when resolution is unecessarily high 
   - [ ] show a prompt to accept or undo the changes for drag-and-drop thumbnails
+    - what happens to the thumbnails on disk and memory when replaced?
   - [x] also fuzzy-search autofill prompting after each character and solidifying after entering them like listing email addresses in a gmail 'send' field
 
   - hotkeys
@@ -213,7 +214,6 @@ src-tauri/              # Rust backend
     - [x] alt + shift + click to open abstract
     - [ ] ctrl + shift + alt + click to open DOI page (or maybe to search for other papers by that lab in google scholar?)
   - [x] add 'added date' to metadata.  allow editing, but fill it automatically with the day when a file is added or indexed for the first time.  Also, 'last selected date' (which updates every time the article is selected)
-  - [ ] 'random article' button
   - [x] ctrl + scroll to resize cards (both dimensions)
   
 - questions
@@ -224,6 +224,7 @@ src-tauri/              # Rust backend
   - is there no better existing method for extracting PDF data?  Even some recommended screenshot text analysis?
     - same with copying and pasting abstract and having the line breaks carry over when they should just be a space (add a "paste from clipboard" button to the abstract and authors lines where it pastes processed version of the contents?  Just have the pasted values automatically get processed and have a right click menu option to paste raw?)
   - finding other inspiration and general clever ideas (design, UX, hotkey, speed, etc.) 
+  - why is there an 'inspect' option in the right click dropdown only in the dev build
 
 - stretch or stupid
   - 'check for updates' button
@@ -262,9 +263,6 @@ CLI warnings:
 
 - [x] "reindex" should be the bottom choice, with "restore backup" above it, and both of them should require a confirmation dialog
 
-- [ ] add a checkbox with height to auto-set height of cards to remove black borders from thumbnails
-
-- [ ] maybe include a resizing/cropping feature to the 'paste thumbnail image' to encourage getting large screenshots and cropping in
 
 - [x] fix bug where tab move cursor to search bar even in the edit modal
   - [ ] bug: not tabbing from the chips field to the next field
@@ -274,18 +272,3 @@ CLI warnings:
 - [x] intrusive red error bar: have it fade after a few seconds or show it at the bottom with an 'x' to close it, but store a log in the '?' button modal and have a checkbox in files to disable showing errors outside of '?'
   - Uncaught TypeError: Cannot set properties of undefined (setting 'value') at http://tauri.localhost/app.js:1106
 
-- [ ] in 'list' view, have clicking on the columns primary sort by that column
-
-- [ ] include toggle in filter dropdown for checking to mean 'include' or 'exclude' (default 'include')
-
-- [ ] prompt user with metadata modal on import of new PDF 
-
-- [ ] add button to left of 'fetch data' for 'fetch DOI'
-
-- [ ] on re-index, check for duplicate DOIs and prompt user "remove the following duplicates? :"
-
-- [ ] turn 'filter incomplete' from button to a filter
-
-- [ ] extend color coloration and hotkeys for opening the abstract and metadata modals to the rows in the list view
-
-- [ ] pull DOIs from references for each paper and show their year + author + title in the abstract viewer
