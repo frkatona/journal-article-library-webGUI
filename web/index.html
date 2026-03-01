@@ -25,16 +25,13 @@
           <option value="">All tags</option>
         </select>
       </label>
-      <label class="field compact sort-field">
-        <span>Tag Filter Mode</span>
-        <select id="tag-filter-mode">
-          <option value="include">Include</option>
-          <option value="exclude">Exclude</option>
-        </select>
+      <label class="field compact" style="flex-direction:row;align-items:center;gap:8px;padding-top:24px;">
+        <input id="tag-filter-mode" type="checkbox" checked />
+        <span style="font-size:0.82rem;">Match All Tags</span>
       </label>
       <label class="field compact" style="flex-direction:row;align-items:center;gap:8px;padding-top:24px;">
         <input id="filter-incomplete" type="checkbox" />
-        <span style="font-size:0.82rem; color: var(--accent-2);">Incomplete</span>
+        <span style="font-size:0.82rem; color: var(--accent-2);">incomplete fields</span>
       </label>
       <label class="field compact">
         <span>View</span>

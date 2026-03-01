@@ -13,7 +13,7 @@ const state = {
   fontFamily: window.localStorage.getItem("article-font-family") || "segoe",
   primarySort: window.localStorage.getItem("article-primary-sort") || "year_desc",
   secondarySort: window.localStorage.getItem("article-secondary-sort") || "title_asc",
-  tagFilterMode: window.localStorage.getItem("article-tag-mode") || "include",
+  tagFilterMode: window.localStorage.getItem("article-tag-mode") || "all",
   filterIncomplete: window.localStorage.getItem("article-filter-incomplete") === "true",
   menuOpen: false,
   showErrorsGlobally: window.localStorage.getItem("article-show-errors") !== "false",
@@ -921,9 +921,9 @@ function wireEvents() {
     await loadArticles();
   });
   if (dom.tagFilterMode) {
-    dom.tagFilterMode.value = state.tagFilterMode;
+    dom.tagFilterMode.checked = state.tagFilterMode === "all";
     dom.tagFilterMode.addEventListener("change", async () => {
-      state.tagFilterMode = dom.tagFilterMode.value;
+      state.tagFilterMode = dom.tagFilterMode.checked ? "all" : "any";
       window.localStorage.setItem("article-tag-mode", state.tagFilterMode);
       await loadArticles();
     });

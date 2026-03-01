@@ -22,6 +22,7 @@ const state = {
     secondarySort: window.localStorage.getItem("article-secondary-sort") || "title_asc",
     displayMenuOpen: false,
     filesMenuOpen: false,
+    tagFilterMode: window.localStorage.getItem("article-tag-mode") || "all",
     tintByTag: window.localStorage.getItem("article-tint-by-tag") === "true",
     colorIntensity: Number.parseInt(window.localStorage.getItem("article-color-intensity") || "13", 10),
     tagColors: JSON.parse(window.localStorage.getItem("article-tag-colors") || "{}"),
@@ -108,6 +109,7 @@ const dom = {
     abstractReferencesSection: document.getElementById("abstract-references-section"),
     abstractReferencesList: document.getElementById("abstract-references-list"),
     metaRemove: document.getElementById("meta-remove"),
+    tagFilterMode: document.getElementById("tag-filter-mode"),
     dropOverlay: document.getElementById("drop-overlay"),
     tintByTag: document.getElementById("tint-by-tag"),
     editTagColorsBtn: document.getElementById("edit-tag-colors-btn"),
@@ -1163,6 +1165,7 @@ async function loadArticles() {
     const res = await invoke("get_articles", {
         query: state.query || null,
         tags: state.tags.length > 0 ? state.tags : null,
+        match_mode: state.tagFilterMode,
         limit: 500,
         offset: 0,
     });
@@ -1505,6 +1508,15 @@ function wireEvents() {
     setFilesMenuOpen(false);
 
     dom.searchInput.addEventListener("input", debouncedSearch);
+
+    if (dom.tagFilterMode) {
+        dom.tagFilterMode.checked = state.tagFilterMode === "all";
+        dom.tagFilterMode.addEventListener("change", () => {
+            state.tagFilterMode = dom.tagFilterMode.checked ? "all" : "any";
+            window.localStorage.setItem("article-tag-mode", state.tagFilterMode);
+            loadArticles();
+        });
+    }
 
     // Paste cleanup for authors field (gated by checkbox)
     dom.authors.addEventListener("paste", (evt) => {

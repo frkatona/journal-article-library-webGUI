@@ -4,8 +4,8 @@
 
 - [x] add a checkbox with the height slider to autometically change the height of cards such that the black borders are not necessary in thumbnails
 
-- [x] include toggle in filter dropdown for checking to mean 'include' or 'exclude' (default 'include')
-  - [ ] include all or include some
+- [ ] 'include' toggle to include 'all' vs include 'any' for tags
+  - current weird break (does not work for 'include any')
 
 - [x] prompt user with metadata modal on import of new PDF 
   - how to handle multiple PDFs imported at once?
@@ -13,7 +13,7 @@
 - [x] on re-index, check for duplicate DOIs and prompt user "remove the following duplicates? :"
 
 - [x] turn 'filter incomplete' from button to another checkbox in the tag filter dropdown
-  - [ ] just call the checkbox "incomplete fields"
+  - [x] just call the checkbox "incomplete fields"
 
 - [x] extend the tag-based coloration and the hotkeys for opening the abstract and metadata modals to the rows in the list view
   - [ ] does not seem to work
