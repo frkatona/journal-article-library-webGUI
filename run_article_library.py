@@ -628,7 +628,7 @@ def build_app(default_strategy: str) -> Flask:
     def api_articles() -> Any:
         query = normalize_text(request.args.get("query")).lower()
         tag = normalize_text(request.args.get("tag")).lower()
-        match_mode = normalize_text(request.args.get("match_mode", "include")).lower()
+        match_mode = normalize_text(request.args.get("match_mode", "all")).lower()
         filter_incomplete = request.args.get("filter_incomplete", "false").lower() == "true"
         try:
             limit = max(1, min(500, int(request.args.get("limit", 200))))
@@ -648,17 +648,18 @@ def build_app(default_strategy: str) -> Flask:
             ]
 
         if tag:
-            if match_mode == "exclude":
+            tags_to_match = [t.strip() for t in tag.split(",") if t.strip()]
+            if match_mode == "any":
                 rows = [
                     article
                     for article in rows
-                    if tag not in [normalize_text(t).lower() for t in article.get("metadata", {}).get("tags", [])]
+                    if any(t in [normalize_text(art_t).lower() for art_t in article.get("metadata", {}).get("tags", [])] for t in tags_to_match)
                 ]
             else:
                 rows = [
                     article
                     for article in rows
-                    if tag in [normalize_text(t).lower() for t in article.get("metadata", {}).get("tags", [])]
+                    if all(t in [normalize_text(art_t).lower() for art_t in article.get("metadata", {}).get("tags", [])] for t in tags_to_match)
                 ]
 
         if filter_incomplete:
