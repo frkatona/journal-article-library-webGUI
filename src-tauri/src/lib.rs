@@ -1263,9 +1263,15 @@ fn get_articles(
     if filter_incomplete {
         rows.retain(|a| {
             let md = &a.metadata;
+            let has_title = !md.title.trim().is_empty();
+            let has_authors = !md.authors.trim().is_empty();
+            let has_year = !md.year.trim().is_empty();
+            let has_journal = !md.journal.trim().is_empty();
+            let has_doi = !md.doi.trim().is_empty();
             let has_abstract = !md.abstract_text.trim().is_empty();
-            let has_tags = !md.tags.is_empty();
-            !(has_abstract && has_tags)
+            let has_tags = !md.tags.is_empty() && md.tags.iter().any(|t| !t.trim().is_empty());
+            
+            !(has_title && has_authors && has_year && has_journal && has_doi && has_abstract && has_tags)
         });
     }
 

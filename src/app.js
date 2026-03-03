@@ -24,6 +24,7 @@ const state = {
     filesMenuOpen: false,
     tagFilterMode: window.localStorage.getItem("article-tag-mode") || "all",
     tintByTag: window.localStorage.getItem("article-tint-by-tag") === "true",
+    filterIncomplete: window.localStorage.getItem("article-filter-incomplete") === "true",
     autoRefCompile: window.localStorage.getItem("article-auto-ref") === "true",
     colorIntensity: Number.parseInt(window.localStorage.getItem("article-color-intensity") || "13", 10),
     tagColors: JSON.parse(window.localStorage.getItem("article-tag-colors") || "{}"),
@@ -58,6 +59,7 @@ const dom = {
     tagFilterCount: document.getElementById("tag-filter-count"),
     tagFilterMenu: document.getElementById("tag-filter-menu"),
     tagFilterList: document.getElementById("tag-filter-list"),
+    filterIncomplete: document.getElementById("filter-incomplete"),
     tagFilterAll: document.getElementById("tag-filter-all"),
     tagFilterNone: document.getElementById("tag-filter-none"),
     strategySelect: document.getElementById("strategy-select"),
@@ -1196,6 +1198,7 @@ async function loadArticles() {
         query: state.query || null,
         tags: state.tags.length > 0 ? state.tags : null,
         matchMode: state.tagFilterMode,
+        filterIncomplete: state.filterIncomplete,
         limit: 500,
         offset: 0,
     });
@@ -1574,6 +1577,15 @@ function wireEvents() {
         dom.autoRefCompile.addEventListener("change", () => {
             state.autoRefCompile = dom.autoRefCompile.checked;
             window.localStorage.setItem("article-auto-ref", state.autoRefCompile ? "true" : "false");
+        });
+    }
+
+    if (dom.filterIncomplete) {
+        dom.filterIncomplete.checked = state.filterIncomplete;
+        dom.filterIncomplete.addEventListener("change", () => {
+            state.filterIncomplete = dom.filterIncomplete.checked;
+            window.localStorage.setItem("article-filter-incomplete", state.filterIncomplete ? "true" : "false");
+            loadArticles();
         });
     }
 
