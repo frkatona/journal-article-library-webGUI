@@ -4,7 +4,12 @@
 
 - [ ] make the tag coloration more visible on the border and replace the color mixing behavior with prioritizing the more numerous tag
 
-- [ ] alternative themes a la {insert vs code popular options}
+- [ ] alternative background themes a la {insert vs code popular options}
+
+- [ ] extend the edit modal just a little bit vertically to prevent the top and bottom buttons from falling offscreen at the default 1080 pixel height 
+
+- [ ] option to persist filter selections between sessions (maybe annoying to see books, manuals, theses, and other non-research articles by default each time)
+  - maybe have a separate list of default-hidden tags
 
 ### think about more first
 
