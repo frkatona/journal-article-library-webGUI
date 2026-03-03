@@ -1,8 +1,15 @@
 # Literature Library
 
-A native desktop application for managing and browsing local PDF article collections. Features thumbnail cards, full-text search, metadata editing, tags, and notes — all running locally with no server or internet required.
+Native Windows application for browsing local PDF article collections. Features thumbnail cards, full-text search, metadata editing, tags, and notes — all running locally with no server or internet required.
+
+![logo](src-tauri/icons/Square310x310Logo.png)
+
+
+## example front page
 
 ![hero shot of front page](readme-images/hero.png)
+
+## example abstract modal
 
 ![example of modal which appears of the abstract when abstract button is selected](readme-images/abstract_modal.png)
 

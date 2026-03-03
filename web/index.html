@@ -25,10 +25,21 @@
           <option value="">All tags</option>
         </select>
       </label>
-      <label class="field compact" style="flex-direction:row;align-items:center;gap:8px;padding-top:24px;">
-        <input id="tag-filter-mode" type="checkbox" checked />
-        <span style="font-size:0.82rem;">Match All Tags</span>
-      </label>
+      <div class="field compact sort-field">
+        <span>Tag Filter Mode</span>
+        <div
+          style="display:flex; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; font-size: 0.8rem;">
+          <label style="flex:1; text-align:center; padding: 2px 0; cursor: pointer; position: relative;">
+            <input type="radio" name="tag-match-mode" value="any" style="position:absolute; opacity:0;" />
+            <span id="tm-any-lbl" style="display:block; background: var(--bg); color: var(--text);">Any</span>
+          </label>
+          <label
+            style="flex:1; text-align:center; padding: 2px 0; cursor: pointer; position: relative; border-left: 1px solid var(--line);">
+            <input type="radio" name="tag-match-mode" value="all" style="position:absolute; opacity:0;" checked />
+            <span id="tm-all-lbl" style="display:block; background: var(--accent); color: white;">All</span>
+          </label>
+        </div>
+      </div>
       <label class="field compact" style="flex-direction:row;align-items:center;gap:8px;padding-top:24px;">
         <input id="filter-incomplete" type="checkbox" />
         <span style="font-size:0.82rem; color: var(--accent-2);">incomplete fields</span>
@@ -108,6 +119,10 @@
           <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
             <input id="show-errors-checkbox" type="checkbox" checked />
             <span style="font-size:0.82rem;">Show errors globally</span>
+          </label>
+          <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+            <input id="auto-ref-compile" type="checkbox" />
+            <span style="font-size:0.82rem;">Auto references compilation (EXPERIMENTAL)</span>
           </label>
           <div style="margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px;">
             <div style="display:flex; justify-content:space-between; align-items:center;">

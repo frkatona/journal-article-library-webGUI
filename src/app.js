@@ -24,6 +24,7 @@ const state = {
     filesMenuOpen: false,
     tagFilterMode: window.localStorage.getItem("article-tag-mode") || "all",
     tintByTag: window.localStorage.getItem("article-tint-by-tag") === "true",
+    autoRefCompile: window.localStorage.getItem("article-auto-ref") === "true",
     colorIntensity: Number.parseInt(window.localStorage.getItem("article-color-intensity") || "13", 10),
     tagColors: JSON.parse(window.localStorage.getItem("article-tag-colors") || "{}"),
     acIndex: -1,
@@ -109,7 +110,6 @@ const dom = {
     abstractReferencesSection: document.getElementById("abstract-references-section"),
     abstractReferencesList: document.getElementById("abstract-references-list"),
     metaRemove: document.getElementById("meta-remove"),
-    tagFilterMode: document.getElementById("tag-filter-mode"),
     dropOverlay: document.getElementById("drop-overlay"),
     tintByTag: document.getElementById("tint-by-tag"),
     editTagColorsBtn: document.getElementById("edit-tag-colors-btn"),
@@ -124,6 +124,7 @@ const dom = {
     errorBannerText: document.getElementById("error-banner-text"),
     errorBannerClose: document.getElementById("error-banner-close"),
     showErrorsCheckbox: document.getElementById("show-errors-checkbox"),
+    autoRefCompile: document.getElementById("auto-ref-compile"),
     errorLogList: document.getElementById("error-log-list"),
     errorLogClear: document.getElementById("error-log-clear"),
 };
@@ -698,7 +699,7 @@ function openAbstract(article) {
 
     dom.abstractModal.classList.remove("hidden");
 
-    if (dom.abstractReferencesSection) {
+    if (dom.abstractReferencesSection && state.autoRefCompile) {
         invoke("get_article_text_back", { articleId: article.id }).then(text => {
             if (!text) return;
             const matches = text.match(/\b10\.\d{4,9}\/[-._;()/:A-Za-z0-9]+\b/g) || [];
@@ -965,7 +966,36 @@ function buildDetailsTable(articles) {
             row.style.backgroundColor = tint;
         }
 
-        row.addEventListener("click", () => openPdf(article));
+        row.addEventListener("click", (evt) => {
+            if (evt.ctrlKey && evt.shiftKey) {
+                evt.preventDefault();
+                evt.stopPropagation();
+                openEditor(article);
+                return;
+            }
+            if (evt.ctrlKey || evt.metaKey) {
+                evt.preventDefault();
+                evt.stopPropagation();
+                const bib = generateBibtex(article);
+                copyToClipboard(bib).then((ok) => {
+                    showToast(ok ? "BibTeX copied to clipboard" : "Failed to copy BibTeX");
+                });
+                return;
+            }
+            if (evt.altKey && evt.shiftKey) {
+                evt.preventDefault();
+                evt.stopPropagation();
+                openAbstract(article);
+                return;
+            }
+            if (evt.altKey) {
+                evt.preventDefault();
+                evt.stopPropagation();
+                openFileLocation(article);
+                return;
+            }
+            openPdf(article);
+        });
         row.addEventListener("keydown", (evt) => {
             if (evt.target !== row) return;
             if (evt.key === "e" || evt.key === "E") {
@@ -1165,7 +1195,7 @@ async function loadArticles() {
     const res = await invoke("get_articles", {
         query: state.query || null,
         tags: state.tags.length > 0 ? state.tags : null,
-        match_mode: state.tagFilterMode,
+        matchMode: state.tagFilterMode,
         limit: 500,
         offset: 0,
     });
@@ -1509,12 +1539,41 @@ function wireEvents() {
 
     dom.searchInput.addEventListener("input", debouncedSearch);
 
-    if (dom.tagFilterMode) {
-        dom.tagFilterMode.checked = state.tagFilterMode === "all";
-        dom.tagFilterMode.addEventListener("change", () => {
-            state.tagFilterMode = dom.tagFilterMode.checked ? "all" : "any";
-            window.localStorage.setItem("article-tag-mode", state.tagFilterMode);
-            loadArticles();
+    const tagMatchRadios = document.querySelectorAll('input[name="tag-match-mode"]');
+    const tmAnyLbl = document.getElementById("tm-any-lbl");
+    const tmAllLbl = document.getElementById("tm-all-lbl");
+
+    function updateTagMatchUI(mode) {
+        if (mode === "all") {
+            if (tmAllLbl) { tmAllLbl.style.background = "var(--accent)"; tmAllLbl.style.color = "white"; }
+            if (tmAnyLbl) { tmAnyLbl.style.background = "var(--bg)"; tmAnyLbl.style.color = "var(--text)"; }
+        } else {
+            if (tmAnyLbl) { tmAnyLbl.style.background = "var(--accent)"; tmAnyLbl.style.color = "white"; }
+            if (tmAllLbl) { tmAllLbl.style.background = "var(--bg)"; tmAllLbl.style.color = "var(--text)"; }
+        }
+    }
+
+    if (tagMatchRadios.length > 0) {
+        const initialMode = state.tagFilterMode === "all" ? "all" : "any";
+        tagMatchRadios.forEach(r => {
+            r.checked = r.value === initialMode;
+            r.addEventListener("change", (e) => {
+                if (e.target.checked) {
+                    state.tagFilterMode = e.target.value;
+                    window.localStorage.setItem("article-tag-mode", state.tagFilterMode);
+                    updateTagMatchUI(state.tagFilterMode);
+                    loadArticles();
+                }
+            });
+        });
+        updateTagMatchUI(initialMode);
+    }
+
+    if (dom.autoRefCompile) {
+        dom.autoRefCompile.checked = state.autoRefCompile;
+        dom.autoRefCompile.addEventListener("change", () => {
+            state.autoRefCompile = dom.autoRefCompile.checked;
+            window.localStorage.setItem("article-auto-ref", state.autoRefCompile ? "true" : "false");
         });
     }
 

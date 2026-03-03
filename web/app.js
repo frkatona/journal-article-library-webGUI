@@ -17,6 +17,7 @@ const state = {
   filterIncomplete: window.localStorage.getItem("article-filter-incomplete") === "true",
   menuOpen: false,
   showErrorsGlobally: window.localStorage.getItem("article-show-errors") !== "false",
+  autoRefCompile: window.localStorage.getItem("article-auto-ref") === "true",
 };
 
 const dom = {
@@ -33,7 +34,6 @@ const dom = {
   fontFamilySelect: document.getElementById("font-family-select"),
   searchInput: document.getElementById("search-input"),
   tagFilter: document.getElementById("tag-filter"),
-  tagFilterMode: document.getElementById("tag-filter-mode"),
   filterIncomplete: document.getElementById("filter-incomplete"),
   strategySelect: document.getElementById("strategy-select"),
   viewMode: document.getElementById("view-mode"),
@@ -72,6 +72,7 @@ const dom = {
   errorBannerText: document.getElementById("error-banner-text"),
   errorBannerClose: document.getElementById("error-banner-close"),
   showErrorsCheckbox: document.getElementById("show-errors-checkbox"),
+  autoRefCompile: document.getElementById("auto-ref-compile"),
   errorLogList: document.getElementById("error-log-list"),
   errorLogClear: document.getElementById("error-log-clear"),
 };
@@ -501,17 +502,36 @@ function buildDetailsTable(articles) {
     row.className = "details-row";
 
     row.tabIndex = 0;
-    row.addEventListener("click", () => openPdf(article));
+    row.addEventListener("click", (evt) => {
+      if (evt.ctrlKey && evt.shiftKey) {
+        evt.preventDefault();
+        evt.stopPropagation();
+        openEditor(article);
+        return;
+      }
+      if (evt.ctrlKey || evt.metaKey) {
+        evt.preventDefault();
+        evt.stopPropagation();
+        const bib = generateBibtex(article);
+        copyToClipboard(bib).then((ok) => {
+          setStatus(ok ? "BibTeX copied to clipboard" : "Failed to copy BibTeX", !ok);
+        });
+        return;
+      }
+      if (evt.altKey) {
+        evt.preventDefault();
+        evt.stopPropagation();
+        openFileLocation(article);
+        return;
+      }
+      openPdf(article);
+    });
     row.addEventListener("keydown", (evt) => {
       if (evt.target !== row) return;
       if (evt.key === "e" || evt.key === "E") {
         evt.preventDefault();
         evt.stopPropagation();
         openEditor(article);
-      } else if (evt.key === "a" || evt.key === "A") {
-        evt.preventDefault();
-        evt.stopPropagation();
-        openAbstract(article);
       } else if (evt.key === "Enter" || evt.key === " ") {
         evt.preventDefault();
         evt.stopPropagation();
@@ -568,16 +588,7 @@ function buildDetailsTable(articles) {
     const actionWrap = document.createElement("div");
     actionWrap.className = "table-actions";
 
-    const abstractBtn = document.createElement("button");
-    abstractBtn.type = "button";
-    abstractBtn.className = "card-btn";
-    abstractBtn.textContent = "Abstract";
-    abstractBtn.addEventListener("click", (evt) => {
-      evt.preventDefault();
-      evt.stopPropagation();
-      openAbstract(article);
-    });
-    actionWrap.appendChild(abstractBtn);
+
 
     const editBtn = document.createElement("button");
     editBtn.type = "button";
@@ -920,13 +931,34 @@ function wireEvents() {
     state.tag = dom.tagFilter.value.trim();
     await loadArticles();
   });
-  if (dom.tagFilterMode) {
-    dom.tagFilterMode.checked = state.tagFilterMode === "all";
-    dom.tagFilterMode.addEventListener("change", async () => {
-      state.tagFilterMode = dom.tagFilterMode.checked ? "all" : "any";
-      window.localStorage.setItem("article-tag-mode", state.tagFilterMode);
-      await loadArticles();
+  const tagMatchRadios = document.querySelectorAll('input[name="tag-match-mode"]');
+  const tmAnyLbl = document.getElementById("tm-any-lbl");
+  const tmAllLbl = document.getElementById("tm-all-lbl");
+
+  function updateTagMatchUI(mode) {
+    if (mode === "all") {
+      if (tmAllLbl) { tmAllLbl.style.background = "var(--accent)"; tmAllLbl.style.color = "white"; }
+      if (tmAnyLbl) { tmAnyLbl.style.background = "var(--bg)"; tmAnyLbl.style.color = "var(--text)"; }
+    } else {
+      if (tmAnyLbl) { tmAnyLbl.style.background = "var(--accent)"; tmAnyLbl.style.color = "white"; }
+      if (tmAllLbl) { tmAllLbl.style.background = "var(--bg)"; tmAllLbl.style.color = "var(--text)"; }
+    }
+  }
+
+  if (tagMatchRadios.length > 0) {
+    const initialMode = state.tagFilterMode === "all" ? "all" : "any";
+    tagMatchRadios.forEach(r => {
+      r.checked = r.value === initialMode;
+      r.addEventListener("change", async (e) => {
+        if (e.target.checked) {
+          state.tagFilterMode = e.target.value;
+          window.localStorage.setItem("article-tag-mode", state.tagFilterMode);
+          updateTagMatchUI(state.tagFilterMode);
+          await loadArticles();
+        }
+      });
     });
+    updateTagMatchUI(initialMode);
   }
   if (dom.filterIncomplete) {
     dom.filterIncomplete.checked = state.filterIncomplete;
