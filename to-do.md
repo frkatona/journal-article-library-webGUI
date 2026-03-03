@@ -25,6 +25,8 @@
 
 - [ ] create an 'experimental' section in file management which contains the 'auto references compilation' box, and one or two other side branch features
 
+- [ ] add 'open article' and 'open file location' to the metadata editor
+
 ### think about more first
 
 - [ ] include a resizing/cropping feature to the 'paste thumbnail image' to encourage getting large screenshots and cropping in
@@ -41,3 +43,4 @@
 - [ ] screenshot button that maintains an ideal aspect ratio for the thumbnail
   - (vs crop tool for existing screenshot mentioned previously)
 
+- [ ] pivot how articles are indexed so that filename changes aren't breaking

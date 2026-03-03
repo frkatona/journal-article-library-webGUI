@@ -227,7 +227,9 @@ src-tauri/              # Rust backend
   - is there a length limit on titles?  what about filenames?  should I process drag-and-drop pdfs to change the file name?  should I conduct references to the PDFs through some extracted hash in case files get renamed (and handle duplicates on index)?
   - [x] where are these thumbnail images going?  they're not populating the folder
   - when does scaling become a concern?  what is involved in implementing a database?
-  - how long does compiling to executable take and how far is that from a zip that anyone can open?  On what devices?  Macs?  Phones?
+  - How to compile to an installer for alternative devices?
+    - macs, linux, android, ios?
+    - still windows, but with non-x64 CPU architectures?
   - is there no better existing method for extracting PDF data?  Even some recommended screenshot text analysis?
     - same with copying and pasting abstract and having the line breaks carry over when they should just be a space (add a "paste from clipboard" button to the abstract and authors lines where it pastes processed version of the contents?  Just have the pasted values automatically get processed and have a right click menu option to paste raw?)
   - finding other inspiration and general clever ideas (design, UX, hotkey, speed, etc.) 
