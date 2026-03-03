@@ -1,9 +1,10 @@
 # Literature Library
 
-Native Windows application for browsing local PDF article collections. Features thumbnail cards, full-text search, metadata editing, tags, and notes — all running locally with no server or internet required.
+Windows application for browsing local PDFs, geared towards collections of scientific literature. 
 
 ![logo](src-tauri/icons/Square310x310Logo.png)
 
+The PDFs still open in the default viewer, but the browser facilitates searches with visual thumbnail cards with various customizations.  There are also tags/filters with custom colorization and search functions, fields for note-taking, abstract previews, and hotkeys for tedious tasks, like BibTex-to-clipboard.
 
 ## example front page
 
@@ -13,7 +14,7 @@ Native Windows application for browsing local PDF article collections. Features 
 
 ![example of modal which appears of the abstract when abstract button is selected](readme-images/abstract_modal.png)
 
-Built with [Tauri v2](https://tauri.app/) (Rust backend + vanilla JS frontend).
+Built with [Tauri v2](https://tauri.app/) (Rust backend + JS frontend).  The windows installer is available in the releases tab.
 
 ## Installation
 
@@ -48,20 +49,11 @@ This compiles the Rust backend and opens the app window with hot-reload for fron
 
 ### Adding Articles
 
-Place your PDF files anywhere inside the `Articles/` folder at the project root:
-
-```text
-Articles/
-  (2024) Smith, Jones - Deep Learning Survey.pdf
-  subfolder/
-    another-paper.pdf
-```
-
-The app will scan `Articles/` recursively on launch. If the folder doesn't exist, it will be created automatically.
+Drag-and-drop PDFs onto the open application window.  The PDFs will be copied to the `Articles/` folder at the project root.
 
 #### Filename Convention (Optional)
 
-For best auto-extraction, name your PDFs using this pattern:
+For default auto-extraction, name your PDFs using this pattern:
 
 ```text
 (<year>) <authors> - <title>.pdf
@@ -69,7 +61,7 @@ For best auto-extraction, name your PDFs using this pattern:
 
 For example: `(2023) Chen, Li - Neural Architecture Search.pdf`
 
-The app will parse title, authors, and year directly from this pattern. If your filenames don't follow this convention, the app will still work — it falls back to PDF metadata and the raw filename.
+The app will parse title, authors, and year directly from this pattern. If your filenames don't follow this convention, the app will still work — it falls back to PDF metadata and the raw filename, with a metadata API fallback for known DOIs.
 
 ### Browsing & Searching
 
@@ -81,7 +73,7 @@ The app will parse title, authors, and year directly from this pattern. If your 
 
 ### Editing Metadata
 
-Click the **pencil icon** on any article card to open the edit modal. You can modify:
+Click the `edit metadata` button (also, `ctrl+shift+click`) on any article card to open the edit modal. You can modify:
 
 - Title, authors, year, journal, DOI
 - Abstract
@@ -93,7 +85,7 @@ All manual edits are saved as override files in `library_data/overrides/` and su
 
 ### Thumbnails
 
-The app auto-generates thumbnails from your PDFs:
+The app can attempt a thumbnail auto-generation from your PDFs:
 
 - **Hybrid** (default): extracts the best embedded image from the PDF; falls back to a placeholder if none found
 - **Embedded**: only uses embedded images from the PDF
@@ -101,13 +93,17 @@ The app auto-generates thumbnails from your PDFs:
 
 To change the thumbnail strategy, use the settings panel in the app header.
 
+The suggested method, however, is to snip your preferred thumbnail image `windows+shift+s` and then upload it in the  `edit metadata` window with the `paste from clipboard` button under the current image preview.
+
 ### Opening PDFs
 
-Click any article card to open the PDF in your system's default viewer.
+Left-click on any article card to open the PDF in your system's default viewer.
 
 ### Reindexing
 
-Click the **refresh icon** in the header to rescan `Articles/` and rebuild the index. This re-extracts metadata and regenerates auto thumbnails while preserving all your manual edits and tags.
+Click the **re-index** button in the `Files` menu to rescan `Articles/` and rebuild the index. This re-extracts metadata and regenerates auto thumbnails while preserving all your manual edits and tags.  
+
+During this scan, duplicate DOIs will be presented to the user for deletion.
 
 ## Data Layout
 
@@ -183,7 +179,7 @@ src-tauri/              # Rust backend
 
 - For very large collections, the per-article override file approach scales well — no single giant JSON to manage.
 - Article IDs are stable SHA1 hashes of the relative path, so they persist across reindexes as long as files aren't moved.
-- If search performance degrades with thousands of articles, consider adding SQLite FTS while keeping the same override schema.
+- If search performance degrades (probably will be fine until scaling into ~thousands of articles), consider adding SQLite FTS while keeping the same override schema.
 
 ## to-do
 - bugs
@@ -203,23 +199,34 @@ src-tauri/              # Rust backend
   - [x] remove "upload manual thumbnail" and use its green color for the "paste from clipboard" option
     - [x] change "use auto thumbnail" to "extract image from file"
   - [x] address the chips component options taking space below the window for the default window size (is it a problem at 1080p?)
-  - [ ] remove name and description from top of page
+  - [x] remove excess text from top of page
+  - [x] give the 'display' dropdown a title like 'files' has "file management"
+
 
 - features
   - [x] allow a left click down (but not a click release) to click out of the metadata modal
   - [x] process pasted input to the "authors" and abstract" fields to try to fix common PDF copy-paste issues (astrices, number/letter superscripts, consistency in '.' after initials, 'and' vs '&',oxford commas, and line breaks)
     - [ ] sometimes logic breaking characters (I think citations in the abstracts...perhaps consider cases where the authors are separated, though probably not worth it)
     - add checkbox to enable this automatic paste processing (enabled by default)
-  - [ ] auto-rescale stored image when resolution is unecessarily high 
-  - [ ] show a prompt to accept or undo the changes for drag-and-drop thumbnails
-    - what happens to the thumbnails on disk and memory when replaced?
   - [x] also fuzzy-search autofill prompting after each character and solidifying after entering them like listing email addresses in a gmail 'send' field
+  - [x] add 'open article' and 'open file location' to the metadata editor
+  - [x] 'any' 'all' and 'none' tag filtering options
+  - [x] attempt to extract DOIs from the papers in the references section for each paper and display them in the abstract viewer
+    - [x] BREAKING - it does this during the abstract modal opening (gated behind 'files' setting)
+  - [x] for the "fetch data" button, if a DOI is not given in the DOI field, attempt to parse the first 3 pages of the PDF for a DOI 
+  - [x] add a checkbox with the height slider to automatically change the height of cards such that the black borders are not necessary in thumbnails
+  - [x] 'include' toggle to include 'all' vs include 'any' for tags
+  - [x] prompt user with metadata modal on import of new PDF 
+  - how to handle multiple PDFs imported at once?
+- [x] on re-index, check for duplicate DOIs and prompt user "remove the following duplicates? :"
+- [x] turn 'filter incomplete' from button to another checkbox in the tag filter dropdown
+  - [x] just call the checkbox "incomplete fields"
+  - [x] extend the tag-based coloration and the hotkeys for opening the abstract and metadata modals to the rows in the list view
 
   - hotkeys
     - [x] 'esc', 'enter', or click out of box to exit metadata modal
     - [x] ctrl + shift + click to open 'edit metadata'
     - [x] alt + shift + click to open abstract
-    - [ ] ctrl + shift + alt + click to open DOI page (or maybe to search for other papers by that lab in google scholar?)
   - [x] add 'added date' to metadata.  allow editing, but fill it automatically with the day when a file is added or indexed for the first time.  Also, 'last selected date' (which updates every time the article is selected)
   - [x] ctrl + scroll to resize cards (both dimensions)
   
@@ -228,18 +235,16 @@ src-tauri/              # Rust backend
   - [x] where are these thumbnail images going?  they're not populating the folder
   - when does scaling become a concern?  what is involved in implementing a database?
   - How to compile to an installer for alternative devices?
-    - macs, linux, android, ios?
-    - still windows, but with non-x64 CPU architectures?
-  - is there no better existing method for extracting PDF data?  Even some recommended screenshot text analysis?
-    - same with copying and pasting abstract and having the line breaks carry over when they should just be a space (add a "paste from clipboard" button to the abstract and authors lines where it pastes processed version of the contents?  Just have the pasted values automatically get processed and have a right click menu option to paste raw?)
+    - macs, linux, android, ios? still windows, but with non-x64 CPU architectures?
+      - github actions to spin up environment and perform tauri build for each desired platform
   - finding other inspiration and general clever ideas (design, UX, hotkey, speed, etc.) 
-  - why is there an 'inspect' option in the right click dropdown only in the dev build
+  - what happens to the thumbnails on disk and memory when replaced?
+
 
 - stretch or stupid
   - 'check for updates' button
   - network mode to cluster based on shared tags, a la obsidian
   - make a video showing the features (hotkeys, colors, thumbnail replacement, drag-and-drop)
-    - test run with Kristen
 
 broken corrections:
  - [x] modal height scaling not working
@@ -256,7 +261,7 @@ CLI warnings:
 - [x] auto-hide top bar like windows taskbar (with setting in menu)
 - [x] Tab hotkey to focus search field / Ctrl+Tab to toggle hamburger menu
 - [x] Implement robust Crossref API querying for precision metadata during PDF import via regex extracted DOIs
-- [x] Add 'Fetch via DOI' button natively to the individual metadata edit modal- [ ] have the export named "FRK-PDF-Manager-v0.9.1-setup.exe"
+- [x] Add 'Fetch via DOI' button natively to the individual metadata edit modal
 
 
 - [x] in the tag filter dropdown in the top bar, let the user check boxes for which tags to show, as well as buttons for 'select all' and 'clear all'
@@ -274,7 +279,7 @@ CLI warnings:
 
 
 - [x] fix bug where tab move cursor to search bar even in the edit modal
-  - [ ] bug: not tabbing from the chips field to the next field
+  - [x] bug: not tabbing from the chips field to the next field
 
 - [x] "remove article" option in metadata (with confirmation dialog)
 

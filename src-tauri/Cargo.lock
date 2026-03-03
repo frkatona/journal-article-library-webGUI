@@ -1890,7 +1890,7 @@ checksum = "6373607a59f0be73a39b6fe456b8192fcc3585f602af20751600e974dd455e77"
 
 [[package]]
 name = "literature-library"
-version = "0.8.1"
+version = "0.8.3"
 dependencies = [
  "base64 0.22.1",
  "chrono",
