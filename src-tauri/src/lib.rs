@@ -1252,6 +1252,11 @@ fn get_articles(
                 let article_tags: Vec<String> = a.metadata.tags.iter().map(|t| t.trim().to_lowercase()).collect();
                 tags_lower.iter().any(|t| article_tags.contains(t))
             });
+        } else if match_mode == "none" {
+            rows.retain(|a| {
+                let article_tags: Vec<String> = a.metadata.tags.iter().map(|t| t.trim().to_lowercase()).collect();
+                !tags_lower.iter().any(|t| article_tags.contains(t))
+            });
         } else {
             rows.retain(|a| {
                 let article_tags: Vec<String> = a.metadata.tags.iter().map(|t| t.trim().to_lowercase()).collect();

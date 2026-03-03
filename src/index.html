@@ -41,6 +41,12 @@
                                     <span id="tm-all-lbl"
                                         style="display:block; padding: 2px 8px; background: var(--accent); color: white;">All</span>
                                 </label>
+                                <label style="cursor: pointer; position: relative; border-left: 1px solid var(--line);">
+                                    <input type="radio" name="tag-match-mode" value="none"
+                                        style="position:absolute; opacity:0;" />
+                                    <span id="tm-none-lbl"
+                                        style="display:block; padding: 2px 8px; background: var(--bg); color: var(--text);">None</span>
+                                </label>
                             </div>
                         </div>
                     </div>
@@ -134,6 +140,9 @@
                         <span>Display</span>
                     </button>
                     <div id="display-menu" class="settings-menu hidden" role="menu">
+                        <div class="menu-section-header"
+                            style="font-size: 0.75rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; padding: 4px 8px; margin-bottom: 4px;">
+                            Display Customization</div>
                         <div class="view-toggle"
                             style="padding: 8px; display: flex; justify-content: center; margin-bottom: 8px;">
                             <span class="view-toggle-label">Cards</span>
@@ -222,6 +231,10 @@
                     <div class="thumb-tools">
                         <button id="thumb-paste" type="button" title="Ctrl+P">Paste from Clipboard</button>
                         <button id="thumb-reset" type="button" class="ghost">Extract Image from File</button>
+                        <hr style="border: none; border-top: 1px dashed var(--line); margin: 4px 0; width: 100%;" />
+                        <button id="editor-open-btn" type="button" class="ghost" style="color:var(--accent);">Open
+                            Article</button>
+                        <button id="editor-locate-btn" type="button" class="ghost">Open File Location</button>
                     </div>
                 </div>
                 <form id="metadata-form">

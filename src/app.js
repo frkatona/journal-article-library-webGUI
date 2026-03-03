@@ -73,6 +73,8 @@ const dom = {
     modalClose: document.getElementById("modal-close"),
     modalThumbWrap: document.getElementById("modal-thumb-wrap"),
     modalThumb: document.getElementById("modal-thumb"),
+    editorOpenBtn: document.getElementById("editor-open-btn"),
+    editorLocateBtn: document.getElementById("editor-locate-btn"),
     emptyState: document.getElementById("empty-state"),
     emptyUploadBtn: document.getElementById("empty-upload-btn"),
     emptyReindexBtn: document.getElementById("empty-reindex-btn"),
@@ -1545,19 +1547,26 @@ function wireEvents() {
     const tagMatchRadios = document.querySelectorAll('input[name="tag-match-mode"]');
     const tmAnyLbl = document.getElementById("tm-any-lbl");
     const tmAllLbl = document.getElementById("tm-all-lbl");
+    const tmNoneLbl = document.getElementById("tm-none-lbl");
 
     function updateTagMatchUI(mode) {
         if (mode === "all") {
             if (tmAllLbl) { tmAllLbl.style.background = "var(--accent)"; tmAllLbl.style.color = "white"; }
             if (tmAnyLbl) { tmAnyLbl.style.background = "var(--bg)"; tmAnyLbl.style.color = "var(--text)"; }
+            if (tmNoneLbl) { tmNoneLbl.style.background = "var(--bg)"; tmNoneLbl.style.color = "var(--text)"; }
+        } else if (mode === "none") {
+            if (tmNoneLbl) { tmNoneLbl.style.background = "var(--accent)"; tmNoneLbl.style.color = "white"; }
+            if (tmAnyLbl) { tmAnyLbl.style.background = "var(--bg)"; tmAnyLbl.style.color = "var(--text)"; }
+            if (tmAllLbl) { tmAllLbl.style.background = "var(--bg)"; tmAllLbl.style.color = "var(--text)"; }
         } else {
             if (tmAnyLbl) { tmAnyLbl.style.background = "var(--accent)"; tmAnyLbl.style.color = "white"; }
             if (tmAllLbl) { tmAllLbl.style.background = "var(--bg)"; tmAllLbl.style.color = "var(--text)"; }
+            if (tmNoneLbl) { tmNoneLbl.style.background = "var(--bg)"; tmNoneLbl.style.color = "var(--text)"; }
         }
     }
 
     if (tagMatchRadios.length > 0) {
-        const initialMode = state.tagFilterMode === "all" ? "all" : "any";
+        const initialMode = ["all", "none"].includes(state.tagFilterMode) ? state.tagFilterMode : "any";
         tagMatchRadios.forEach(r => {
             r.checked = r.value === initialMode;
             r.addEventListener("change", (e) => {
@@ -2056,6 +2065,17 @@ function wireEvents() {
         await uploadManualThumbnail(file);
     });
     dom.thumbReset.addEventListener("click", resetAutoThumbnail);
+
+    if (dom.editorOpenBtn) {
+        dom.editorOpenBtn.addEventListener("click", () => {
+            if (state.current) openPdf(state.current);
+        });
+    }
+    if (dom.editorLocateBtn) {
+        dom.editorLocateBtn.addEventListener("click", () => {
+            if (state.current) openFileLocation(state.current);
+        });
+    }
 
     // DOI Fetch button in modal
     dom.doiFetchBtn.addEventListener("click", async () => {

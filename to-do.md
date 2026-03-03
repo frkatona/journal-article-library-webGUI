@@ -21,11 +21,17 @@
 - [x] attempt to extract DOIs from the papers in the references section for each paper and display them in the abstract viewer
   - [x] BREAKING - it does this during the abstract modal opening (gated behind 'files' setting)
 
-- [ ] give the 'display' dropdown a title like 'files' has "file management"
+- [x] give the 'display' dropdown a title like 'files' has "file management"
 
 - [ ] create an 'experimental' section in file management which contains the 'auto references compilation' box, and one or two other side branch features
 
-- [ ] add 'open article' and 'open file location' to the metadata editor
+- [x] add 'open article' and 'open file location' to the metadata editor
+
+- [x] to 'any' and 'all' filtering, add 'none'
+
+- [ ] make the tag coloration more visible on the border and replace the color mixing behavior with prioritizing the more numerous tag
+
+- [ ] allow dragging the thumbnail image around in the metadata modal to preview which parts get cropped/zoomed
 
 ### think about more first
 
