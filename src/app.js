@@ -37,6 +37,8 @@ const state = {
     autoRefCompile: window.localStorage.getItem("article-auto-ref") === "true",
     showDupeWarnings: window.localStorage.getItem("article-dupe-warnings") !== "false",
     colorIntensity: Number.parseInt(window.localStorage.getItem("article-color-intensity") || "13", 10),
+    modalBackdropDarkness: Number.parseInt(window.localStorage.getItem("article-modal-backdrop-darkness") || "58", 10),
+    surfaceOpacity: Number.parseInt(window.localStorage.getItem("article-surface-opacity") || "100", 10),
     tagColors: JSON.parse(window.localStorage.getItem("article-tag-colors") || "{}"),
     hotkeys: JSON.parse(window.localStorage.getItem("article-hotkeys") || "null") || { ...DEFAULT_HOTKEYS },
     nicheTags: JSON.parse(window.localStorage.getItem("article-niche-tags") || "[]"),
@@ -68,6 +70,10 @@ const dom = {
     cardWidthValue: document.getElementById("card-width-value"),
     cardFontSlider: document.getElementById("card-font-slider"),
     cardFontValue: document.getElementById("card-font-value"),
+    modalBackdropSlider: document.getElementById("modal-backdrop-slider"),
+    modalBackdropValue: document.getElementById("modal-backdrop-value"),
+    surfaceOpacitySlider: document.getElementById("surface-opacity-slider"),
+    surfaceOpacityValue: document.getElementById("surface-opacity-value"),
     colorIntensitySlider: document.getElementById("color-intensity-slider"),
     colorIntensityValue: document.getElementById("color-intensity-value"),
     fontFamilySelect: document.getElementById("font-family-select"),
@@ -122,8 +128,6 @@ const dom = {
     notes: document.getElementById("f-notes"),
     autoHideTopbar: document.getElementById("auto-hide-topbar"),
     abstractModal: document.getElementById("abstract-modal"),
-    abstractClose: document.getElementById("abstract-close"),
-    abstractOpenBtn: document.getElementById("abstract-open-btn"),
     abstractTitle: document.getElementById("abstract-title"),
     duplicateModal: document.getElementById("duplicate-modal"),
     duplicateClose: document.getElementById("duplicate-close"),
@@ -155,6 +159,7 @@ const dom = {
     experimentalArrow: document.getElementById("experimental-arrow"),
     debugModeCheckbox: document.getElementById("debug-mode"),
     errorLogList: document.getElementById("error-log-list"),
+    errorLogCopy: document.getElementById("error-log-copy"),
     errorLogClear: document.getElementById("error-log-clear"),
     hotkeyTableContainer: document.getElementById("hotkey-table-container"),
     hotkeyTipText: document.getElementById("hotkey-tip-text"),
@@ -256,6 +261,34 @@ function applyCardFont(value) {
     document.documentElement.style.setProperty("--card-btn-size", `${btnFont}px`);
     dom.cardFontSlider.value = String(cardFont);
     dom.cardFontValue.textContent = String(cardFont);
+}
+
+function clampModalBackdropDarkness(value) {
+    const n = Number.parseInt(String(value), 10);
+    if (Number.isNaN(n)) return 58;
+    return Math.max(0, Math.min(95, n));
+}
+
+function applyModalBackdropDarkness(value) {
+    const darkness = clampModalBackdropDarkness(value);
+    state.modalBackdropDarkness = darkness;
+    document.documentElement.style.setProperty("--modal-backdrop-alpha", (darkness / 100).toFixed(2));
+    if (dom.modalBackdropSlider) dom.modalBackdropSlider.value = String(darkness);
+    if (dom.modalBackdropValue) dom.modalBackdropValue.textContent = String(darkness);
+}
+
+function clampSurfaceOpacity(value) {
+    const n = Number.parseInt(String(value), 10);
+    if (Number.isNaN(n)) return 100;
+    return Math.max(30, Math.min(100, n));
+}
+
+function applySurfaceOpacity(value) {
+    const opacityPercent = clampSurfaceOpacity(value);
+    state.surfaceOpacity = opacityPercent;
+    document.documentElement.style.setProperty("--surface-opacity-factor", (opacityPercent / 100).toFixed(2));
+    if (dom.surfaceOpacitySlider) dom.surfaceOpacitySlider.value = String(opacityPercent);
+    if (dom.surfaceOpacityValue) dom.surfaceOpacityValue.textContent = String(opacityPercent);
 }
 
 function applyFontFamily(value) {
@@ -850,7 +883,7 @@ const KEYBOARD_SHORTCUTS = [
 ];
 const WELLNESS_TIPS = [
     {
-        text: "20/20/20 rule! — every 20 minutes, look 20 feet away for 20 seconds",
+        text: "20/20/20 rule! — every 20 minutes, look 20 feet away for 20 seconds!",
         // sourceLabel: "Source: Mayo Clinic",
         // sourceUrl: "https://www.mayoclinic.org/diseases-conditions/eyestrain/diagnosis-treatment/drc-20372403",
     },
@@ -860,19 +893,19 @@ const WELLNESS_TIPS = [
         // sourceUrl: "https://www.mayoclinic.org/diseases-conditions/eyestrain/diagnosis-treatment/drc-20372403",
     },
     {
-        text: "water check! — you're already thirsty by the time you feel thirsty",
+        text: "water check! — you're already dehydrated by the time you feel thirsty!",
     },
     {
-        text: "deep breath! — inhale 4s, hold 7s, exhale 8s",
+        text: "deep breath! — inhale 4s, hold 7s, exhale 8s!",
     },
     {
-        text: "posture reset! — squeeze shoulder blades for 5 seconds, repeat 5 times",
+        text: "posture reset! — squeeze shoulder blades for 5 seconds, repeat 5 times!",
     },
     {
-        text: "mouth check! — relax your jaw and rest your tongue lightly on the roof of your mouth",
+        text: "mouth check! — relax your jaw and rest your tongue lightly on the roof of your mouth!",
     },
     {
-        text: "'name it to tame it'! — reduce distress by identifying your feelings in words",
+        text: "'name it to tame it'! — reduce distress by identifying your feelings in words!",
         // sourceLabel: "Source: DOI 10.1371/journal.pone.0279303",
         // sourceUrl: "https://doi.org/10.1371/journal.pone.0279303",
     },
@@ -1189,7 +1222,7 @@ function createAbstractReferenceRow(labelText, muted = false) {
 
     const textNode = document.createElement("span");
     textNode.className = "abstract-ref-text";
-    textNode.textContent = labelText;
+    textNode.textContent = doi || labelText;
 
     row.appendChild(iconSlot);
     row.appendChild(textNode);
@@ -1305,7 +1338,7 @@ function openAbstract(article) {
             });
             if (refDois.length > 0) {
                 refDois.forEach((doi) => {
-                    dom.abstractReferencesList.appendChild(createAbstractReferenceRow(`${doi} (text-extracted)`, true));
+                    dom.abstractReferencesList.appendChild(createAbstractReferenceRow(doi, true));
                 });
                 dom.abstractReferencesSection.style.display = "block";
             }
@@ -1770,7 +1803,7 @@ async function loadArticles() {
     state.total = res.total || 0;
     state.generatedAt = res.generated_at || "";
     state.strategy = res.thumbnail_strategy || state.strategy;
-    dom.strategySelect.value = state.strategy;
+    if (dom.strategySelect) dom.strategySelect.value = state.strategy;
 
     renderArticles();
     if (state.showDupeWarnings) checkDuplicates();
@@ -1862,7 +1895,9 @@ async function saveMetadata(evt) {
             state.articles.push(savedArticle);
         }
 
-        state.current = savedArticle;
+        if (state.current?.id === currentId && !dom.modal.classList.contains("hidden")) {
+            state.current = savedArticle;
+        }
         renderArticles();
 
         await loadTags();
@@ -1871,6 +1906,41 @@ async function saveMetadata(evt) {
         const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
         setStatus(`Save failed: ${message}`, true);
     }
+}
+
+async function copyRawToClipboard(text) {
+    const raw = String(text || "");
+    if (!raw.trim()) return false;
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+        try {
+            await navigator.clipboard.writeText(raw);
+            return true;
+        } catch { }
+    }
+    try {
+        const area = document.createElement("textarea");
+        area.value = raw;
+        area.setAttribute("readonly", "readonly");
+        area.style.position = "fixed";
+        area.style.left = "-9999px";
+        document.body.appendChild(area);
+        area.select();
+        const ok = document.execCommand("copy");
+        document.body.removeChild(area);
+        return Boolean(ok);
+    } catch {
+        return false;
+    }
+}
+
+function isMetadataEditableField(element) {
+    if (!(element instanceof HTMLElement)) return false;
+    if (!dom.form || !dom.form.contains(element)) return false;
+    if (element.matches("textarea, select")) return true;
+    if (!element.matches("input")) return element.isContentEditable;
+
+    const inputType = (element.getAttribute("type") || "text").toLowerCase();
+    return !["button", "submit", "reset", "checkbox", "radio", "file", "hidden"].includes(inputType);
 }
 
 async function persistReferenceDois(articleId, refDois) {
@@ -2057,7 +2127,7 @@ async function resetAutoThumbnail() {
 }
 
 async function doReindex() {
-    const strategy = dom.strategySelect.value;
+    const strategy = dom.strategySelect?.value || state.strategy || "hybrid";
     const fast = !dom.parsePdfs.checked;
     setFilesMenuOpen(false);
     setStatus(`Reindexing with ${strategy} strategy${fast ? " (fast mode)" : ""}...`);
@@ -2185,6 +2255,8 @@ function wireEvents() {
     applyCardHeight(state.cardHeight);
     applyCardWidth(state.cardWidth);
     applyCardFont(state.cardFont);
+    applyModalBackdropDarkness(state.modalBackdropDarkness);
+    applySurfaceOpacity(state.surfaceOpacity);
     applyFontFamily(state.fontFamily);
     applyAbstractSectionCount(state.abstractSectionCount);
     setDisplayMenuOpen(false);
@@ -2672,7 +2744,7 @@ function wireEvents() {
         dom.hotkeysModal.classList.remove("hidden");
         dom.hotkeysModal.querySelector(".modal-card").classList.add("starry-bg");
         buildHotkeyTable();
-        renderWellnessTip();
+        nextWellnessTip();
     });
     const closeHotkeys = () => {
         dom.hotkeysModal.classList.add("hidden");
@@ -2728,6 +2800,18 @@ function wireEvents() {
         applyCardFont(dom.cardFontSlider.value);
         window.localStorage.setItem("article-card-font", String(state.cardFont));
     });
+    if (dom.modalBackdropSlider) {
+        dom.modalBackdropSlider.addEventListener("input", () => {
+            applyModalBackdropDarkness(dom.modalBackdropSlider.value);
+            window.localStorage.setItem("article-modal-backdrop-darkness", String(state.modalBackdropDarkness));
+        });
+    }
+    if (dom.surfaceOpacitySlider) {
+        dom.surfaceOpacitySlider.addEventListener("input", () => {
+            applySurfaceOpacity(dom.surfaceOpacitySlider.value);
+            window.localStorage.setItem("article-surface-opacity", String(state.surfaceOpacity));
+        });
+    }
     // Tag Filter Custom Dropdown
     dom.tagFilterBtn.addEventListener("click", (evt) => {
         evt.preventDefault();
@@ -2789,9 +2873,8 @@ function wireEvents() {
         });
     }
     dom.modalClose.addEventListener("click", closeEditor);
-    dom.abstractClose.addEventListener("click", closeAbstract);
-    if (dom.abstractOpenBtn) {
-        dom.abstractOpenBtn.addEventListener("click", () => {
+    if (dom.abstractTitle) {
+        dom.abstractTitle.addEventListener("click", () => {
             if (state.abstractPreviewArticle) {
                 openPdf(state.abstractPreviewArticle);
             }
@@ -3197,20 +3280,21 @@ function wireEvents() {
         }
     });
 
-    // Auto-save metadata on blur
-    const autoSaveInputs = [dom.title, dom.authors, dom.year, dom.journal, dom.volume, dom.issue, dom.pages, dom.doi, dom.abstract, dom.notes];
-    autoSaveInputs.forEach(input => {
-        if (input) {
-            input.addEventListener("blur", (evt) => {
-                // If closing modal via Escape, don't trigger auto-save
-                if (state.isEscaping) return;
-                // Form submit logic prevents default blur if triggered by form submit, but manual click out triggers this
-                if (state.current && !dom.modal.classList.contains("hidden")) {
-                    saveMetadata(evt);
-                }
-            });
-        }
-    });
+    // Auto-save metadata whenever leaving an editable field in the metadata form.
+    if (dom.form) {
+        dom.form.addEventListener("focusout", (evt) => {
+            if (state.isEscaping) return;
+            if (!state.current || dom.modal.classList.contains("hidden")) return;
+            if (!isMetadataEditableField(evt.target)) return;
+
+            const nextFocused = evt.relatedTarget;
+            if (nextFocused instanceof HTMLElement &&
+                (nextFocused.getAttribute("type") || "").toLowerCase() === "submit") {
+                return;
+            }
+            saveMetadata(evt);
+        });
+    }
 
     if (dom.errorBannerClose) {
         dom.errorBannerClose.addEventListener("click", () => {
@@ -3220,6 +3304,20 @@ function wireEvents() {
     if (dom.errorLogClear) {
         dom.errorLogClear.addEventListener("click", () => {
             if (dom.errorLogList) dom.errorLogList.innerHTML = "";
+        });
+    }
+    if (dom.errorLogCopy) {
+        dom.errorLogCopy.addEventListener("click", async () => {
+            if (!dom.errorLogList) return;
+            const lines = Array.from(dom.errorLogList.querySelectorAll("li"))
+                .map((li) => li.textContent || "")
+                .filter((line) => line.trim().length > 0);
+            if (lines.length === 0) {
+                showToast("Error log is empty.");
+                return;
+            }
+            const ok = await copyRawToClipboard(lines.join("\n"));
+            showToast(ok ? "Error log copied to clipboard" : "Failed to copy error log");
         });
     }
     if (dom.showErrorsCheckbox) {

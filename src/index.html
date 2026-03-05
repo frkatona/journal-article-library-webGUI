@@ -119,14 +119,6 @@
                             style="font-size: 0.75rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; padding: 4px 8px; margin-bottom: 4px;">
                             File Management</div>
                         <button id="open-articles-btn" type="button" class="ghost">Open Articles Folder</button>
-                        <label class="field" style="margin-top: 4px;">
-                            <span>Auto Thumbnail</span>
-                            <select id="strategy-select">
-                                <option value="hybrid">Hybrid</option>
-                                <option value="embedded">Embedded image</option>
-                                <option value="first-page">First-page render</option>
-                            </select>
-                        </label>
                         <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
                             <input id="parse-pdfs" type="checkbox" />
                             <span style="font-size:0.82rem;">Parse PDFs</span>
@@ -134,6 +126,22 @@
                         <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
                             <input id="show-errors-checkbox" type="checkbox" checked />
                             <span style="font-size:0.82rem;">Show errors globally</span>
+                        </label>
+                        <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                            <input id="show-ref-dois" type="checkbox" />
+                            <span style="font-size:0.82rem;">Show reference DOIs in abstract</span>
+                        </label>
+                        <label class="field">
+                            <span>Abstract Sections</span>
+                            <input id="abstract-section-count" type="number" min="1" max="12" step="1" value="3" />
+                        </label>
+                        <label class="field">
+                            <span style="font-size:0.82rem; color:var(--muted);">Niche Tags <em
+                                    style="font-weight:400;">(hidden by default)</em></span>
+                            <div id="niche-tag-chip-container" class="tag-chip-container" style="min-height:40px;">
+                                <input id="niche-tags-input" type="text" class="tag-chip-input"
+                                    placeholder="Add niche tag..." autocomplete="off" />
+                            </div>
                         </label>
                         <details id="experimental-section" style="margin-top: 2px;">
                             <summary
@@ -223,6 +231,14 @@
                             <span>Card Font <strong id="card-font-value">14</strong>px</span>
                             <input id="card-font-slider" type="range" min="10" max="32" step="1" value="14" />
                         </label>
+                        <label class="field">
+                            <span>Modal Backdrop Darkness <strong id="modal-backdrop-value">58</strong>%</span>
+                            <input id="modal-backdrop-slider" type="range" min="0" max="95" step="1" value="58" />
+                        </label>
+                        <label class="field">
+                            <span>UI Surface Opacity <strong id="surface-opacity-value">100</strong>%</span>
+                            <input id="surface-opacity-slider" type="range" min="30" max="100" step="1" value="100" />
+                        </label>
                         <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
                             <input id="tint-by-tag" type="checkbox" />
                             <span style="font-size:0.82rem;">Tint by Tag</span>
@@ -232,22 +248,6 @@
                             <input id="color-intensity-slider" type="range" min="0" max="100" step="1" value="13" />
                         </label>
                         <button id="edit-tag-colors-btn" type="button" class="ghost">Edit Tag Colors</button>
-                        <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
-                            <input id="show-ref-dois" type="checkbox" />
-                            <span style="font-size:0.82rem;">Show reference DOIs in abstract</span>
-                        </label>
-                        <label class="field">
-                            <span>Abstract Sections</span>
-                            <input id="abstract-section-count" type="number" min="1" max="12" step="1" value="3" />
-                        </label>
-                        <label class="field">
-                            <span style="font-size:0.82rem; color:var(--muted);">Niche Tags <em
-                                    style="font-weight:400;">(hidden by default)</em></span>
-                            <div id="niche-tag-chip-container" class="tag-chip-container" style="min-height:40px;">
-                                <input id="niche-tags-input" type="text" class="tag-chip-input"
-                                    placeholder="Add niche tag..." autocomplete="off" />
-                            </div>
-                        </label>
                     </div>
                 </div>
 
@@ -371,14 +371,12 @@
         <div class="modal-card abstract-modal-card">
             <div class="modal-header">
                 <h2 id="abstract-title">Abstract</h2>
-                <button id="abstract-close" type="button">Close</button>
             </div>
             <div class="abstract-body">
                 <div class="abstract-meta-strip">
                     <div class="abstract-meta-divider"></div>
                     <div class="abstract-meta-row">
                         <p id="abstract-meta" class="meta"></p>
-                        <button id="abstract-open-btn" type="button" class="ghost">Open Article</button>
                     </div>
                     <div id="abstract-meta-divider" class="abstract-meta-divider"></div>
                 </div>
@@ -473,8 +471,12 @@
                         <span
                             style="font-size: 0.8rem; color: var(--muted); font-weight: 600; letter-spacing: 0.03em;">Error
                             Log</span>
-                        <button id="error-log-clear" type="button" class="ghost"
-                            style="font-size: 0.75rem; padding: 2px 6px;">Clear</button>
+                        <div style="display:flex; align-items:center; gap:6px;">
+                            <button id="error-log-copy" type="button" class="ghost"
+                                style="font-size: 0.75rem; padding: 2px 6px;">Copy</button>
+                            <button id="error-log-clear" type="button" class="ghost"
+                                style="font-size: 0.75rem; padding: 2px 6px;">Clear</button>
+                        </div>
                     </div>
                     <ul id="error-log-list"
                         style="margin-top: 8px; padding-left: 0; list-style: none; max-height: 100px; overflow-y: auto; font-family: monospace; font-size: 0.75rem; color: var(--danger); word-break: break-all; display: flex; flex-direction: column; gap: 4px;">
@@ -497,8 +499,9 @@
                     </div>
                 </div>
                 <div style="border-top:1px solid var(--line); opacity:0.7; margin:0 0 10px;"></div>
-                <span
-                    style="font-size: 0.8rem; color: var(--muted); font-weight: 600; cursor: default; letter-spacing: 0.03em;">v0.8.4</span>
+                <a id="version-link" href="https://github.com/frkatona/journal-article-library-webGUI/tree/tauri"
+                    target="_blank" rel="noopener noreferrer"
+                    style="font-size: 0.8rem; color: var(--muted); font-weight: 600; cursor: pointer; letter-spacing: 0.03em; text-decoration:none;">v0.8.7</a>
             </div>
         </div>
     </div>

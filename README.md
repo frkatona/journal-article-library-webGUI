@@ -251,13 +251,13 @@ The application utilizes the **Crossref API** (`https://api.crossref.org/works/{
   - [x] ctrl + scroll to resize cards (both dimensions)
   
 - questions
+  - non-PDF-based sources for inspiration? (design, UX, hotkeys, optimizations, etc.)?
   - is there a length limit on titles?  what about filenames?  should I process drag-and-drop pdfs to change the file name?  should I conduct references to the PDFs through some extracted hash in case files get renamed (and handle duplicates on index)?
   - [x] where are these thumbnail images going?  they're not populating the folder
   - when does scaling become a concern?  what is involved in implementing a database?
   - How to compile to an installer for alternative devices?
     - macs, linux, android, ios? still windows, but with non-x64 CPU architectures?
       - github actions to spin up environment and perform tauri build for each desired platform
-  - finding other inspiration and general clever ideas (design, UX, hotkey, speed, etc.) 
   - what happens to the thumbnails on disk and memory when replaced?
 
 
@@ -286,15 +286,14 @@ CLI warnings:
 - [x] save metadata each time a field is exited
 - [x] button to reset each tag's color, as well as "reset all colors"
 - [x] save a 15 minute backup of the json and include a "reset to last autosave: <time>" along with "x minutes to next backup"
-- [ ] toggle 'lock dimensions' in card resizing, default enabled
+- [x] toggle 'lock dimensions' in card resizing, default enabled
 - [x] move the hotkey button to the top bar with the text "?" and move the current version to that modal below the hotkeys.  add a starry night animation to the modal when the user lingers on it for more than 10 seconds
 - [x] reorder the menu options into two sections separated by a lines: style and files
 - [x] "reindex" should be the bottom choice, with "restore backup" above it, and both of them should require a confirmation dialog
 - [x] fix bug where tab move cursor to search bar even in the edit modal
   - [x] bug: not tabbing from the chips field to the next field
 - [x] "remove article" option in metadata (with confirmation dialog)
-- [x] intrusive red error bar: have it fade after a few seconds or show it at the bottom with an 'x' to close it, but store a log in the '?' button modal and have a checkbox in files to disable showing errors outside of '?'
-  - Uncaught TypeError: Cannot set properties of undefined (setting 'value') at http://tauri.localhost/app.js:1106
+- [x] intrusive red error bar: have it fade after a few seconds or show it at the bottom with an 'x' to close it, but store a log in the '?' button modal and have a checkbox in files to disable showing errors outside of '?' -> Uncaught TypeError: Cannot set properties of undefined (setting 'value') at http://tauri.localhost/app.js:1106
 - [x] add a hotkey customization ability in the keyboard shortcuts "?" modal where the user can select an action and the application will listen for input and assign it to that action.  Ctrl, alt, and shift modifiers should be permitted and it should be clear when listening is occurring.  The action should be the left column with shortcuts on the right and little pencil 'edit' icons to the right of the current shortcuts.  Also, change the default shortcuts so that "ctrl+click" opens the edit modal, "alt+click" opens the abstract modal, "shift+click" copies the BibTex to the clipboard, and "ctrl+shift+click" opens the folder of the selected article
 - [x] when metadata is extracted through the DOI fetch, extract the DOIs for articles that article references if it is available through the API and list them below the abstract in the abstract view modal.  Also introduce a checkbox in the 'display' dropdown to not display the reference DOIs
 - [?] on DOI fetch from a separate computer, the application will sometimes crash quickly after pressing the button.  This happened first for a book (probably could not find the DOI) and then for an article which probably did have a DOI to access throught he API.  The DOI fetch did work initially on that computer.  If there is an obvious problem and solution, please pursue the solution, but also consider ways to report the error, perhaps maintaining a crashlog in the application's folder
@@ -318,7 +317,19 @@ CLI warnings:
 - [x] fix DOIs not seeming to save to appear in the abstract view of the re-launched application
 - [x] change hotkey for saving and exiting the metadata modal from "enter" to "ctrl + enter"
 - [x] in the abstract modal, the title can get too close to the "close" button
-
+- [x] allow the 'paste thumbnail from clipboard' hotkey to also paste to the article associated with the card under the cursor when the modal is not open 
+- [x] sliders for background darkness during modal and opacity of semi-transparent elements
+- [x] cycle through a series of brief helpful messages above the version number in the "?" modal (also a refresh button to go to the next one)
+  - 20/20/20 - every 20 minutes of reading, take 20 seconds to look at something 20 feet away - [mayoclinic](https://www.mayoclinic.org/diseases-conditions/eyestrain/diagnosis-treatment/drc-20372403)
+  - Your blink rate drops by up to 80% during screen use, drying the cornea.  Try to make form a habit repeated blinking—for instance, 5 blinks each time you read a paragraph! - [mayoclinic](https://www.mayoclinic.org/diseases-conditions/eyestrain/diagnosis-treatment/drc-20372403)
+  - When is the last time you took a big sip of water? (coffee doesn't count!)  By the time you notice the thirst, you are already dehydrated!
+  - Take a moment to deep breathe - sit up straight; inhale for 4 seconds, hold for 7, exhale for 8
+    - create a little animation for this one
+  - Reset your posture - squeeze your should blades together; hold 5 seconds; repeat 5 times
+  - Mouth check!  Relax your jaw and let your tongue rest gently against the roof of your mouth
+  - Affect Labeling - "labeling negative feelings can down-regulate distress" - (2022)[https://doi.org/10.1371/journal.pone.0279303]
+  
+  
 ### think about more first
 
 - [ ] include a resizing/cropping feature to the 'paste thumbnail image' to encourage getting large screenshots and cropping in
@@ -331,14 +342,12 @@ CLI warnings:
 
 - [ ] show a prompt to accept or undo the changes for drag-and-drop thumbnails
 
-- [ ] cleaning input
+- [ ] expand on auto-cleaning pasted text
   - add preferences for how to clean ("and" vs "&" vs none, periods after initials, keep asterisks for PIs, casing {remove all uppercases?  force sentence vs title casing? how to chunk the abstract - 3 * 1/3 sentences?}) in the files menu
 
 - [ ] how-to-use modal for first time user (hotkeys, colors, editing metadata, pasting images, toggling views) with a "show first-time helper" in the '?' modal
 
-
-- [ ] pivot how articles are indexed so that filename changes aren't breaking
-
+- [ ] change how articles are indexed so that filename changes aren't breaking
 
 ### global version update
 

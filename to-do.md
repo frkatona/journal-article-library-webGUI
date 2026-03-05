@@ -5,7 +5,10 @@
 - [x] have the niche tags use chips components
   - [ ] fix it preventing autofill elsewhere and appearing with strange characters in the niche field
 
-- [ ] should the separators extend all the way, and should the title separator be the same as the top author separator?
+- abstract style
+  - [ ] should the separators extend all the way, and should the title separator be the same as the top author separator?
+  - [ ] center align year/author/journal and move the 'open article' button
+  - [ ] un-bold year
 
 - [ ] default 'warn duplicate DOIs' to on in the file settings
 
@@ -32,6 +35,13 @@
 
 - [ ] how can I have the selected article active in the folder when I select "open in folder" like windows does when using "open file location"
 
+- [ ] sliders for background darkness during modal and opacity of semi-transparent elements
+
+- [ ] warnings
+  - warning: unused import: `self` --> src\lib.rs:17:23
+  - structure field `DOI` should have a snake case name --> src\lib.rs:103:9
+  - `literature-library` (lib) generated 2 warnings (run `cargo fix --lib -p literature-library` to apply 1 suggestion)
+   
 ### flesh out
 
 - [ ] include a resizing/cropping feature to the 'paste thumbnail image' to encourage getting large screenshots and cropping in
