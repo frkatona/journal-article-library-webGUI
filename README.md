@@ -274,7 +274,7 @@ broken corrections:
 CLI warnings:
 - [x] Warn The bundle identifier "com.literature-library.app" set in `"tauri.conf.json" identifier` ends with `.app`. This is not recommended because it conflicts with the application bundle extension on macOS.
 
-
+### general updates:
 - [x] when there are 0 articles, show "reindex" and "upload file/folder" buttons
 - [x] release build not allowing PDF drag and drop
 - [x] remove header text titles to save space in the static top bar
@@ -282,46 +282,42 @@ CLI warnings:
 - [x] Tab hotkey to focus search field / Ctrl+Tab to toggle hamburger menu
 - [x] Implement robust Crossref API querying for precision metadata during PDF import via regex extracted DOIs
 - [x] Add 'Fetch via DOI' button natively to the individual metadata edit modal
-
-
 - [x] in the tag filter dropdown in the top bar, let the user check boxes for which tags to show, as well as buttons for 'select all' and 'clear all'
-
 - [x] save metadata each time a field is exited
 - [x] button to reset each tag's color, as well as "reset all colors"
 - [x] save a 15 minute backup of the json and include a "reset to last autosave: <time>" along with "x minutes to next backup"
 - [ ] toggle 'lock dimensions' in card resizing, default enabled
-
 - [x] move the hotkey button to the top bar with the text "?" and move the current version to that modal below the hotkeys.  add a starry night animation to the modal when the user lingers on it for more than 10 seconds
-
 - [x] reorder the menu options into two sections separated by a lines: style and files
-
 - [x] "reindex" should be the bottom choice, with "restore backup" above it, and both of them should require a confirmation dialog
-
-
 - [x] fix bug where tab move cursor to search bar even in the edit modal
   - [x] bug: not tabbing from the chips field to the next field
-
 - [x] "remove article" option in metadata (with confirmation dialog)
-
 - [x] intrusive red error bar: have it fade after a few seconds or show it at the bottom with an 'x' to close it, but store a log in the '?' button modal and have a checkbox in files to disable showing errors outside of '?'
   - Uncaught TypeError: Cannot set properties of undefined (setting 'value') at http://tauri.localhost/app.js:1106
-
-
 - [x] add a hotkey customization ability in the keyboard shortcuts "?" modal where the user can select an action and the application will listen for input and assign it to that action.  Ctrl, alt, and shift modifiers should be permitted and it should be clear when listening is occurring.  The action should be the left column with shortcuts on the right and little pencil 'edit' icons to the right of the current shortcuts.  Also, change the default shortcuts so that "ctrl+click" opens the edit modal, "alt+click" opens the abstract modal, "shift+click" copies the BibTex to the clipboard, and "ctrl+shift+click" opens the folder of the selected article
-
 - [x] when metadata is extracted through the DOI fetch, extract the DOIs for articles that article references if it is available through the API and list them below the abstract in the abstract view modal.  Also introduce a checkbox in the 'display' dropdown to not display the reference DOIs
-
 - [?] on DOI fetch from a separate computer, the application will sometimes crash quickly after pressing the button.  This happened first for a book (probably could not find the DOI) and then for an article which probably did have a DOI to access throught he API.  The DOI fetch did work initially on that computer.  If there is an obvious problem and solution, please pursue the solution, but also consider ways to report the error, perhaps maintaining a crashlog in the application's folder
-
 - [x] extend the edit modal just a little bit vertically to prevent the top and bottom buttons from slightly falling out of the clickable space at the default 1080 pixel height 
-
 - [x] there are some tags which will likely not be helpful to the user in ordinary circumstances (e.g., manuals, theses) and should not be displayed by default.  In the 'display' options, create a box to designate the listed tags as hidden by default and then create a checkbox in the 'tags' filter dropdown locked to the bottom with the 'incomplete metadata' checkbox to 'show special tags'
-
 - [x] create an 'experimental' section in file management which contains the 'auto references compilation' box, and one or two other side branch features
-
 - [x] make the tag coloration more visible on the border and replace the color mixing behavior with prioritizing the more numerous tag
-
 - [x] alternative background themes a la {insert vs code popular options}
+- [x] add display option for how many sections to separate abstract into (default 3)
+- [x] create a debug mode checkbox in the file settings under 'experimental' for visualizing verbose output for more routine actions
+- [x] remove 'extract image from file' from the production build
+- [x] remove soft light theme or replace it with another one with better contrast
+  - [x] remaining fixes: lighter text in the dropdown menus and the list view elements
+  - [x] and the track of the cards-lists toggle switch
+- [x] check which DOIs in the abstract view are already found in the library and place the small ghost icon next to them
+- [x] move the cards-list toggle outside into the app header to the left of "files"
+- [x] in the abstract modal, bold the year in the year/author/journal line and put another thin divider line below it.  Also, lower the initial shown Referenced DOIs from 5 to 3
+  - [x] in the metadata modal, there should be equal distance between the year/author/journal and the separator lines above and below it.  Also, create add an "Open Article" button at the right edge in this section
+  - [x] add a "show less" button to the abstract modal after "show more" is used which can collapse the list back down to 3
+- [x] widen the 'year' column a little in the list view so that the sorting arrow doesn't get forced to the next line when it appears
+- [x] fix DOIs not seeming to save to appear in the abstract view of the re-launched application
+- [x] change hotkey for saving and exiting the metadata modal from "enter" to "ctrl + enter"
+- [x] in the abstract modal, the title can get too close to the "close" button
 
 ### think about more first
 

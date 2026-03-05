@@ -101,6 +101,14 @@
                 </select>
             </label>
             <div class="settings-wrap" style="display: flex; align-items: center; gap: 8px;">
+                <div class="view-toggle header-view-toggle" title="Toggle cards/list view">
+                    <span class="view-toggle-label">Cards</span>
+                    <label class="toggle-switch">
+                        <input id="view-mode-toggle" type="checkbox" />
+                        <span class="toggle-track"></span>
+                    </label>
+                    <span class="view-toggle-label">List</span>
+                </div>
                 <div id="settings-wrap-files" style="position: relative;">
                     <button id="files-menu-toggle" class="menu-toggle" type="button" aria-expanded="false"
                         aria-controls="files-menu" style="padding: 4px 10px; font-weight: 600;">
@@ -153,6 +161,10 @@
                                 </label>
                             </div>
                         </details>
+                        <button id="crash-log-btn" type="button" class="ghost"
+                            style="font-size:0.78rem; padding:4px 8px;">View Crash Log</button>
+                        <pre id="crash-log-content"
+                            style="display:none; margin:0; padding:8px; background:var(--bg); border:1px solid var(--line); border-radius:6px; font-size:0.72rem; max-height:140px; overflow-y:auto; white-space:pre-wrap; word-break:break-all; color:var(--danger);"></pre>
 
                         <hr style="border: none; border-top: 1px dashed var(--danger); margin: 8px 0; opacity: 0.5;" />
 
@@ -179,18 +191,9 @@
                                 <option value="nord">Nord</option>
                                 <option value="monokai">Monokai</option>
                                 <option value="solarized">Solarized Dark</option>
-                                <option value="light">Soft Light</option>
+                                <option value="light">High Contrast Light</option>
                             </select>
                         </label>
-                        <div class="view-toggle"
-                            style="padding: 8px; display: flex; justify-content: center; margin-bottom: 8px;">
-                            <span class="view-toggle-label">Cards</span>
-                            <label class="toggle-switch">
-                                <input id="view-mode-toggle" type="checkbox" />
-                                <span class="toggle-track"></span>
-                            </label>
-                            <span class="view-toggle-label">List</span>
-                        </div>
                         <label class="field">
                             <span>Font</span>
                             <select id="font-family-select">
@@ -240,8 +243,10 @@
                         <label class="field">
                             <span style="font-size:0.82rem; color:var(--muted);">Niche Tags <em
                                     style="font-weight:400;">(hidden by default)</em></span>
-                            <textarea id="niche-tags-input" rows="2" placeholder="e.g. manual, thesis, book..."
-                                style="resize:vertical; font-size:0.82rem; font-family:inherit;"></textarea>
+                            <div id="niche-tag-chip-container" class="tag-chip-container" style="min-height:40px;">
+                                <input id="niche-tags-input" type="text" class="tag-chip-input"
+                                    placeholder="Add niche tag..." autocomplete="off" />
+                            </div>
                         </label>
                     </div>
                 </div>
@@ -369,7 +374,14 @@
                 <button id="abstract-close" type="button">Close</button>
             </div>
             <div class="abstract-body">
-                <p id="abstract-meta" class="meta"></p>
+                <div class="abstract-meta-strip">
+                    <div class="abstract-meta-divider"></div>
+                    <div class="abstract-meta-row">
+                        <p id="abstract-meta" class="meta"></p>
+                        <button id="abstract-open-btn" type="button" class="ghost">Open Article</button>
+                    </div>
+                    <div id="abstract-meta-divider" class="abstract-meta-divider"></div>
+                </div>
                 <div id="abstract-text"></div>
                 <div id="abstract-references-section" class="meta"
                     style="margin-top:20px; border-top:1px solid var(--line); padding-top:10px; display:none;">
@@ -447,7 +459,7 @@
     <!-- Hotkeys Modal -->
     <div id="hotkeys-modal" class="modal hidden" role="dialog" aria-modal="true">
         <div class="modal-card"
-            style="max-width:420px; display:flex; flex-direction:column; max-height:85vh; overflow:hidden; padding-bottom:0;">
+            style="max-width:420px; display:flex; flex-direction:column; height:clamp(400px,92vh,1020px); overflow:hidden; padding-bottom:0;">
             <div class="modal-header" style="flex-shrink:0;">
                 <h2>Keyboard Shortcuts</h2>
                 <button id="hotkeys-close" class="close-btn" type="button">&times;</button>
@@ -455,17 +467,6 @@
             <div style="padding:12px 16px; overflow-y:auto; flex:1;">
                 <div id="hotkey-table-container">
                     <!-- JS-populated hotkey table -->
-                </div>
-                <div style="margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                        <span
-                            style="font-size: 0.8rem; color: var(--muted); font-weight: 600; letter-spacing: 0.03em;">Crash
-                            Log</span>
-                        <button id="crash-log-btn" type="button" class="ghost"
-                            style="font-size: 0.75rem; padding: 2px 6px;">View</button>
-                    </div>
-                    <pre id="crash-log-content"
-                        style="display:none; margin:0; padding:8px; background:var(--bg); border:1px solid var(--line); border-radius:6px; font-size:0.72rem; max-height:120px; overflow-y:auto; white-space:pre-wrap; word-break:break-all; color:var(--danger);"></pre>
                 </div>
                 <div style="margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px;">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -482,6 +483,20 @@
             </div>
             <div
                 style="text-align: center; border-top: 1px solid var(--line); padding: 12px 16px; background: var(--bg); flex-shrink:0;">
+                <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:10px; align-items:center;">
+                    <div id="hotkey-tip-text"
+                        style="font-size:0.78rem; color:var(--text); line-height:1.35; text-align:center;"></div>
+                    <div style="display:flex; align-items:center; justify-content:center; gap:10px;">
+                        <a id="hotkey-tip-source" href="#" target="_blank" rel="noopener noreferrer"
+                            style="font-size:0.75rem; color:var(--accent); text-align:center; text-decoration:none;"></a>
+                        <!--
+                        <button id="hotkey-tip-next" type="button" class="ghost"
+                            aria-label="Next tip" title="Next tip"
+                            style="padding:2px 8px; font-size:0.95rem; line-height:1; min-width:30px;">&#x21bb;</button>
+                        -->
+                    </div>
+                </div>
+                <div style="border-top:1px solid var(--line); opacity:0.7; margin:0 0 10px;"></div>
                 <span
                     style="font-size: 0.8rem; color: var(--muted); font-weight: 600; cursor: default; letter-spacing: 0.03em;">v0.8.4</span>
             </div>

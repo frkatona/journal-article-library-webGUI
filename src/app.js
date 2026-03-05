@@ -19,6 +19,7 @@ const state = {
     total: 0,
     generatedAt: "",
     current: null,
+    hoveredArticleId: null,
     viewMode: window.localStorage.getItem("article-view-mode") || "preview",
     cardHeight: Number.parseInt(window.localStorage.getItem("article-card-height") || "138", 10),
     autoFitHeight: window.localStorage.getItem("article-autofit-height") === "true",
@@ -34,7 +35,7 @@ const state = {
     tintByTag: window.localStorage.getItem("article-tint-by-tag") === "true",
     filterIncomplete: window.localStorage.getItem("article-filter-incomplete") === "true",
     autoRefCompile: window.localStorage.getItem("article-auto-ref") === "true",
-    showDupeWarnings: window.localStorage.getItem("article-dupe-warnings") === "true",
+    showDupeWarnings: window.localStorage.getItem("article-dupe-warnings") !== "false",
     colorIntensity: Number.parseInt(window.localStorage.getItem("article-color-intensity") || "13", 10),
     tagColors: JSON.parse(window.localStorage.getItem("article-tag-colors") || "{}"),
     hotkeys: JSON.parse(window.localStorage.getItem("article-hotkeys") || "null") || { ...DEFAULT_HOTKEYS },
@@ -43,6 +44,8 @@ const state = {
     showRefDois: window.localStorage.getItem("article-show-ref-dois") !== "false",
     acIndex: -1,
     isEscaping: false,
+    abstractPreviewArticle: null,
+    wellnessTipIndex: Number.parseInt(window.localStorage.getItem("article-wellness-tip-index") || "0", 10),
     showErrorsGlobally: window.localStorage.getItem("article-show-errors") !== "false",
     abstractSectionCount: Number.parseInt(window.localStorage.getItem("article-abstract-sections") || "3", 10),
     debugMode: window.localStorage.getItem("article-debug-mode") === "true",
@@ -120,11 +123,13 @@ const dom = {
     autoHideTopbar: document.getElementById("auto-hide-topbar"),
     abstractModal: document.getElementById("abstract-modal"),
     abstractClose: document.getElementById("abstract-close"),
+    abstractOpenBtn: document.getElementById("abstract-open-btn"),
     abstractTitle: document.getElementById("abstract-title"),
     duplicateModal: document.getElementById("duplicate-modal"),
     duplicateClose: document.getElementById("duplicate-close"),
     duplicateList: document.getElementById("duplicate-list"),
     abstractMeta: document.getElementById("abstract-meta"),
+    abstractMetaDivider: document.getElementById("abstract-meta-divider"),
     abstractText: document.getElementById("abstract-text"),
     abstractReferencesSection: document.getElementById("abstract-references-section"),
     abstractReferencesList: document.getElementById("abstract-references-list"),
@@ -152,9 +157,13 @@ const dom = {
     errorLogList: document.getElementById("error-log-list"),
     errorLogClear: document.getElementById("error-log-clear"),
     hotkeyTableContainer: document.getElementById("hotkey-table-container"),
+    hotkeyTipText: document.getElementById("hotkey-tip-text"),
+    hotkeyTipSource: document.getElementById("hotkey-tip-source"),
+    hotkeyTipNext: document.getElementById("hotkey-tip-next"),
     crashLogBtn: document.getElementById("crash-log-btn"),
     crashLogContent: document.getElementById("crash-log-content"),
     hideNicheCheckbox: document.getElementById("hide-niche"),
+    nicheTagChipContainer: document.getElementById("niche-tag-chip-container"),
     nicheTagsInput: document.getElementById("niche-tags-input"),
     showRefDoisCheckbox: document.getElementById("show-ref-dois"),
     abstractSectionCountInput: document.getElementById("abstract-section-count"),
@@ -444,6 +453,11 @@ function getAllKnownTags() {
             if (t) set.add(t);
         }
     }
+    // Keep niche-designated tags available in autocomplete even if hidden from view.
+    for (const nicheTag of state.nicheTags || []) {
+        const t = normalizeWhitespace(nicheTag);
+        if (t) set.add(t);
+    }
     return Array.from(set).sort((a, b) => a.localeCompare(b));
 }
 
@@ -459,7 +473,7 @@ function addTagChip(tag) {
     chip.textContent = t;
     const x = document.createElement("span");
     x.className = "chip-x";
-    x.textContent = "×";
+    x.textContent = "x";
     x.addEventListener("click", () => chip.remove());
     chip.appendChild(x);
     // Insert before the input
@@ -831,8 +845,37 @@ const CLICK_ACTIONS = [
     { key: "openLocation", label: "Open File Location" },
 ];
 const KEYBOARD_SHORTCUTS = [
-    { label: "Paste thumbnail", key: "pasteThumb", description: "p (in modal)" },
-    { label: "Save & close", key: "enter", description: "Enter (in modal)" },
+    { label: "Paste thumbnail", key: "pasteThumb", description: "P" },
+    { label: "Save & close", key: "enter", description: "Ctrl+Enter" },
+];
+const WELLNESS_TIPS = [
+    {
+        text: "20/20/20 rule! — every 20 minutes, look 20 feet away for 20 seconds",
+        // sourceLabel: "Source: Mayo Clinic",
+        // sourceUrl: "https://www.mayoclinic.org/diseases-conditions/eyestrain/diagnosis-treatment/drc-20372403",
+    },
+    {
+        text: "blink! — screen time can lower blink rate by 80%.  Try 5 blinks after each paragraph.",
+        // sourceLabel: "Source: Mayo Clinic",
+        // sourceUrl: "https://www.mayoclinic.org/diseases-conditions/eyestrain/diagnosis-treatment/drc-20372403",
+    },
+    {
+        text: "water check! — you're already thirsty by the time you feel thirsty",
+    },
+    {
+        text: "deep breath! — inhale 4s, hold 7s, exhale 8s",
+    },
+    {
+        text: "posture reset! — squeeze shoulder blades for 5 seconds, repeat 5 times",
+    },
+    {
+        text: "mouth check! — relax your jaw and rest your tongue lightly on the roof of your mouth",
+    },
+    {
+        text: "'name it to tame it'! — reduce distress by identifying your feelings in words",
+        // sourceLabel: "Source: DOI 10.1371/journal.pone.0279303",
+        // sourceUrl: "https://doi.org/10.1371/journal.pone.0279303",
+    },
 ];
 
 // Hotkey capture state
@@ -1003,8 +1046,8 @@ function buildHotkeyTable() {
     kbResetBtn.style.cssText = "font-size:0.75rem;padding:2px 8px;color:var(--muted);";
     kbResetBtn.addEventListener("click", () => {
         // Reset descriptions to original
-        KEYBOARD_SHORTCUTS.find(s => s.key === "pasteThumb").description = "p (in modal)";
-        KEYBOARD_SHORTCUTS.find(s => s.key === "enter").description = "Enter (in modal)";
+        KEYBOARD_SHORTCUTS.find(s => s.key === "pasteThumb").description = "p (in modal / hovered card)";
+        KEYBOARD_SHORTCUTS.find(s => s.key === "enter").description = "Ctrl+Enter (in modal)";
         buildHotkeyTable();
     });
     kbResetRow.appendChild(kbResetBtn);
@@ -1015,8 +1058,96 @@ function saveHotkeys() {
     window.localStorage.setItem("article-hotkeys", JSON.stringify(state.hotkeys));
 }
 
-function parseNicheTags(raw) {
-    return raw.split(",").map(t => t.trim().toLowerCase()).filter(Boolean);
+function normalizeTipIndex(index) {
+    if (!Number.isInteger(index) || WELLNESS_TIPS.length === 0) return 0;
+    const span = WELLNESS_TIPS.length;
+    return ((index % span) + span) % span;
+}
+
+function renderWellnessTip() {
+    if (!dom.hotkeyTipText || !dom.hotkeyTipSource) return;
+    if (WELLNESS_TIPS.length === 0) {
+        dom.hotkeyTipText.textContent = "";
+        dom.hotkeyTipSource.style.display = "none";
+        return;
+    }
+    state.wellnessTipIndex = normalizeTipIndex(state.wellnessTipIndex);
+    const tip = WELLNESS_TIPS[state.wellnessTipIndex];
+    dom.hotkeyTipText.textContent = tip.text;
+    if (tip.sourceLabel && tip.sourceUrl) {
+        dom.hotkeyTipSource.textContent = tip.sourceLabel;
+        dom.hotkeyTipSource.href = tip.sourceUrl;
+        dom.hotkeyTipSource.style.display = "";
+    } else {
+        dom.hotkeyTipSource.textContent = "";
+        dom.hotkeyTipSource.removeAttribute("href");
+        dom.hotkeyTipSource.style.display = "none";
+    }
+}
+
+function nextWellnessTip() {
+    state.wellnessTipIndex = normalizeTipIndex(state.wellnessTipIndex + 1);
+    window.localStorage.setItem("article-wellness-tip-index", String(state.wellnessTipIndex));
+    renderWellnessTip();
+}
+
+function normalizeNicheTag(tag) {
+    return normalizeWhitespace(tag).toLowerCase();
+}
+
+function getNicheTagChips() {
+    if (!dom.nicheTagChipContainer) return [];
+    return Array.from(dom.nicheTagChipContainer.querySelectorAll(".niche-tag-chip"))
+        .map((chip) => normalizeNicheTag(chip.dataset.nicheTag || ""))
+        .filter(Boolean);
+}
+
+function persistNicheTags() {
+    state.nicheTags = getNicheTagChips();
+    window.localStorage.setItem("article-niche-tags", JSON.stringify(state.nicheTags));
+    renderArticles();
+    debugLog(`Niche tags updated (${state.nicheTags.length}).`);
+}
+
+function addNicheTagChip(tag, shouldPersist = true) {
+    if (!dom.nicheTagChipContainer || !dom.nicheTagsInput) return;
+    const cleanTag = normalizeNicheTag(tag);
+    if (!cleanTag) return;
+    const existing = getNicheTagChips();
+    if (existing.includes(cleanTag)) return;
+
+    const chip = document.createElement("span");
+    chip.className = "tag-chip niche-tag-chip";
+    chip.dataset.nicheTag = cleanTag;
+    chip.textContent = cleanTag;
+
+    const x = document.createElement("span");
+    x.className = "chip-x";
+    x.textContent = "x";
+    x.addEventListener("click", (evt) => {
+        evt.stopPropagation();
+        chip.remove();
+        persistNicheTags();
+    });
+
+    chip.appendChild(x);
+    dom.nicheTagChipContainer.insertBefore(chip, dom.nicheTagsInput);
+    if (shouldPersist) persistNicheTags();
+}
+
+function setNicheTagChips(tags) {
+    if (!dom.nicheTagChipContainer) return;
+    dom.nicheTagChipContainer.querySelectorAll(".niche-tag-chip").forEach((chip) => chip.remove());
+
+    const seen = new Set();
+    for (const tag of tags || []) {
+        const cleanTag = normalizeNicheTag(tag);
+        if (!cleanTag || seen.has(cleanTag)) continue;
+        seen.add(cleanTag);
+        addNicheTagChip(cleanTag, false);
+    }
+    state.nicheTags = Array.from(seen);
+    window.localStorage.setItem("article-niche-tags", JSON.stringify(state.nicheTags));
 }
 
 function extractDoiFromText(value) {
@@ -1067,11 +1198,35 @@ function createAbstractReferenceRow(labelText, muted = false) {
 
 function openAbstract(article) {
     const md = article.metadata || {};
+    state.abstractPreviewArticle = article;
     dom.abstractTitle.textContent = md.title || article.pdf_filename || "Abstract";
-    const metaBits = [normalizeWhitespace(md.year), compactAuthors(md.authors), normalizeWhitespace(md.journal)].filter(
-        Boolean,
-    );
-    dom.abstractMeta.textContent = metaBits.join(" | ");
+    const yearText = normalizeWhitespace(md.year);
+    const authorText = compactAuthors(md.authors);
+    const journalText = normalizeWhitespace(md.journal);
+    if (dom.abstractMeta) {
+        clearNode(dom.abstractMeta);
+        let hasMeta = false;
+        if (yearText) {
+            const yearEl = document.createElement("strong");
+            yearEl.textContent = yearText;
+            dom.abstractMeta.appendChild(yearEl);
+            hasMeta = true;
+        }
+        if (authorText) {
+            if (hasMeta) dom.abstractMeta.appendChild(document.createTextNode(" | "));
+            dom.abstractMeta.appendChild(document.createTextNode(authorText));
+            hasMeta = true;
+        }
+        if (journalText) {
+            if (hasMeta) dom.abstractMeta.appendChild(document.createTextNode(" | "));
+            dom.abstractMeta.appendChild(document.createTextNode(journalText));
+            hasMeta = true;
+        }
+        if (!hasMeta) {
+            dom.abstractMeta.textContent = "Unknown metadata";
+        }
+        dom.abstractMeta.style.display = "";
+    }
     const abstractText = typeof md.abstract === "string" ? md.abstract.trim() : "";
     const formattedAbstract = formatAbstractForDisplay(abstractText, state.abstractSectionCount);
     dom.abstractText.textContent = formattedAbstract || "No abstract available.";
@@ -1096,8 +1251,8 @@ function openAbstract(article) {
                 return !ownDoi || refDoi !== ownDoi;
             });
         if (filtered.length > 0) {
-            const toShow = filtered.slice(0, 5);
-            const toHide = filtered.slice(5);
+            const toShow = filtered.slice(0, 3);
+            const toHide = filtered.slice(3);
 
             for (const refStr of toShow) {
                 dom.abstractReferencesList.appendChild(createAbstractReferenceRow(refStr));
@@ -1112,21 +1267,23 @@ function openAbstract(article) {
                     hiddenContainer.appendChild(createAbstractReferenceRow(refStr));
                 }
 
-                const showAllBtn = document.createElement("button");
-                showAllBtn.type = "button";
-                showAllBtn.className = "ghost";
-                showAllBtn.style.padding = "2px 6px";
-                showAllBtn.style.fontSize = "0.75rem";
-                showAllBtn.style.marginTop = "6px";
-                showAllBtn.textContent = `Show all (${toHide.length} more)`;
+                const toggleRefsBtn = document.createElement("button");
+                toggleRefsBtn.type = "button";
+                toggleRefsBtn.className = "ghost";
+                toggleRefsBtn.style.padding = "2px 6px";
+                toggleRefsBtn.style.fontSize = "0.75rem";
+                toggleRefsBtn.style.marginTop = "6px";
+                toggleRefsBtn.textContent = `Show more (${toHide.length})`;
+                let expanded = false;
 
-                showAllBtn.addEventListener("click", () => {
-                    hiddenContainer.style.display = "block";
-                    showAllBtn.style.display = "none";
+                toggleRefsBtn.addEventListener("click", () => {
+                    expanded = !expanded;
+                    hiddenContainer.style.display = expanded ? "block" : "none";
+                    toggleRefsBtn.textContent = expanded ? "Show less" : `Show more (${toHide.length})`;
                 });
 
                 dom.abstractReferencesList.appendChild(hiddenContainer);
-                dom.abstractReferencesList.appendChild(showAllBtn);
+                dom.abstractReferencesList.appendChild(toggleRefsBtn);
             }
             dom.abstractReferencesSection.style.display = "block";
         }
@@ -1158,6 +1315,7 @@ function openAbstract(article) {
 
 function closeAbstract() {
     dom.abstractModal.classList.add("hidden");
+    state.abstractPreviewArticle = null;
 }
 
 function hasEmptyMetadata(article) {
@@ -1178,6 +1336,7 @@ function buildCard(article) {
     const md = article.metadata || {};
     const card = document.createElement("article");
     card.className = "card";
+    card.dataset.articleId = article.id;
     if (state.highlightIncomplete && hasEmptyMetadata(article)) {
         card.classList.add("card-incomplete");
     }
@@ -1195,6 +1354,12 @@ function buildCard(article) {
             evt.preventDefault();
             openPdf(article);
         }
+    });
+    card.addEventListener("mouseenter", () => {
+        state.hoveredArticleId = article.id;
+    });
+    card.addEventListener("mouseleave", () => {
+        if (state.hoveredArticleId === article.id) state.hoveredArticleId = null;
     });
 
     // Apply tag tint
@@ -1362,6 +1527,7 @@ function buildDetailsTable(articles) {
         const md = article.metadata || {};
         const row = document.createElement("tr");
         row.className = "details-row";
+        row.dataset.articleId = article.id;
         if (state.highlightIncomplete && hasEmptyMetadata(article)) {
             row.classList.add("card-incomplete");
         }
@@ -1394,6 +1560,12 @@ function buildDetailsTable(articles) {
                 evt.stopPropagation();
                 openPdf(article);
             }
+        });
+        row.addEventListener("mouseenter", () => {
+            state.hoveredArticleId = article.id;
+        });
+        row.addEventListener("mouseleave", () => {
+            if (state.hoveredArticleId === article.id) state.hoveredArticleId = null;
         });
 
         const tdYear = document.createElement("td");
@@ -1478,6 +1650,7 @@ function buildDetailsTable(articles) {
 }
 
 function renderArticles() {
+    state.hoveredArticleId = null;
     clearNode(dom.grid);
     dom.grid.classList.toggle("details-mode", state.viewMode === "details");
 
@@ -1748,6 +1921,55 @@ async function fileToBase64(file) {
     });
 }
 
+async function readClipboardImageAsFile() {
+    const clipItems = await navigator.clipboard.read();
+    let imageBlob = null;
+    for (const item of clipItems) {
+        for (const type of item.types) {
+            if (type.startsWith("image/")) {
+                imageBlob = await item.getType(type);
+                break;
+            }
+        }
+        if (imageBlob) break;
+    }
+    if (!imageBlob) return null;
+    return new File([imageBlob], "clipboard-image.png", { type: imageBlob.type });
+}
+
+async function uploadThumbnailForArticle(article, file) {
+    if (!article) return;
+    const base64Data = await fileToBase64(file);
+    await invoke("upload_thumbnail", {
+        articleId: article.id,
+        data: base64Data,
+    });
+    const thumbPath = articleThumbPath(article);
+    if (thumbPath) thumbCache.delete(thumbPath);
+    await loadArticles();
+}
+
+async function pasteClipboardThumbnailToArticle(article) {
+    if (!article) return;
+    try {
+        const file = await readClipboardImageAsFile();
+        if (!file) {
+            setStatus("No image found in clipboard.", true);
+            return;
+        }
+        if (!isImageFile(file)) {
+            setStatus("Clipboard content is not an image.", true);
+            return;
+        }
+        setStatus(`Updating thumbnail for "${article.metadata?.title || article.pdf_filename}"...`);
+        await uploadThumbnailForArticle(article, file);
+        setStatus("Thumbnail updated from clipboard.");
+    } catch (err) {
+        const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
+        setStatus(`Clipboard paste failed: ${message}`, true);
+    }
+}
+
 async function uploadManualThumbnail(file) {
     if (!state.current) return;
     const currentId = state.current.id;
@@ -1955,6 +2177,7 @@ function wireEvents() {
     state.primarySort = normalizeSortKey(state.primarySort, "year_desc");
     state.secondarySort = normalizeSortKey(state.secondarySort, "title_asc");
     state.fontFamily = normalizeFontKey(state.fontFamily, "segoe");
+    state.wellnessTipIndex = normalizeTipIndex(state.wellnessTipIndex);
     state.abstractSectionCount = clampAbstractSectionCount(state.abstractSectionCount);
     dom.viewModeToggle.checked = state.viewMode === "details";
     dom.primarySort.value = state.primarySort;
@@ -2064,10 +2287,10 @@ function wireEvents() {
             const isShown = dom.crashLogContent.style.display !== "none";
             if (isShown) {
                 dom.crashLogContent.style.display = "none";
-                dom.crashLogBtn.textContent = "View";
+                dom.crashLogBtn.textContent = "View Crash Log";
             } else {
                 dom.crashLogContent.style.display = "block";
-                dom.crashLogBtn.textContent = "Hide";
+                dom.crashLogBtn.textContent = "Hide Crash Log";
                 dom.crashLogContent.textContent = "Loading...";
                 try {
                     const log = await invoke("get_crash_log");
@@ -2100,18 +2323,32 @@ function wireEvents() {
         dom.abstractSectionCountInput.addEventListener("blur", commitSectionCount);
     }
 
-    // Niche tags textarea
-    if (dom.nicheTagsInput) {
-        dom.nicheTagsInput.value = state.nicheTags.join(", ");
-        let nicheDebounce = null;
-        dom.nicheTagsInput.addEventListener("input", () => {
-            clearTimeout(nicheDebounce);
-            nicheDebounce = setTimeout(() => {
-                state.nicheTags = parseNicheTags(dom.nicheTagsInput.value);
-                window.localStorage.setItem("article-niche-tags", JSON.stringify(state.nicheTags));
-                renderArticles();
-            }, 600);
+    // Niche tags chip input
+    if (dom.nicheTagChipContainer && dom.nicheTagsInput) {
+        dom.nicheTagsInput.value = "";
+        setNicheTagChips(state.nicheTags);
+        const commitNicheInput = () => {
+            const value = normalizeNicheTag(dom.nicheTagsInput.value);
+            if (!value) return;
+            addNicheTagChip(value);
+            dom.nicheTagsInput.value = "";
+        };
+        dom.nicheTagsInput.addEventListener("keydown", (evt) => {
+            if (evt.key === "Enter" || evt.key === ",") {
+                evt.preventDefault();
+                commitNicheInput();
+                return;
+            }
+            if (evt.key === "Backspace" && dom.nicheTagsInput.value === "") {
+                const chips = dom.nicheTagChipContainer.querySelectorAll(".niche-tag-chip");
+                if (chips.length > 0) {
+                    chips[chips.length - 1].remove();
+                    persistNicheTags();
+                }
+            }
         });
+        dom.nicheTagsInput.addEventListener("blur", commitNicheInput);
+        dom.nicheTagChipContainer.addEventListener("click", () => dom.nicheTagsInput.focus());
     }
 
     // Hide niche checkbox
@@ -2435,12 +2672,18 @@ function wireEvents() {
         dom.hotkeysModal.classList.remove("hidden");
         dom.hotkeysModal.querySelector(".modal-card").classList.add("starry-bg");
         buildHotkeyTable();
+        renderWellnessTip();
     });
     const closeHotkeys = () => {
         dom.hotkeysModal.classList.add("hidden");
         dom.hotkeysModal.querySelector(".modal-card").classList.remove("starry-bg");
     };
     dom.hotkeysClose.addEventListener("click", closeHotkeys);
+    if (dom.hotkeyTipNext) {
+        dom.hotkeyTipNext.addEventListener("click", () => {
+            nextWellnessTip();
+        });
+    }
     dom.primarySort.addEventListener("change", () => {
         state.primarySort = normalizeSortKey(dom.primarySort.value, "year_desc");
         dom.primarySort.value = state.primarySort;
@@ -2547,6 +2790,13 @@ function wireEvents() {
     }
     dom.modalClose.addEventListener("click", closeEditor);
     dom.abstractClose.addEventListener("click", closeAbstract);
+    if (dom.abstractOpenBtn) {
+        dom.abstractOpenBtn.addEventListener("click", () => {
+            if (state.abstractPreviewArticle) {
+                openPdf(state.abstractPreviewArticle);
+            }
+        });
+    }
     dom.form.addEventListener("submit", saveMetadata);
     dom.metaRemove.addEventListener("click", async () => {
         if (!state.current) return;
@@ -2668,22 +2918,11 @@ function wireEvents() {
     dom.thumbPaste.addEventListener("click", async () => {
         if (!state.current) return;
         try {
-            const clipItems = await navigator.clipboard.read();
-            let imageBlob = null;
-            for (const item of clipItems) {
-                for (const type of item.types) {
-                    if (type.startsWith("image/")) {
-                        imageBlob = await item.getType(type);
-                        break;
-                    }
-                }
-                if (imageBlob) break;
-            }
-            if (!imageBlob) {
+            const file = await readClipboardImageAsFile();
+            if (!file) {
                 setStatus("No image found in clipboard.", true);
                 return;
             }
-            const file = new File([imageBlob], "clipboard-image.png", { type: imageBlob.type });
             previewSelectedThumb(file);
             await uploadManualThumbnail(file);
         } catch (err) {
@@ -2935,17 +3174,25 @@ function wireEvents() {
             dom.searchInput.focus();
         }
 
-        if (evt.key === "Enter" && !dom.modal.classList.contains("hidden")) {
-            // Don't trigger if user is in a textarea or the tag input
-            if (evt.target.tagName === "TEXTAREA" || evt.target.tagName === "INPUT") return;
+        if (evt.key === "Enter" && (evt.ctrlKey || evt.metaKey) && !dom.modal.classList.contains("hidden")) {
             evt.preventDefault();
             saveMetadata(evt).then(() => closeEditor());
         }
-        // "p" to paste thumbnail when modal is open (not in inputs)
-        if (evt.key.toLowerCase() === "p" && !evt.ctrlKey && !evt.metaKey && !evt.altKey && !dom.modal.classList.contains("hidden")) {
-            if (evt.target.tagName !== "INPUT" && evt.target.tagName !== "TEXTAREA") {
-                evt.preventDefault();
-                dom.thumbPaste.click();
+        // "p" to paste thumbnail from clipboard:
+        // - in metadata modal: applies to current article
+        // - outside modal: applies to hovered card/row article
+        if (evt.key.toLowerCase() === "p" && !evt.ctrlKey && !evt.metaKey && !evt.altKey && !evt.repeat) {
+            if (evt.target.tagName !== "INPUT" && evt.target.tagName !== "TEXTAREA" && evt.target.tagName !== "SELECT") {
+                if (!dom.modal.classList.contains("hidden")) {
+                    evt.preventDefault();
+                    dom.thumbPaste.click();
+                } else if (state.hoveredArticleId) {
+                    const hoveredArticle = state.articles.find((a) => a.id === state.hoveredArticleId) || null;
+                    if (hoveredArticle) {
+                        evt.preventDefault();
+                        pasteClipboardThumbnailToArticle(hoveredArticle);
+                    }
+                }
             }
         }
     });

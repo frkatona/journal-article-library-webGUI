@@ -1,35 +1,22 @@
 ### immediate
 
-- [ ] have the niche tags use chips components
+- [ ] 'new custom theme' -> give it a name and let is save to the file system and be selectable in the theme dropdown
 
-- [ ] in the abstract modal, bold the year in the year/author/journal line and put another thin divider line below it.  Also, lower the initial shown Referenced DOIs from 5 to 3
+- [x] have the niche tags use chips components
+  - [ ] fix it preventing autofill elsewhere and appearing with strange characters in the niche field
 
-- [ ] remove soft light theme or replace it with another one with better contrast
-
-- [ ] move the cards-list toggle outside into the app header to the left of "files"
+- [ ] should the separators extend all the way, and should the title separator be the same as the top author separator?
 
 - [ ] default 'warn duplicate DOIs' to on in the file settings
 
-- [x] check which DOIs in the abstract view are already found in the library and place the small ghost icon next to them
-
 - [ ] when should I be considering a database approach?  is there a nice way to visualize that during development?
 
-- [ ] add display option for how many sections to separate abstract into (default 3)
-
-- [ ] create a debug mode checkbox in the file settings under 'experimental' for visualizing verbose output for more routine actions
-
-- [ ] remove 'extract image from file' from the production build
-
 - [ ] show 'metadata saved' each time its saved (moving between fields, clicking the save button, pushing 'enter' to exit the modal)
-
-- [ ] fix DOIs not seeming to save to appear in the abstract view of the re-launched application
 
 - [ ] fine-tune the abstract sentence separation
 
 - [ ] check on the warnings in the console log
   - try to better understand the snake/camel case relationship between the front and back end here
-
-- [ ] allow the 'paste thumbnail from clipboard' hotkey to also paste to the article associated with the card under the cursor when the modal is not open 
 
 - [ ] consider ways to synchronize metadata (and papers) between multiple computers
 
