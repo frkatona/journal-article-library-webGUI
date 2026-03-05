@@ -749,12 +749,26 @@ main {
 .abstract-references-list {
   display: flex;
   flex-direction: column;
+  gap: 8px;
+}
+
+.abstract-ref-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px 14px;
+  align-items: start;
+}
+
+.abstract-ref-column {
+  display: flex;
+  flex-direction: column;
   gap: 4px;
+  min-width: 0;
 }
 
 .abstract-ref-row {
   display: grid;
-  grid-template-columns: 18px 1fr;
+  grid-template-columns: 18px 28px minmax(0, 1fr);
   align-items: start;
   gap: 6px;
   color: var(--accent);
@@ -787,8 +801,27 @@ main {
   display: block;
 }
 
+.abstract-ref-index {
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-align: right;
+  padding-top: 1px;
+}
+
 .abstract-ref-text {
   word-break: break-word;
+}
+
+@media (max-width: 980px) {
+  .abstract-ref-columns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .abstract-ref-columns {
+    grid-template-columns: 1fr;
+  }
 }
 
 .card.card-incomplete {

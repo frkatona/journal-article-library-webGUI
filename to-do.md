@@ -1,14 +1,15 @@
 ### immediate
 
+- [ ] number the reference DOIs
+
 - [ ] 'new custom theme' -> give it a name and let is save to the file system and be selectable in the theme dropdown
 
 - [x] have the niche tags use chips components
   - [ ] fix it preventing autofill elsewhere and appearing with strange characters in the niche field
 
 - abstract style
-  - [ ] should the separators extend all the way, and should the title separator be the same as the top author separator?
-  - [ ] center align year/author/journal and move the 'open article' button
-  - [ ] un-bold year
+  - [x] center align year/author/journal and move the 'open article' button
+  - [x] un-bold year
 
 - [ ] default 'warn duplicate DOIs' to on in the file settings
 
@@ -17,25 +18,20 @@
 - [ ] show 'metadata saved' each time its saved (moving between fields, clicking the save button, pushing 'enter' to exit the modal)
 
 - [ ] fine-tune the abstract sentence separation
+  - [x] use a natural language processing sentence tokenizer model to chunk the abstract into sentences instead of just splitting on periods
+  - [x] consider additional artifacts, like hyphenated line wraps and ligatures from the PDFs
+  - [ ] the 'degrees' symbol appears to sometimes be replaced with "", and +/- symbols seem sometimes replaced with "G"
 
 - [ ] check on the warnings in the console log
   - try to better understand the snake/camel case relationship between the front and back end here
 
 - [ ] consider ways to synchronize metadata (and papers) between multiple computers
 
-- [ ] cycle through a series of brief helpful messages above the version number in the "?" modal (also a refresh button to go to the next one)
-  - 20/20/20 - every 20 minutes of reading, take 20 seconds to look at something 20 feet away - [mayoclinic](https://www.mayoclinic.org/diseases-conditions/eyestrain/diagnosis-treatment/drc-20372403)
-  - Your blink rate drops by up to 80% during screen use, drying the cornea.  Try to make form a habit repeated blinking—for instance, 5 blinks each time you read a paragraph! - [mayoclinic](https://www.mayoclinic.org/diseases-conditions/eyestrain/diagnosis-treatment/drc-20372403)
-  - When is the last time you took a big sip of water? (coffee doesn't count!)  By the time you notice the thirst, you are already dehydrated!
-  - Take a moment to deep breathe - sit up straight; inhale for 4 seconds, hold for 7, exhale for 8
-    - create a little animation for this one
-  - Reset your posture - squeeze your should blades together; hold 5 seconds; repeat 5 times
-  - Mouth check!  Relax your jaw and let your tongue rest gently against the roof of your mouth
-  - Affect Labeling - "labeling negative feelings can down-regulate distress" - (2022)[https://doi.org/10.1371/journal.pone.0279303]
+- [ ] slider to lower the maximum value
 
 - [ ] how can I have the selected article active in the folder when I select "open in folder" like windows does when using "open file location"
 
-- [ ] sliders for background darkness during modal and opacity of semi-transparent elements
+- [ ] save space in display -> hide the slider until the user clicks on the button
 
 - [ ] warnings
   - warning: unused import: `self` --> src\lib.rs:17:23

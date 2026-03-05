@@ -465,8 +465,17 @@ function normalizePdfAbstractText(raw) {
     s = s.replace(/[\u2010\u2011\u2012\u2013\u2212]/g, "-");
     s = s.replace(/([A-Za-z])-+\s*[\r\n]+\s*([a-z])/g, "$1$2");
 
+    // Recover common copied symbol artifacts seen in some PDF glyph streams.
+    // Example: "37C" => "37°C", and "10 G 2" => "10 ± 2".
+    s = s.replace(/(\d)\s*\u000E(?=\s*(?:[CFKcfk]|$))/g, "$1°");
+    s = s.replace(/\u000E(?=\s*(?:[CFKcfk]))/g, "°");
+    s = s.replace(/(\d+(?:\.\d+)?)\s*G\s*(\d+(?:\.\d+)?)/g, "$1 ± $2");
+
     // Remove stray super/subscript unicode chars.
     s = s.replace(/[\u2070-\u209F\u00B2\u00B3\u00B9\u1D43-\u1D6A\u2071\u207F]/g, "");
+
+    // Strip remaining non-printable control chars (except line breaks handled below).
+    s = s.replace(/[\u0000-\u0008\u000B\u000C\u000F-\u001F\u007F]/g, "");
 
     // Flatten remaining line breaks and normalize spacing.
     s = s.replace(/[\r\n]+/g, " ");
@@ -1310,7 +1319,7 @@ function isDoiInLibrary(doi) {
     });
 }
 
-function createAbstractReferenceRow(labelText, muted = false) {
+function createAbstractReferenceRow(labelText, ordinal = null, muted = false) {
     const doi = extractDoiFromText(labelText);
     const rowTag = doi ? "a" : "div";
     const row = document.createElement(rowTag);
@@ -1332,13 +1341,39 @@ function createAbstractReferenceRow(labelText, muted = false) {
         iconSlot.appendChild(icon);
     }
 
+    const indexNode = document.createElement("span");
+    indexNode.className = "abstract-ref-index";
+    indexNode.textContent = Number.isInteger(ordinal) ? `${ordinal}.` : "";
+
     const textNode = document.createElement("span");
     textNode.className = "abstract-ref-text";
     textNode.textContent = doi || labelText;
 
     row.appendChild(iconSlot);
+    row.appendChild(indexNode);
     row.appendChild(textNode);
     return row;
+}
+
+function createAbstractReferenceColumns(refItems, startOrdinal = 1, muted = false) {
+    const refs = (refItems || []).map((item) => String(item || "").trim()).filter(Boolean);
+    const wrapper = document.createElement("div");
+    wrapper.className = "abstract-ref-columns";
+    if (refs.length === 0) return wrapper;
+
+    const columnCount = Math.min(3, refs.length);
+    const perColumn = Math.ceil(refs.length / columnCount);
+    for (let col = 0; col < columnCount; col++) {
+        const columnEl = document.createElement("div");
+        columnEl.className = "abstract-ref-column";
+        const start = col * perColumn;
+        const slice = refs.slice(start, start + perColumn);
+        slice.forEach((ref, idx) => {
+            columnEl.appendChild(createAbstractReferenceRow(ref, startOrdinal + start + idx, muted));
+        });
+        wrapper.appendChild(columnEl);
+    }
+    return wrapper;
 }
 
 function openAbstract(article) {
@@ -1386,6 +1421,7 @@ function openAbstract(article) {
 
     // Show stored ref_dois from DOI fetch (if any and enabled)
     const storedRefDois = md.ref_dois || [];
+    let nextReferenceOrdinal = 1;
     if (dom.abstractReferencesSection && storedRefDois.length > 0 && state.showRefDois) {
         const ownDoi = normalizeWhitespace(md.doi).toLowerCase();
         const filtered = storedRefDois
@@ -1398,19 +1434,19 @@ function openAbstract(article) {
         if (filtered.length > 0) {
             const toShow = filtered.slice(0, 3);
             const toHide = filtered.slice(3);
-
-            for (const refStr of toShow) {
-                dom.abstractReferencesList.appendChild(createAbstractReferenceRow(refStr));
-            }
+            dom.abstractReferencesList.appendChild(
+                createAbstractReferenceColumns(toShow, nextReferenceOrdinal),
+            );
+            nextReferenceOrdinal += toShow.length;
 
             if (toHide.length > 0) {
                 const hiddenContainer = document.createElement("div");
                 hiddenContainer.style.display = "none";
                 hiddenContainer.style.marginTop = "4px";
-
-                for (const refStr of toHide) {
-                    hiddenContainer.appendChild(createAbstractReferenceRow(refStr));
-                }
+                hiddenContainer.appendChild(
+                    createAbstractReferenceColumns(toHide, nextReferenceOrdinal),
+                );
+                nextReferenceOrdinal += toHide.length;
 
                 const toggleRefsBtn = document.createElement("button");
                 toggleRefsBtn.type = "button";
@@ -1449,9 +1485,10 @@ function openAbstract(article) {
                 return clean && clean !== ownDoi && !alreadyShown.has(clean);
             });
             if (refDois.length > 0) {
-                refDois.forEach((doi) => {
-                    dom.abstractReferencesList.appendChild(createAbstractReferenceRow(doi, true));
-                });
+                dom.abstractReferencesList.appendChild(
+                    createAbstractReferenceColumns(refDois, nextReferenceOrdinal, true),
+                );
+                nextReferenceOrdinal += refDois.length;
                 dom.abstractReferencesSection.style.display = "block";
             }
         }).catch(err => console.warn("Failed to extract backend text:", err));
