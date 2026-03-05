@@ -83,6 +83,27 @@ Click the `edit metadata` button (also, `ctrl+shift+click`) on any article card 
 
 All manual edits are saved as override files in `library_data/overrides/` and survive reindexing.
 
+### Pasted Abstract Processing
+
+When `Auto-clean pasted text` is enabled in the metadata modal, pasted abstract text is processed before insertion.
+
+Current pipeline:
+
+1. PDF artifact cleanup:
+   - Normalizes Unicode text (NFKC) where possible.
+   - Removes soft hyphens and invisible joiner/zero-width characters.
+   - Replaces common PDF ligatures (`ff`, `fi`, `fl`, `ffi`, `ffl`, `ft`, `st`) when copied as single glyphs.
+   - Repairs many hyphenated line-wraps (for example, `inter-\nnational` -> `international`).
+   - Removes common super/subscript debris from copied text.
+2. Sentence tokenization:
+   - Uses `Intl.Segmenter` sentence mode when available.
+   - Falls back to a lightweight heuristic tokenizer that protects many non-boundary periods (for example: `e.g.`, `et al.`, initials like `J. Smith`, acronyms like `U.S.`, and decimals like `3.14`).
+3. Section chunking:
+   - Sentences are grouped into roughly equal-length sections without splitting sentence bodies.
+   - The number of sections follows the `Abstract Sections` setting (default `3`).
+
+This system is designed to reduce common PDF copy-paste noise while keeping abstract structure readable in both metadata and preview views.
+
 ### Thumbnails
 
 The app can attempt a thumbnail auto-generation from your PDFs:

@@ -122,6 +122,7 @@ const dom = {
     doiFetchBtn: document.getElementById("doi-fetch-btn"),
     abstract: document.getElementById("f-abstract"),
     pasteCleanup: document.getElementById("paste-cleanup"),
+    abstractCleanBtn: document.getElementById("abstract-clean-btn"),
     tagChipContainer: document.getElementById("tag-chip-container"),
     tagInput: document.getElementById("f-tag-input"),
     tagAutocomplete: document.getElementById("tag-autocomplete"),
@@ -433,27 +434,144 @@ function cleanAuthors(raw) {
 }
 
 // Clean pasted abstract text from PDF copy
-function cleanAbstract(raw) {
-    let s = raw;
-    // Join hyphenated line breaks (word-\n continuation)
-    s = s.replace(/-\s*[\r\n]+\s*/g, "");
-    // Replace remaining line breaks with space
-    s = s.replace(/[\r\n]+/g, " ");
-    // Remove stray super/subscript unicode chars
-    s = s.replace(/[\u2070-\u209F\u00B2\u00B3\u00B9\u1D43-\u1D6A\u2071\u207F]/g, "");
-    // Collapse whitespace
-    s = s.replace(/\s+/g, " ").trim();
-    // Split into sentences (keep the delimiter with the preceding sentence)
-    const sentences = s.match(/[^.!?]*[.!?]+(\s|$)/g) || [s];
-    const cleaned = sentences.map((sent) => sent.trim()).filter(Boolean);
-    if (cleaned.length <= 3) return cleaned.join(" ");
-    // Split into 3 roughly equal-size groups
-    const perGroup = Math.ceil(cleaned.length / 3);
-    const groups = [];
-    for (let i = 0; i < cleaned.length; i += perGroup) {
-        groups.push(cleaned.slice(i, i + perGroup).join(" "));
+const ABSTRACT_DOT_SENTINEL = "\uE000";
+const PDF_LIGATURES = {
+    "\uFB00": "ff",
+    "\uFB01": "fi",
+    "\uFB02": "fl",
+    "\uFB03": "ffi",
+    "\uFB04": "ffl",
+    "\uFB05": "ft",
+    "\uFB06": "st",
+};
+
+function normalizePdfAbstractText(raw) {
+    let s = String(raw || "");
+    if (!s) return "";
+
+    if (typeof s.normalize === "function") {
+        s = s.normalize("NFKC");
     }
-    return groups.join("\n\n");
+
+    // Remove invisible joiners and soft hyphen artifacts commonly present in PDF copy.
+    s = s.replace(/\u00AD/g, "");
+    s = s.replace(/[\u2060\u200B-\u200D\uFEFF]/g, "");
+
+    for (const [ligature, replacement] of Object.entries(PDF_LIGATURES)) {
+        s = s.split(ligature).join(replacement);
+    }
+
+    // Normalize Unicode hyphen variants before de-wrapping line-broken words.
+    s = s.replace(/[\u2010\u2011\u2012\u2013\u2212]/g, "-");
+    s = s.replace(/([A-Za-z])-+\s*[\r\n]+\s*([a-z])/g, "$1$2");
+
+    // Remove stray super/subscript unicode chars.
+    s = s.replace(/[\u2070-\u209F\u00B2\u00B3\u00B9\u1D43-\u1D6A\u2071\u207F]/g, "");
+
+    // Flatten remaining line breaks and normalize spacing.
+    s = s.replace(/[\r\n]+/g, " ");
+    s = s.replace(/\s+/g, " ").trim();
+    return s;
+}
+
+function tokenizeAbstractSentences(rawText) {
+    const source = normalizeWhitespace(rawText);
+    if (!source) return [];
+
+    // Prefer built-in sentence segmentation when available.
+    if (typeof Intl !== "undefined" && typeof Intl.Segmenter === "function") {
+        try {
+            const segmenter = new Intl.Segmenter("en", { granularity: "sentence" });
+            const nativeSentences = Array.from(segmenter.segment(source))
+                .map((part) => normalizeWhitespace(part.segment))
+                .filter(Boolean);
+            if (nativeSentences.length > 0) return nativeSentences;
+        } catch {
+            // Fallback to lightweight heuristic tokenizer below.
+        }
+    }
+
+    const protectDots = (match) => match.replace(/\./g, ABSTRACT_DOT_SENTINEL);
+    let prepared = source;
+
+    // Protect periods that are unlikely to indicate sentence boundaries.
+    prepared = prepared.replace(/\.{2,}/g, protectDots);
+    prepared = prepared.replace(
+        /\b(?:e\.g|i\.e|etc|vs|cf|al|fig|figs|eq|eqs|ref|refs|dr|mr|mrs|ms|prof|inc|jr|sr|st|no|vol|pp|dept|approx|min|max|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\./gi,
+        protectDots,
+    );
+    prepared = prepared.replace(/\bet al\./gi, protectDots);
+    prepared = prepared.replace(/\b(?:[A-Z]\.){2,}/g, protectDots);
+    prepared = prepared.replace(/\b[A-Z]\.(?=\s*[A-Z][a-z])/g, protectDots);
+    prepared = prepared.replace(/(\d)\.(\d)/g, `$1${ABSTRACT_DOT_SENTINEL}$2`);
+
+    const boundaryRe = /[.!?]+(?=\s+(?:["')\]]*[A-Z0-9]))/g;
+    const pieces = [];
+    let start = 0;
+    let match;
+    while ((match = boundaryRe.exec(prepared)) !== null) {
+        const end = match.index + match[0].length;
+        const part = prepared.slice(start, end).trim();
+        if (part) pieces.push(part);
+        start = end;
+    }
+    const tail = prepared.slice(start).trim();
+    if (tail) pieces.push(tail);
+
+    const dotSentinelRe = new RegExp(ABSTRACT_DOT_SENTINEL, "g");
+    const restored = pieces
+        .map((part) => normalizeWhitespace(part.replace(dotSentinelRe, ".")))
+        .filter(Boolean);
+    return restored.length > 0 ? restored : [source];
+}
+
+function splitSentencesIntoSections(sentences, sectionCount) {
+    const clean = (sentences || []).map((s) => normalizeWhitespace(s)).filter(Boolean);
+    if (clean.length === 0) return [];
+
+    const targetSections = Math.min(clampAbstractSectionCount(sectionCount), clean.length);
+    if (targetSections <= 1) return [clean.join(" ")];
+
+    const totalChars = clean.reduce((sum, sentence) => sum + sentence.length, 0);
+    const targetCharsPerSection = Math.max(1, Math.ceil(totalChars / targetSections));
+
+    const sections = [];
+    let index = 0;
+    for (let sectionIndex = 0; sectionIndex < targetSections; sectionIndex++) {
+        const remainingSections = targetSections - sectionIndex;
+        const remainingSentences = clean.length - index;
+        if (remainingSections === 1) {
+            sections.push(clean.slice(index).join(" "));
+            break;
+        }
+
+        const maxTake = remainingSentences - (remainingSections - 1);
+        let take = 0;
+        let chars = 0;
+        while (take < maxTake) {
+            const nextSentence = clean[index + take];
+            if (take > 0 && chars >= targetCharsPerSection) break;
+            chars += nextSentence.length + 1;
+            take += 1;
+        }
+        if (take < 1) take = 1;
+
+        sections.push(clean.slice(index, index + take).join(" "));
+        index += take;
+    }
+
+    return sections.filter(Boolean);
+}
+
+function cleanAbstract(raw, sectionCount = 3) {
+    const source = normalizePdfAbstractText(raw);
+    if (!source) return "";
+
+    const sentences = tokenizeAbstractSentences(source);
+    const targetSections = clampAbstractSectionCount(sectionCount);
+    if (sentences.length <= targetSections) return sentences.join(" ");
+
+    return splitSentencesIntoSections(sentences, targetSections).join("\n\n");
 }
 
 function formatAbstractForDisplay(rawText, sectionCount) {
@@ -462,19 +580,13 @@ function formatAbstractForDisplay(rawText, sectionCount) {
     const singleLine = source.replace(/\n+/g, " ").replace(/\s+/g, " ").trim();
     if (!singleLine) return "";
 
-    const sentenceMatches = singleLine.match(/[^.!?]+(?:[.!?]+|$)/g) || [singleLine];
-    const sentences = sentenceMatches.map((s) => s.trim()).filter(Boolean);
+    const sentences = tokenizeAbstractSentences(singleLine);
     if (sentences.length <= 1) return singleLine;
 
     const targetSections = Math.min(clampAbstractSectionCount(sectionCount), sentences.length);
     if (targetSections <= 1) return singleLine;
 
-    const sections = [];
-    const perSection = Math.ceil(sentences.length / targetSections);
-    for (let i = 0; i < sentences.length; i += perSection) {
-        sections.push(sentences.slice(i, i + perSection).join(" "));
-    }
-    return sections.join("\n\n");
+    return splitSentencesIntoSections(sentences, targetSections).join("\n\n");
 }
 
 // ---- Tag chip system ----
@@ -2450,10 +2562,30 @@ function wireEvents() {
         const text = evt.clipboardData?.getData("text/plain");
         if (!text) return;
         evt.preventDefault();
-        const cleaned = cleanAbstract(text);
+        const cleaned = cleanAbstract(text, state.abstractSectionCount);
         document.execCommand("insertText", false, cleaned);
         showToast("Abstract cleaned from PDF paste");
     });
+    if (dom.abstractCleanBtn) {
+        dom.abstractCleanBtn.addEventListener("click", async (evt) => {
+            evt.preventDefault();
+            const currentText = dom.abstract.value || "";
+            if (!currentText.trim()) {
+                showToast("No abstract text to clean");
+                return;
+            }
+            const cleaned = cleanAbstract(currentText, state.abstractSectionCount);
+            if (cleaned === currentText) {
+                showToast("Abstract already looks clean");
+                return;
+            }
+            dom.abstract.value = cleaned;
+            showToast("Abstract cleaned");
+            if (state.current && !dom.modal.classList.contains("hidden")) {
+                await saveMetadata({ type: "clean-abstract-click" });
+            }
+        });
+    }
 
     // Tag input: autocomplete + chip creation
     dom.tagInput.addEventListener("input", () => {
@@ -3289,7 +3421,8 @@ function wireEvents() {
 
             const nextFocused = evt.relatedTarget;
             if (nextFocused instanceof HTMLElement &&
-                (nextFocused.getAttribute("type") || "").toLowerCase() === "submit") {
+                ((nextFocused.getAttribute("type") || "").toLowerCase() === "submit" ||
+                    nextFocused.dataset.skipAutosave === "true")) {
                 return;
             }
             saveMetadata(evt);

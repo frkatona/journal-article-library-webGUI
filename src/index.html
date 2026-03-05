@@ -341,10 +341,14 @@
                         <span>Abstract</span>
                         <textarea id="f-abstract" name="abstract" rows="5"></textarea>
                     </label>
-                    <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
-                        <input id="paste-cleanup" type="checkbox" checked />
-                        <span style="font-size:0.82rem;">Auto-clean pasted text</span>
-                    </label>
+                    <div class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                        <label style="display:flex;align-items:center;gap:8px;min-width:0;cursor:pointer;">
+                            <input id="paste-cleanup" type="checkbox" checked />
+                            <span style="font-size:0.82rem;">Auto-clean pasted text</span>
+                        </label>
+                        <button id="abstract-clean-btn" type="button" class="ghost" data-skip-autosave="true"
+                            style="margin-left:auto; font-size:0.78rem; padding:4px 8px;">Clean</button>
+                    </div>
                     <label class="field">
                         <span>Tags</span>
                         <div id="tag-chip-container" class="tag-chip-container">
@@ -501,7 +505,7 @@
                 <div style="border-top:1px solid var(--line); opacity:0.7; margin:0 0 10px;"></div>
                 <a id="version-link" href="https://github.com/frkatona/journal-article-library-webGUI/tree/tauri"
                     target="_blank" rel="noopener noreferrer"
-                    style="font-size: 0.8rem; color: var(--muted); font-weight: 600; cursor: pointer; letter-spacing: 0.03em; text-decoration:none;">v0.8.7</a>
+                    style="font-size: 0.8rem; color: var(--muted); font-weight: 600; cursor: pointer; letter-spacing: 0.03em; text-decoration:none;">v0.8.8</a>
             </div>
         </div>
     </div>
