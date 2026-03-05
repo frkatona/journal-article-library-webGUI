@@ -1,4 +1,6 @@
-:root {
+/* ── Theme definitions ── */
+:root,
+[data-theme="ocean"] {
   --bg: #0d1a26;
   --bg-soft: #162839;
   --panel: #1a3145;
@@ -8,6 +10,94 @@
   --accent-2: #f5b34d;
   --danger: #e05d5d;
   --line: #28445e;
+  --body-grad-a: #1a3b56;
+  --body-grad-b: #28445e;
+  --body-grad-bg: var(--bg);
+  --body-grad-end: #0b1620;
+}
+
+[data-theme="midnight"] {
+  --bg: #0a0a14;
+  --bg-soft: #12121f;
+  --panel: #1a1a2e;
+  --text: #e8e8ff;
+  --muted: #9090c0;
+  --accent: #7c6af7;
+  --accent-2: #f5a36a;
+  --danger: #e05d7a;
+  --line: #2a2a4a;
+  --body-grad-a: #1a1a3a;
+  --body-grad-b: #2a2a4a;
+  --body-grad-bg: var(--bg);
+  --body-grad-end: #060610;
+}
+
+[data-theme="nord"] {
+  --bg: #2e3440;
+  --bg-soft: #3b4252;
+  --panel: #434c5e;
+  --text: #eceff4;
+  --muted: #88c0d0;
+  --accent: #88c0d0;
+  --accent-2: #ebcb8b;
+  --danger: #bf616a;
+  --line: #4c566a;
+  --body-grad-a: #3b4252;
+  --body-grad-b: #434c5e;
+  --body-grad-bg: #2e3440;
+  --body-grad-end: #242933;
+}
+
+[data-theme="monokai"] {
+  --bg: #272822;
+  --bg-soft: #2f3028;
+  --panel: #3e3d32;
+  --text: #f8f8f2;
+  --muted: #a6a08a;
+  --accent: #a6e22e;
+  --accent-2: #e6db74;
+  --danger: #f92672;
+  --line: #49483e;
+  --body-grad-a: #363630;
+  --body-grad-b: #44443c;
+  --body-grad-bg: #272822;
+  --body-grad-end: #1e1e1a;
+}
+
+[data-theme="solarized"] {
+  --bg: #002b36;
+  --bg-soft: #073642;
+  --panel: #0d4050;
+  --text: #eee8d5;
+  --muted: #93a1a1;
+  --accent: #2aa198;
+  --accent-2: #cb4b16;
+  --danger: #dc322f;
+  --line: #094454;
+  --body-grad-a: #073642;
+  --body-grad-b: #0d4050;
+  --body-grad-bg: #002b36;
+  --body-grad-end: #001b24;
+}
+
+[data-theme="light"] {
+  --bg: #f4f6f9;
+  --bg-soft: #e8ecf2;
+  --panel: #dde3ed;
+  --text: #1a2535;
+  --muted: #5b6f87;
+  --accent: #1a7f5e;
+  --accent-2: #c07a1a;
+  --danger: #c03030;
+  --line: #c4cfde;
+  --body-grad-a: #e0e8f5;
+  --body-grad-b: #d4dff0;
+  --body-grad-bg: #f4f6f9;
+  --body-grad-end: #eaeff8;
+}
+
+/* ── Card/layout tokens (same for all themes) ── */
+:root {
   --card-height: 138px;
   --thumb-height: 76px;
   --card-font-size: 14px;
@@ -27,10 +117,11 @@ body {
   color: var(--text);
   font-family: var(--app-font-family);
   background:
-    radial-gradient(circle at 12% 12%, #1a3b56 0%, transparent 35%),
-    radial-gradient(circle at 80% 10%, #28445e 0%, transparent 30%),
-    linear-gradient(160deg, var(--bg) 0%, #0b1620 70%);
+    radial-gradient(circle at 12% 12%, var(--body-grad-a) 0%, transparent 35%),
+    radial-gradient(circle at 80% 10%, var(--body-grad-b) 0%, transparent 30%),
+    linear-gradient(160deg, var(--body-grad-bg) 0%, var(--body-grad-end) 70%);
   min-height: 100vh;
+  transition: background 0.3s ease, color 0.3s ease;
 }
 
 .topbar {
@@ -406,11 +497,11 @@ main {
 
 .modal-card {
   width: min(980px, 100%);
-  height: clamp(400px, 85vh, 900px);
+  height: clamp(400px, 92vh, 1020px);
   overflow: auto;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: #112435;
+  background: var(--panel);
 }
 
 #thumb-paste {
@@ -496,6 +587,51 @@ main {
   font-size: 0.94rem;
   line-height: 1.5;
   white-space: pre-wrap;
+}
+
+.abstract-references-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.abstract-ref-row {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  align-items: start;
+  gap: 6px;
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  margin-bottom: 2px;
+}
+
+.abstract-ref-row:hover {
+  text-decoration: underline;
+}
+
+.abstract-ref-row.muted {
+  color: var(--muted);
+}
+
+.abstract-ref-icon-slot {
+  width: 18px;
+  min-width: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 1px;
+}
+
+.abstract-ref-icon {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+.abstract-ref-text {
+  word-break: break-word;
 }
 
 .card.card-incomplete {

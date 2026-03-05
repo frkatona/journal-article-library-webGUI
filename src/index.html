@@ -51,10 +51,16 @@
                         </div>
                     </div>
                     <div id="tag-filter-list" class="tag-filter-list"></div>
-                    <label class="field"
-                        style="flex-direction:row;align-items:center;gap:8px;padding: 6px 8px; border-top: 1px solid var(--line); margin: 0; cursor: pointer;">
+                    <hr style="border:none;border-top:1px solid var(--line);margin:6px 0;">
+                    <label
+                        style="display:flex;align-items:center;gap:8px;padding:4px 8px;cursor:pointer;font-size:0.85rem;">
+                        <input id="hide-niche" type="checkbox" />
+                        <span>Hide niche articles</span>
+                    </label>
+                    <label
+                        style="display:flex;align-items:center;gap:8px;padding:4px 8px;cursor:pointer;font-size:0.85rem;">
                         <input id="filter-incomplete" type="checkbox" />
-                        <span style="font-size:0.82rem; color: var(--accent-2);">incomplete fields</span>
+                        <span>Incomplete metadata only</span>
                     </label>
                 </div>
             </label>
@@ -121,10 +127,32 @@
                             <input id="show-errors-checkbox" type="checkbox" checked />
                             <span style="font-size:0.82rem;">Show errors globally</span>
                         </label>
-                        <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
-                            <input id="auto-ref-compile" type="checkbox" />
-                            <span style="font-size:0.82rem;">Auto references compilation (EXPERIMENTAL)</span>
-                        </label>
+                        <details id="experimental-section" style="margin-top: 2px;">
+                            <summary
+                                style="cursor: pointer; font-size: 0.75rem; font-weight: 700; color: var(--accent-2); text-transform: uppercase; letter-spacing: 0.05em; padding: 6px 4px; list-style: none; display: flex; align-items: center; gap: 5px; user-select: none;">
+                                <span id="experimental-arrow"
+                                    style="display:inline-block; transition: transform 0.2s;">▶</span> Experimental
+                            </summary>
+                            <div
+                                style="display: flex; flex-direction: column; gap: 8px; padding: 6px 4px 2px 12px; border-left: 2px solid rgba(245,179,77,0.3);">
+                                <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                                    <input id="auto-ref-compile" type="checkbox" />
+                                    <span style="font-size:0.82rem;">Auto references compilation</span>
+                                </label>
+                                <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                                    <input id="show-dupe-warnings" type="checkbox" />
+                                    <span style="font-size:0.82rem;">Warn on duplicate DOIs</span>
+                                </label>
+                                <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                                    <input id="debug-mode" type="checkbox" />
+                                    <span style="font-size:0.82rem;">Debug mode (verbose routine output)</span>
+                                </label>
+                                <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                                    <input id="long-parse" type="checkbox" />
+                                    <span style="font-size:0.82rem;">Long Parse (&gt;2s PDF timeout)</span>
+                                </label>
+                            </div>
+                        </details>
 
                         <hr style="border: none; border-top: 1px dashed var(--danger); margin: 8px 0; opacity: 0.5;" />
 
@@ -143,6 +171,17 @@
                         <div class="menu-section-header"
                             style="font-size: 0.75rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; padding: 4px 8px; margin-bottom: 4px;">
                             Display Customization</div>
+                        <label class="field">
+                            <span>Theme</span>
+                            <select id="theme-select">
+                                <option value="ocean">Ocean Dark</option>
+                                <option value="midnight">Midnight</option>
+                                <option value="nord">Nord</option>
+                                <option value="monokai">Monokai</option>
+                                <option value="solarized">Solarized Dark</option>
+                                <option value="light">Soft Light</option>
+                            </select>
+                        </label>
                         <div class="view-toggle"
                             style="padding: 8px; display: flex; justify-content: center; margin-bottom: 8px;">
                             <span class="view-toggle-label">Cards</span>
@@ -190,6 +229,20 @@
                             <input id="color-intensity-slider" type="range" min="0" max="100" step="1" value="13" />
                         </label>
                         <button id="edit-tag-colors-btn" type="button" class="ghost">Edit Tag Colors</button>
+                        <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                            <input id="show-ref-dois" type="checkbox" />
+                            <span style="font-size:0.82rem;">Show reference DOIs in abstract</span>
+                        </label>
+                        <label class="field">
+                            <span>Abstract Sections</span>
+                            <input id="abstract-section-count" type="number" min="1" max="12" step="1" value="3" />
+                        </label>
+                        <label class="field">
+                            <span style="font-size:0.82rem; color:var(--muted);">Niche Tags <em
+                                    style="font-weight:400;">(hidden by default)</em></span>
+                            <textarea id="niche-tags-input" rows="2" placeholder="e.g. manual, thesis, book..."
+                                style="resize:vertical; font-size:0.82rem; font-family:inherit;"></textarea>
+                        </label>
                     </div>
                 </div>
 
@@ -230,7 +283,7 @@
                     <p class="drop-hint">Drag and drop an image here to replace thumbnail.</p>
                     <div class="thumb-tools">
                         <button id="thumb-paste" type="button" title="Ctrl+P">Paste from Clipboard</button>
-                        <button id="thumb-reset" type="button" class="ghost">Extract Image from File</button>
+                        <button id="thumb-reset" type="button" class="ghost hidden">Extract Image from File</button>
                         <hr style="border: none; border-top: 1px dashed var(--line); margin: 4px 0; width: 100%;" />
                         <button id="editor-open-btn" type="button" class="ghost" style="color:var(--accent);">Open
                             Article</button>
@@ -321,7 +374,7 @@
                 <div id="abstract-references-section" class="meta"
                     style="margin-top:20px; border-top:1px solid var(--line); padding-top:10px; display:none;">
                     <h3 style="font-size:0.9rem; margin-bottom:8px;">Referenced DOIs</h3>
-                    <div id="abstract-references-list" style="display:flex; flex-direction:column; gap:4px;"></div>
+                    <div id="abstract-references-list" class="abstract-references-list"></div>
                 </div>
             </div>
         </div>
@@ -393,55 +446,28 @@
 
     <!-- Hotkeys Modal -->
     <div id="hotkeys-modal" class="modal hidden" role="dialog" aria-modal="true">
-        <div class="modal-card" style="max-width:420px;">
-            <div class="modal-header">
+        <div class="modal-card"
+            style="max-width:420px; display:flex; flex-direction:column; max-height:85vh; overflow:hidden; padding-bottom:0;">
+            <div class="modal-header" style="flex-shrink:0;">
                 <h2>Keyboard Shortcuts</h2>
                 <button id="hotkeys-close" class="close-btn" type="button">&times;</button>
             </div>
-            <div style="padding:12px 16px;">
-                <table style="width:100%;border-collapse:collapse;font-size:0.88rem;">
-                    <tr>
-                        <td style="padding:6px 0;"><kbd>Click</kbd></td>
-                        <td>Open PDF</td>
-                    </tr>
-                    <tr>
-                        <td style="padding:6px 0;"><kbd>Ctrl+Click</kbd></td>
-                        <td>Copy BibTeX to clipboard</td>
-                    </tr>
-                    <tr>
-                        <td style="padding:6px 0;"><kbd>Alt+Click</kbd></td>
-                        <td>Open file location</td>
-                    </tr>
-                    <tr>
-                        <td style="padding:6px 0;"><kbd>Ctrl+Shift+Click</kbd></td>
-                        <td>Edit metadata</td>
-                    </tr>
-                    <tr>
-                        <td style="padding:6px 0;"><kbd>Alt+Shift+Click</kbd></td>
-                        <td>View abstract</td>
-                    </tr>
-                    <tr>
-                        <td style="padding:6px 0;"><kbd>Right-Click</kbd></td>
-                        <td>Edit metadata</td>
-                    </tr>
-                    <tr>
-                        <td style="padding:6px 0;"><kbd>Ctrl+P</kbd></td>
-                        <td>Paste thumbnail (in modal)</td>
-                    </tr>
-                    <tr>
-                        <td style="padding:6px 0;"><kbd>Ctrl+Scroll</kbd></td>
-                        <td>Resize cards</td>
-                    </tr>
-                    <tr>
-                        <td style="padding:6px 0;"><kbd>Enter</kbd></td>
-                        <td>Save & close modal</td>
-                    </tr>
-                    <tr>
-                        <td style="padding:6px 0;"><kbd>Escape</kbd></td>
-                        <td>Close any modal</td>
-                    </tr>
-                </table>
-                <div style="margin-top: 20px; border-top: 1px solid var(--line); padding-top: 12px;">
+            <div style="padding:12px 16px; overflow-y:auto; flex:1;">
+                <div id="hotkey-table-container">
+                    <!-- JS-populated hotkey table -->
+                </div>
+                <div style="margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                        <span
+                            style="font-size: 0.8rem; color: var(--muted); font-weight: 600; letter-spacing: 0.03em;">Crash
+                            Log</span>
+                        <button id="crash-log-btn" type="button" class="ghost"
+                            style="font-size: 0.75rem; padding: 2px 6px;">View</button>
+                    </div>
+                    <pre id="crash-log-content"
+                        style="display:none; margin:0; padding:8px; background:var(--bg); border:1px solid var(--line); border-radius:6px; font-size:0.72rem; max-height:120px; overflow-y:auto; white-space:pre-wrap; word-break:break-all; color:var(--danger);"></pre>
+                </div>
+                <div style="margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px;">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <span
                             style="font-size: 0.8rem; color: var(--muted); font-weight: 600; letter-spacing: 0.03em;">Error
@@ -451,14 +477,13 @@
                     </div>
                     <ul id="error-log-list"
                         style="margin-top: 8px; padding-left: 0; list-style: none; max-height: 100px; overflow-y: auto; font-family: monospace; font-size: 0.75rem; color: var(--danger); word-break: break-all; display: flex; flex-direction: column; gap: 4px;">
-                        <!-- JS injected -->
                     </ul>
                 </div>
-                <div
-                    style="text-align: center; margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px;">
-                    <span
-                        style="font-size: 0.8rem; color: var(--muted); font-weight: 600; cursor: default; letter-spacing: 0.03em;">v0.8.3</span>
-                </div>
+            </div>
+            <div
+                style="text-align: center; border-top: 1px solid var(--line); padding: 12px 16px; background: var(--bg); flex-shrink:0;">
+                <span
+                    style="font-size: 0.8rem; color: var(--muted); font-weight: 600; cursor: default; letter-spacing: 0.03em;">v0.8.4</span>
             </div>
         </div>
     </div>

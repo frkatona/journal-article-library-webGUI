@@ -4,6 +4,13 @@ const { invoke } = window.__TAURI__.core;
 // Thumbnail cache: relPath -> dataUrl
 const thumbCache = new Map();
 
+const DEFAULT_HOTKEYS = {
+    openPdf: { ctrl: false, alt: false, shift: false },  // plain click
+    editMetadata: { ctrl: true, alt: false, shift: false },  // Ctrl+click
+    openAbstract: { ctrl: false, alt: true, shift: false },  // Alt+click
+    copyBibtex: { ctrl: false, alt: false, shift: true },  // Shift+click
+    openLocation: { ctrl: true, alt: false, shift: true },  // Ctrl+Shift+click
+};
 const state = {
     query: "",
     tags: [],
@@ -18,6 +25,7 @@ const state = {
     cardWidth: Number.parseInt(window.localStorage.getItem("article-card-width") || "200", 10),
     cardFont: Number.parseInt(window.localStorage.getItem("article-card-font") || "14", 10),
     fontFamily: window.localStorage.getItem("article-font-family") || "segoe",
+    theme: window.localStorage.getItem("article-theme") || "ocean",
     primarySort: window.localStorage.getItem("article-primary-sort") || "year_desc",
     secondarySort: window.localStorage.getItem("article-secondary-sort") || "title_asc",
     displayMenuOpen: false,
@@ -26,11 +34,18 @@ const state = {
     tintByTag: window.localStorage.getItem("article-tint-by-tag") === "true",
     filterIncomplete: window.localStorage.getItem("article-filter-incomplete") === "true",
     autoRefCompile: window.localStorage.getItem("article-auto-ref") === "true",
+    showDupeWarnings: window.localStorage.getItem("article-dupe-warnings") === "true",
     colorIntensity: Number.parseInt(window.localStorage.getItem("article-color-intensity") || "13", 10),
     tagColors: JSON.parse(window.localStorage.getItem("article-tag-colors") || "{}"),
+    hotkeys: JSON.parse(window.localStorage.getItem("article-hotkeys") || "null") || { ...DEFAULT_HOTKEYS },
+    nicheTags: JSON.parse(window.localStorage.getItem("article-niche-tags") || "[]"),
+    hideNiche: window.localStorage.getItem("article-hide-niche") !== "false",
+    showRefDois: window.localStorage.getItem("article-show-ref-dois") !== "false",
     acIndex: -1,
     isEscaping: false,
     showErrorsGlobally: window.localStorage.getItem("article-show-errors") !== "false",
+    abstractSectionCount: Number.parseInt(window.localStorage.getItem("article-abstract-sections") || "3", 10),
+    debugMode: window.localStorage.getItem("article-debug-mode") === "true",
 };
 
 const dom = {
@@ -129,8 +144,20 @@ const dom = {
     errorBannerClose: document.getElementById("error-banner-close"),
     showErrorsCheckbox: document.getElementById("show-errors-checkbox"),
     autoRefCompile: document.getElementById("auto-ref-compile"),
+    showDupeWarnings: document.getElementById("show-dupe-warnings"),
+    themeSelect: document.getElementById("theme-select"),
+    experimentalSection: document.getElementById("experimental-section"),
+    experimentalArrow: document.getElementById("experimental-arrow"),
+    debugModeCheckbox: document.getElementById("debug-mode"),
     errorLogList: document.getElementById("error-log-list"),
     errorLogClear: document.getElementById("error-log-clear"),
+    hotkeyTableContainer: document.getElementById("hotkey-table-container"),
+    crashLogBtn: document.getElementById("crash-log-btn"),
+    crashLogContent: document.getElementById("crash-log-content"),
+    hideNicheCheckbox: document.getElementById("hide-niche"),
+    nicheTagsInput: document.getElementById("niche-tags-input"),
+    showRefDoisCheckbox: document.getElementById("show-ref-dois"),
+    abstractSectionCountInput: document.getElementById("abstract-section-count"),
 };
 const SORT_KEYS = new Set([
     "year_desc",
@@ -253,6 +280,36 @@ function setStatus(text, isWarning = false) {
     }
 }
 
+function clampAbstractSectionCount(value) {
+    const parsed = Number.parseInt(String(value), 10);
+    if (Number.isNaN(parsed)) return 3;
+    return Math.max(1, Math.min(12, parsed));
+}
+
+function applyAbstractSectionCount(value) {
+    const count = clampAbstractSectionCount(value);
+    state.abstractSectionCount = count;
+    if (dom.abstractSectionCountInput) {
+        dom.abstractSectionCountInput.value = String(count);
+    }
+}
+
+function debugLog(message) {
+    if (!state.debugMode) return;
+    const time = new Date().toLocaleTimeString();
+    const text = `[${time}] [debug] ${message}`;
+    console.debug(text);
+    if (dom.errorLogList) {
+        const li = document.createElement("li");
+        li.textContent = text;
+        li.style.color = "var(--muted)";
+        dom.errorLogList.prepend(li);
+        while (dom.errorLogList.children.length > 100) {
+            dom.errorLogList.removeChild(dom.errorLogList.lastChild);
+        }
+    }
+}
+
 function debounce(fn, waitMs) {
     let timer = 0;
     return (...args) => {
@@ -355,6 +412,27 @@ function cleanAbstract(raw) {
         groups.push(cleaned.slice(i, i + perGroup).join(" "));
     }
     return groups.join("\n\n");
+}
+
+function formatAbstractForDisplay(rawText, sectionCount) {
+    const source = (rawText || "").replace(/\r\n/g, "\n").trim();
+    if (!source) return "";
+    const singleLine = source.replace(/\n+/g, " ").replace(/\s+/g, " ").trim();
+    if (!singleLine) return "";
+
+    const sentenceMatches = singleLine.match(/[^.!?]+(?:[.!?]+|$)/g) || [singleLine];
+    const sentences = sentenceMatches.map((s) => s.trim()).filter(Boolean);
+    if (sentences.length <= 1) return singleLine;
+
+    const targetSections = Math.min(clampAbstractSectionCount(sectionCount), sentences.length);
+    if (targetSections <= 1) return singleLine;
+
+    const sections = [];
+    const perSection = Math.ceil(sentences.length / targetSections);
+    for (let i = 0; i < sentences.length; i += perSection) {
+        sections.push(sentences.slice(i, i + perSection).join(" "));
+    }
+    return sections.join("\n\n");
 }
 
 // ---- Tag chip system ----
@@ -669,23 +747,324 @@ function hexToHsl(hex) {
     return [h * 360, s * 100, l * 100];
 }
 
+// Returns { bg: string, border: string } | null
 function getCardTint(article) {
     if (!state.tintByTag) return null;
-    const tags = (article.metadata?.tags || []).filter((t) => t.trim() && state.tagColors[t.trim()]);
-    if (tags.length === 0) return null;
-    let hSum = 0, sSum = 0, lSum = 0;
-    for (const tag of tags) {
-        const [h, s, l] = hexToHsl(state.tagColors[tag.trim()]);
-        hSum += h; sSum += s; lSum += l;
+    const tag = getDominantTag(article);
+    if (!tag) return null;
+    const [h, s, l] = hexToHsl(state.tagColors[tag]);
+    const alpha = state.colorIntensity / 100;
+    return {
+        bg: `hsla(${Math.round(h)}, ${Math.round(s)}%, ${Math.round(l)}%, ${alpha})`,
+        border: `hsla(${Math.round(h)}, ${Math.round(s)}%, ${Math.round(Math.min(l + 10, 90))}%, 0.75)`,
+    };
+}
+
+// ---- Theme ----
+const VALID_THEMES = new Set(["ocean", "midnight", "nord", "monokai", "solarized", "light"]);
+function applyTheme(value) {
+    const theme = VALID_THEMES.has(value) ? value : "ocean";
+    state.theme = theme;
+    document.documentElement.dataset.theme = theme;
+    if (dom.themeSelect) dom.themeSelect.value = theme;
+}
+
+// ---- Tag frequency helpers ----
+// Returns a map of tag -> count across all currently loaded articles
+function getTagFrequencyMap() {
+    const freq = new Map();
+    for (const article of state.articles) {
+        for (const t of (article.metadata?.tags || [])) {
+            const tag = t.trim();
+            if (tag) freq.set(tag, (freq.get(tag) || 0) + 1);
+        }
     }
-    const n = tags.length;
-    let alpha = state.colorIntensity / 100;
-    return `hsla(${Math.round(hSum / n)}, ${Math.round(sSum / n)}%, ${Math.round(lSum / n)}%, ${alpha})`;
+    return freq;
+}
+
+// Returns the dominant (most frequent) tag for a given article that has a color assigned,
+// breaking ties alphabetically.
+function getDominantTag(article) {
+    const freq = getTagFrequencyMap();
+    const tags = (article.metadata?.tags || [])
+        .map(t => t.trim())
+        .filter(t => t && state.tagColors[t]);
+    if (tags.length === 0) return null;
+    tags.sort((a, b) => {
+        const diff = (freq.get(b) || 0) - (freq.get(a) || 0);
+        return diff !== 0 ? diff : a.localeCompare(b);
+    });
+    return tags[0];
 }
 
 function saveTagColors() {
     window.localStorage.setItem("article-tag-colors", JSON.stringify(state.tagColors));
 }
+
+// ---- Hotkey resolution ----
+function modMatch(evt, binding) {
+    return evt.ctrlKey === binding.ctrl && evt.altKey === binding.alt && evt.shiftKey === binding.shift;
+}
+
+// Returns true if an action was taken, false if we should prevent default
+function resolveClickAction(evt, article) {
+    const hk = state.hotkeys;
+    if (modMatch(evt, hk.editMetadata)) { evt.preventDefault(); evt.stopPropagation(); openEditor(article); return true; }
+    if (modMatch(evt, hk.openAbstract)) { evt.preventDefault(); evt.stopPropagation(); openAbstract(article); return true; }
+    if (modMatch(evt, hk.copyBibtex)) {
+        evt.preventDefault(); evt.stopPropagation();
+        const bib = generateBibtex(article);
+        copyToClipboard(bib).then(ok => showToast(ok ? "BibTeX copied to clipboard" : "Failed to copy BibTeX"));
+        return true;
+    }
+    if (modMatch(evt, hk.openLocation)) { evt.preventDefault(); evt.stopPropagation(); openFileLocation(article); return true; }
+    if (modMatch(evt, hk.openPdf)) { evt.preventDefault(); evt.stopPropagation(); openPdf(article); return true; }
+    // No binding matched — fall through (e.g., right-click menus)
+    return false;
+}
+
+const CLICK_ACTIONS = [
+    { key: "openPdf", label: "Open PDF" },
+    { key: "editMetadata", label: "Edit Metadata" },
+    { key: "openAbstract", label: "Preview Abstract" },
+    { key: "copyBibtex", label: "Copy BibTeX" },
+    { key: "openLocation", label: "Open File Location" },
+];
+const KEYBOARD_SHORTCUTS = [
+    { label: "Paste thumbnail", key: "pasteThumb", description: "p (in modal)" },
+    { label: "Save & close", key: "enter", description: "Enter (in modal)" },
+];
+
+// Hotkey capture state
+let _hkListening = null; // { key, cleanup }
+
+function buildHotkeyTable() {
+    const container = dom.hotkeyTableContainer;
+    if (!container) return;
+    clearNode(container);
+
+    const makeModBtn = (label, active, toggle) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = label;
+        btn.className = "ghost";
+        btn.style.cssText = `padding:2px 6px;font-size:0.75rem;border-radius:4px;font-family:monospace;${active ? "background:var(--accent);color:var(--bg);border-color:var(--accent);" : ""
+            }`;
+        btn.addEventListener("click", (e) => { e.stopPropagation(); toggle(); buildHotkeyTable(); });
+        return btn;
+    };
+
+    // ─── Click-action section ───
+    const clickHeader = document.createElement("div");
+    clickHeader.style.cssText = "font-size:0.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;padding:6px 0 4px;";
+    clickHeader.textContent = "Click Actions";
+    container.appendChild(clickHeader);
+
+    const clickTable = document.createElement("table");
+    clickTable.style.cssText = "width:100%;border-collapse:collapse;font-size:0.85rem;";
+
+    const bindingCounts = {};
+    for (const action of CLICK_ACTIONS) {
+        const b = state.hotkeys[action.key];
+        const key = `${b.ctrl}-${b.alt}-${b.shift}`;
+        bindingCounts[key] = (bindingCounts[key] || 0) + 1;
+    }
+
+    let hasDuplicates = false;
+    for (const action of CLICK_ACTIONS) {
+        const binding = state.hotkeys[action.key];
+        const isDuplicate = bindingCounts[`${binding.ctrl}-${binding.alt}-${binding.shift}`] > 1;
+        if (isDuplicate) hasDuplicates = true;
+
+        const tr = document.createElement("tr");
+        if (isDuplicate) {
+            tr.style.outline = "2px solid var(--danger)";
+            tr.style.backgroundColor = "rgba(255, 60, 60, 0.1)";
+        }
+        const tdLabel = document.createElement("td");
+        tdLabel.textContent = action.label;
+        tdLabel.style.padding = "5px 0 5px 4px";
+        const tdMods = document.createElement("td");
+        tdMods.style.cssText = "display:flex;gap:4px;align-items:center;padding:5px 0;";
+        tdMods.appendChild(makeModBtn("Ctrl", binding.ctrl, () => { binding.ctrl = !binding.ctrl; saveHotkeys(); }));
+        tdMods.appendChild(makeModBtn("Alt", binding.alt, () => { binding.alt = !binding.alt; saveHotkeys(); }));
+        tdMods.appendChild(makeModBtn("Shift", binding.shift, () => { binding.shift = !binding.shift; saveHotkeys(); }));
+        const tdClick = document.createElement("td");
+        tdClick.style.cssText = "padding:5px 0 5px 6px;opacity:0.6;font-size:0.78rem;white-space:nowrap;";
+        tdClick.textContent = "+Click";
+        tr.appendChild(tdLabel);
+        tr.appendChild(tdMods);
+        tr.appendChild(tdClick);
+        clickTable.appendChild(tr);
+    }
+    container.appendChild(clickTable);
+
+    if (hasDuplicates) {
+        const warnRow = document.createElement("div");
+        warnRow.style.cssText = "color:var(--danger);font-size:0.75rem;margin-top:4px;";
+        warnRow.textContent = "Warning: Duplicate hotkeys detected.";
+        container.appendChild(warnRow);
+    }
+
+    // Reset defaults
+    const resetRow = document.createElement("div");
+    resetRow.style.cssText = "text-align:right;margin-top:6px;";
+    const resetBtn = document.createElement("button");
+    resetBtn.type = "button";
+    resetBtn.textContent = "Reset Defaults";
+    resetBtn.className = "ghost";
+    resetBtn.style.cssText = "font-size:0.75rem;padding:2px 8px;color:var(--muted);";
+    resetBtn.addEventListener("click", () => { state.hotkeys = { ...DEFAULT_HOTKEYS }; saveHotkeys(); buildHotkeyTable(); });
+    resetRow.appendChild(resetBtn);
+    container.appendChild(resetRow);
+
+    // ─── Separator ───
+    const sep = document.createElement("hr");
+    sep.style.cssText = "border:none;border-top:1px solid var(--line);margin:12px 0;";
+    container.appendChild(sep);
+
+    // ─── Keyboard-shortcut section ───
+    const kbHeader = document.createElement("div");
+    kbHeader.style.cssText = "font-size:0.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;padding:0 0 4px;";
+    kbHeader.textContent = "Keyboard Shortcuts";
+    container.appendChild(kbHeader);
+
+    const kbTable = document.createElement("table");
+    kbTable.style.cssText = "width:100%;border-collapse:collapse;font-size:0.85rem;";
+
+    for (const shortcut of KEYBOARD_SHORTCUTS) {
+        const tr = document.createElement("tr");
+        const tdL = document.createElement("td");
+        tdL.textContent = shortcut.label;
+        tdL.style.padding = "5px 0";
+
+        const tdDesc = document.createElement("td");
+        const isListening = _hkListening?.key === shortcut.key;
+        if (isListening) {
+            const listening = document.createElement("span");
+            listening.textContent = "⌨ Listening…";
+            listening.style.cssText = "color:var(--accent-2);font-size:0.8rem;font-style:italic;";
+            tdDesc.appendChild(listening);
+        } else {
+            const kbd = document.createElement("kbd");
+            kbd.textContent = shortcut.description;
+            tdDesc.appendChild(kbd);
+        }
+
+        const tdEdit = document.createElement("td");
+        tdEdit.style.cssText = "text-align:right;padding:5px 0;";
+        const pencil = document.createElement("button");
+        pencil.type = "button";
+        pencil.textContent = "···";
+        pencil.className = "ghost";
+        pencil.title = "Listen for key combo";
+        pencil.style.cssText = `font-size:0.85rem;font-weight:bold;padding:1px 6px;${isListening ? "color:var(--accent-2);" : ""}`;
+        pencil.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (_hkListening) {
+                _hkListening.cleanup();
+                _hkListening = null;
+                buildHotkeyTable();
+                return;
+            }
+            _hkListening = { key: shortcut.key, cleanup: () => { } };
+            buildHotkeyTable();
+            const handler = (ke) => {
+                ke.preventDefault();
+                ke.stopPropagation();
+                const parts = [];
+                if (ke.ctrlKey || ke.metaKey) parts.push("Ctrl");
+                if (ke.altKey) parts.push("Alt");
+                if (ke.shiftKey) parts.push("Shift");
+                const k = ke.key;
+                if (k && !['Control', 'Alt', 'Shift', 'Meta'].includes(k)) parts.push(k.toUpperCase());
+                shortcut.description = parts.join("+");
+                _hkListening.cleanup();
+                _hkListening = null;
+                buildHotkeyTable();
+            };
+            document.addEventListener("keydown", handler, { once: true, capture: true });
+            _hkListening.cleanup = () => document.removeEventListener("keydown", handler, { capture: true });
+        });
+        tdEdit.appendChild(pencil);
+        tr.appendChild(tdL);
+        tr.appendChild(tdDesc);
+        tr.appendChild(tdEdit);
+        kbTable.appendChild(tr);
+    }
+    container.appendChild(kbTable);
+
+    const kbResetRow = document.createElement("div");
+    kbResetRow.style.cssText = "text-align:right;margin-top:6px;";
+    const kbResetBtn = document.createElement("button");
+    kbResetBtn.type = "button";
+    kbResetBtn.textContent = "Reset Defaults";
+    kbResetBtn.className = "ghost";
+    kbResetBtn.style.cssText = "font-size:0.75rem;padding:2px 8px;color:var(--muted);";
+    kbResetBtn.addEventListener("click", () => {
+        // Reset descriptions to original
+        KEYBOARD_SHORTCUTS.find(s => s.key === "pasteThumb").description = "p (in modal)";
+        KEYBOARD_SHORTCUTS.find(s => s.key === "enter").description = "Enter (in modal)";
+        buildHotkeyTable();
+    });
+    kbResetRow.appendChild(kbResetBtn);
+    container.appendChild(kbResetRow);
+}
+
+function saveHotkeys() {
+    window.localStorage.setItem("article-hotkeys", JSON.stringify(state.hotkeys));
+}
+
+function parseNicheTags(raw) {
+    return raw.split(",").map(t => t.trim().toLowerCase()).filter(Boolean);
+}
+
+function extractDoiFromText(value) {
+    if (!value) return "";
+    const match = String(value).match(/\b10\.\d{4,9}\/[-._;()/:A-Za-z0-9]+\b/);
+    return match ? match[0] : "";
+}
+
+function isDoiInLibrary(doi) {
+    if (!doi) return false;
+    const cleanDoi = normalizeWhitespace(doi).toLowerCase();
+    return state.articles.some((article) => {
+        const articleDoi = article.metadata?.doi;
+        return articleDoi && normalizeWhitespace(articleDoi).toLowerCase() === cleanDoi;
+    });
+}
+
+function createAbstractReferenceRow(labelText, muted = false) {
+    const doi = extractDoiFromText(labelText);
+    const rowTag = doi ? "a" : "div";
+    const row = document.createElement(rowTag);
+    row.className = "abstract-ref-row";
+    if (muted) row.classList.add("muted");
+    if (doi) {
+        row.href = `https://doi.org/${doi}`;
+        row.target = "_blank";
+        row.rel = "noopener noreferrer";
+    }
+
+    const iconSlot = document.createElement("span");
+    iconSlot.className = "abstract-ref-icon-slot";
+    if (isDoiInLibrary(doi)) {
+        const icon = document.createElement("img");
+        icon.src = "ghost-icon.png";
+        icon.alt = "";
+        icon.className = "abstract-ref-icon";
+        iconSlot.appendChild(icon);
+    }
+
+    const textNode = document.createElement("span");
+    textNode.className = "abstract-ref-text";
+    textNode.textContent = labelText;
+
+    row.appendChild(iconSlot);
+    row.appendChild(textNode);
+    return row;
+}
+
 function openAbstract(article) {
     const md = article.metadata || {};
     dom.abstractTitle.textContent = md.title || article.pdf_filename || "Abstract";
@@ -694,7 +1073,9 @@ function openAbstract(article) {
     );
     dom.abstractMeta.textContent = metaBits.join(" | ");
     const abstractText = typeof md.abstract === "string" ? md.abstract.trim() : "";
-    dom.abstractText.textContent = abstractText || "No abstract available.";
+    const formattedAbstract = formatAbstractForDisplay(abstractText, state.abstractSectionCount);
+    dom.abstractText.textContent = formattedAbstract || "No abstract available.";
+    debugLog(`Opened abstract modal for article ${article.id} (sections=${state.abstractSectionCount}).`);
 
     if (dom.abstractReferencesSection) {
         dom.abstractReferencesSection.style.display = "none";
@@ -703,26 +1084,71 @@ function openAbstract(article) {
 
     dom.abstractModal.classList.remove("hidden");
 
+    // Show stored ref_dois from DOI fetch (if any and enabled)
+    const storedRefDois = md.ref_dois || [];
+    if (dom.abstractReferencesSection && storedRefDois.length > 0 && state.showRefDois) {
+        const ownDoi = normalizeWhitespace(md.doi).toLowerCase();
+        const filtered = storedRefDois
+            .map((d) => (typeof d === "string" ? d.trim() : ""))
+            .filter(Boolean)
+            .filter((ref) => {
+                const refDoi = normalizeWhitespace(extractDoiFromText(ref)).toLowerCase();
+                return !ownDoi || refDoi !== ownDoi;
+            });
+        if (filtered.length > 0) {
+            const toShow = filtered.slice(0, 5);
+            const toHide = filtered.slice(5);
+
+            for (const refStr of toShow) {
+                dom.abstractReferencesList.appendChild(createAbstractReferenceRow(refStr));
+            }
+
+            if (toHide.length > 0) {
+                const hiddenContainer = document.createElement("div");
+                hiddenContainer.style.display = "none";
+                hiddenContainer.style.marginTop = "4px";
+
+                for (const refStr of toHide) {
+                    hiddenContainer.appendChild(createAbstractReferenceRow(refStr));
+                }
+
+                const showAllBtn = document.createElement("button");
+                showAllBtn.type = "button";
+                showAllBtn.className = "ghost";
+                showAllBtn.style.padding = "2px 6px";
+                showAllBtn.style.fontSize = "0.75rem";
+                showAllBtn.style.marginTop = "6px";
+                showAllBtn.textContent = `Show all (${toHide.length} more)`;
+
+                showAllBtn.addEventListener("click", () => {
+                    hiddenContainer.style.display = "block";
+                    showAllBtn.style.display = "none";
+                });
+
+                dom.abstractReferencesList.appendChild(hiddenContainer);
+                dom.abstractReferencesList.appendChild(showAllBtn);
+            }
+            dom.abstractReferencesSection.style.display = "block";
+        }
+    }
+
+    // Also scan text for DOIs if autoRefCompile is on (supplemental)
     if (dom.abstractReferencesSection && state.autoRefCompile) {
         invoke("get_article_text_back", { articleId: article.id }).then(text => {
             if (!text) return;
             const matches = text.match(/\b10\.\d{4,9}\/[-._;()/:A-Za-z0-9]+\b/g) || [];
             const uniqueDois = [...new Set(matches)];
-            const ownDoi = normalizeWhitespace(md.doi);
-            const refDois = uniqueDois.filter(d => d && d !== ownDoi);
-
+            const ownDoi = normalizeWhitespace(md.doi).toLowerCase();
+            const alreadyShown = new Set((md.ref_dois || []).map((d) =>
+                normalizeWhitespace(extractDoiFromText(d) || d).toLowerCase(),
+            ));
+            const refDois = uniqueDois.filter((d) => {
+                const clean = normalizeWhitespace(d).toLowerCase();
+                return clean && clean !== ownDoi && !alreadyShown.has(clean);
+            });
             if (refDois.length > 0) {
-                refDois.forEach(doi => {
-                    const link = document.createElement("a");
-                    link.href = `https://doi.org/${doi}`;
-                    link.target = "_blank";
-                    link.textContent = doi;
-                    link.style.display = "block";
-                    link.style.color = "var(--accent)";
-                    link.style.textDecoration = "none";
-                    link.addEventListener("mouseover", () => link.style.textDecoration = "underline");
-                    link.addEventListener("mouseout", () => link.style.textDecoration = "none");
-                    dom.abstractReferencesList.appendChild(link);
+                refDois.forEach((doi) => {
+                    dom.abstractReferencesList.appendChild(createAbstractReferenceRow(`${doi} (text-extracted)`, true));
                 });
                 dom.abstractReferencesSection.style.display = "block";
             }
@@ -759,34 +1185,10 @@ function buildCard(article) {
     card.setAttribute("role", "link");
     card.setAttribute("aria-label", `Open PDF: ${md.title || article.pdf_filename}`);
     card.addEventListener("click", (evt) => {
-        if (evt.ctrlKey && evt.shiftKey) {
+        if (!resolveClickAction(evt, article)) {
             evt.preventDefault();
             evt.stopPropagation();
-            openEditor(article);
-            return;
         }
-        if (evt.ctrlKey || evt.metaKey) {
-            evt.preventDefault();
-            evt.stopPropagation();
-            const bib = generateBibtex(article);
-            copyToClipboard(bib).then((ok) => {
-                showToast(ok ? "BibTeX copied to clipboard" : "Failed to copy BibTeX");
-            });
-            return;
-        }
-        if (evt.altKey && evt.shiftKey) {
-            evt.preventDefault();
-            evt.stopPropagation();
-            openAbstract(article);
-            return;
-        }
-        if (evt.altKey) {
-            evt.preventDefault();
-            evt.stopPropagation();
-            openFileLocation(article);
-            return;
-        }
-        openPdf(article);
     });
     card.addEventListener("keydown", (evt) => {
         if (evt.key === "Enter" || evt.key === " ") {
@@ -798,8 +1200,8 @@ function buildCard(article) {
     // Apply tag tint
     const tint = getCardTint(article);
     if (tint) {
-        card.style.borderColor = tint.replace("0.13", "0.45");
-        card.style.background = `linear-gradient(135deg, ${tint}, transparent 70%)`;
+        card.style.borderColor = tint.border;
+        card.style.background = `linear-gradient(135deg, ${tint.bg}, transparent 70%)`;
     }
 
     // Image drag-and-drop onto card for thumbnail replacement
@@ -967,38 +1369,15 @@ function buildDetailsTable(articles) {
         row.tabIndex = 0;
         const tint = getCardTint(article);
         if (tint) {
-            row.style.backgroundColor = tint;
+            row.style.backgroundColor = tint.bg;
+            row.style.borderLeft = `3px solid ${tint.border}`;
         }
 
         row.addEventListener("click", (evt) => {
-            if (evt.ctrlKey && evt.shiftKey) {
+            if (!resolveClickAction(evt, article)) {
                 evt.preventDefault();
                 evt.stopPropagation();
-                openEditor(article);
-                return;
             }
-            if (evt.ctrlKey || evt.metaKey) {
-                evt.preventDefault();
-                evt.stopPropagation();
-                const bib = generateBibtex(article);
-                copyToClipboard(bib).then((ok) => {
-                    showToast(ok ? "BibTeX copied to clipboard" : "Failed to copy BibTeX");
-                });
-                return;
-            }
-            if (evt.altKey && evt.shiftKey) {
-                evt.preventDefault();
-                evt.stopPropagation();
-                openAbstract(article);
-                return;
-            }
-            if (evt.altKey) {
-                evt.preventDefault();
-                evt.stopPropagation();
-                openFileLocation(article);
-                return;
-            }
-            openPdf(article);
         });
         row.addEventListener("keydown", (evt) => {
             if (evt.target !== row) return;
@@ -1102,14 +1481,23 @@ function renderArticles() {
     clearNode(dom.grid);
     dom.grid.classList.toggle("details-mode", state.viewMode === "details");
 
-    if (state.articles.length === 0 && !state.query && state.tags.length === 0) {
+    // Filter out niche articles if hideNiche is on
+    const nicheSet = new Set(state.nicheTags.map(t => t.toLowerCase()));
+    const articles = state.hideNiche && nicheSet.size > 0
+        ? state.articles.filter(a => {
+            const tags = (a.metadata?.tags || []).map(t => t.trim().toLowerCase());
+            return !tags.some(t => nicheSet.has(t));
+        })
+        : state.articles;
+
+    if (articles.length === 0 && !state.query && state.tags.length === 0) {
         dom.emptyState.classList.remove("hidden");
         return;
     } else {
         dom.emptyState.classList.add("hidden");
     }
 
-    const sortedArticles = sortArticles(state.articles);
+    const sortedArticles = sortArticles(articles);
     if (!sortedArticles.length) {
         const empty = document.createElement("p");
         empty.className = "meta";
@@ -1196,6 +1584,7 @@ function updateTagFilterUI() {
 
 async function loadArticles() {
     setStatus("Loading articles...");
+    debugLog(`Loading articles (query="${state.query}", tags=${state.tags.length}, mode=${state.tagFilterMode}).`);
     const res = await invoke("get_articles", {
         query: state.query || null,
         tags: state.tags.length > 0 ? state.tags : null,
@@ -1211,13 +1600,16 @@ async function loadArticles() {
     dom.strategySelect.value = state.strategy;
 
     renderArticles();
+    if (state.showDupeWarnings) checkDuplicates();
     const stamped = prettyDate(state.generatedAt);
     const suffix = stamped ? ` | indexed ${stamped}` : "";
     setStatus(`${state.total} article(s)${suffix}`);
+    debugLog(`Loaded ${state.total} article(s); generated_at=${state.generatedAt || "n/a"}.`);
 }
 
 function openEditor(article) {
     state.current = article;
+    debugLog(`Opened metadata editor for article ${article.id}.`);
     const md = article.metadata || {};
     dom.title.value = md.title || "";
     dom.authors.value = md.authors || "";
@@ -1252,11 +1644,15 @@ function closeEditor() {
 }
 
 async function saveMetadata(evt) {
-    evt.preventDefault();
+    if (evt && typeof evt.preventDefault === "function") evt.preventDefault();
     if (!state.current) return;
     const currentId = state.current.id;
     const abstractValue = dom.abstract.value.replace(/\r\n/g, "\n");
     const notesValue = dom.notes.value.replace(/\r\n/g, "\n");
+    const trigger = evt?.type || "manual";
+    const refDois = Array.isArray(state.current?.metadata?.ref_dois)
+        ? state.current.metadata.ref_dois
+        : [];
 
     const payload = {
         title: dom.title.value.trim(),
@@ -1270,9 +1666,11 @@ async function saveMetadata(evt) {
         abstract: abstractValue,
         tags: getTagChips(),
         notes: notesValue,
+        ref_dois: refDois,
     };
 
     setStatus("Saving metadata...");
+    debugLog(`Saving metadata for article ${currentId} (trigger=${trigger}, ref_dois=${refDois.length}).`);
     try {
         const result = await invoke("save_metadata", {
             articleId: currentId,
@@ -1295,10 +1693,33 @@ async function saveMetadata(evt) {
         renderArticles();
 
         await loadTags();
-        setStatus("Metadata autosaved.");
+        setStatus("Metadata saved.");
     } catch (err) {
         const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
         setStatus(`Save failed: ${message}`, true);
+    }
+}
+
+async function persistReferenceDois(articleId, refDois) {
+    if (!articleId) return;
+    const safeDois = Array.isArray(refDois)
+        ? refDois.map((d) => String(d || "").trim()).filter(Boolean)
+        : [];
+    try {
+        const result = await invoke("save_metadata", {
+            articleId,
+            payload: { ref_dois: safeDois },
+        });
+        const savedArticle = result?.article || null;
+        if (!savedArticle) return;
+
+        const idx = state.articles.findIndex((a) => a.id === articleId);
+        if (idx >= 0) state.articles[idx] = savedArticle;
+        if (state.current?.id === articleId) state.current = savedArticle;
+        debugLog(`Persisted ${safeDois.length} reference DOI item(s) for article ${articleId}.`);
+    } catch (err) {
+        const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
+        setStatus(`Could not persist reference DOIs: ${message}`, true);
     }
 }
 
@@ -1418,12 +1839,14 @@ async function doReindex() {
     const fast = !dom.parsePdfs.checked;
     setFilesMenuOpen(false);
     setStatus(`Reindexing with ${strategy} strategy${fast ? " (fast mode)" : ""}...`);
+    debugLog(`Reindex requested (strategy=${strategy}, fast=${fast}).`);
     dom.reindexBtn.disabled = true;
     try {
         await invoke("reindex", { strategy, fast });
         thumbCache.clear();
         await Promise.all([loadTags(), loadArticles()]);
         setStatus("Reindex complete.");
+        debugLog("Reindex completed successfully.");
         if (state.articles.length > 0) {
             checkDuplicates();
         }
@@ -1532,6 +1955,7 @@ function wireEvents() {
     state.primarySort = normalizeSortKey(state.primarySort, "year_desc");
     state.secondarySort = normalizeSortKey(state.secondarySort, "title_asc");
     state.fontFamily = normalizeFontKey(state.fontFamily, "segoe");
+    state.abstractSectionCount = clampAbstractSectionCount(state.abstractSectionCount);
     dom.viewModeToggle.checked = state.viewMode === "details";
     dom.primarySort.value = state.primarySort;
     dom.secondarySort.value = state.secondarySort;
@@ -1539,6 +1963,7 @@ function wireEvents() {
     applyCardWidth(state.cardWidth);
     applyCardFont(state.cardFont);
     applyFontFamily(state.fontFamily);
+    applyAbstractSectionCount(state.abstractSectionCount);
     setDisplayMenuOpen(false);
     setFilesMenuOpen(false);
 
@@ -1595,6 +2020,107 @@ function wireEvents() {
             state.filterIncomplete = dom.filterIncomplete.checked;
             window.localStorage.setItem("article-filter-incomplete", state.filterIncomplete ? "true" : "false");
             loadArticles();
+        });
+    }
+
+    // Theme selector
+    if (dom.themeSelect) {
+        applyTheme(state.theme);
+        dom.themeSelect.addEventListener("change", () => {
+            applyTheme(dom.themeSelect.value);
+            window.localStorage.setItem("article-theme", state.theme);
+        });
+    }
+
+    // Experimental section — animate the arrow on open/close
+    if (dom.experimentalSection && dom.experimentalArrow) {
+        dom.experimentalSection.addEventListener("toggle", () => {
+            dom.experimentalArrow.style.transform = dom.experimentalSection.open ? "rotate(90deg)" : "";
+        });
+    }
+
+    // Duplicate DOI warnings experimental toggle
+    if (dom.showDupeWarnings) {
+        dom.showDupeWarnings.checked = state.showDupeWarnings;
+        dom.showDupeWarnings.addEventListener("change", () => {
+            state.showDupeWarnings = dom.showDupeWarnings.checked;
+            window.localStorage.setItem("article-dupe-warnings", state.showDupeWarnings ? "true" : "false");
+        });
+    }
+
+    if (dom.debugModeCheckbox) {
+        dom.debugModeCheckbox.checked = state.debugMode;
+        dom.debugModeCheckbox.addEventListener("change", () => {
+            state.debugMode = dom.debugModeCheckbox.checked;
+            window.localStorage.setItem("article-debug-mode", state.debugMode ? "true" : "false");
+            debugLog(`Debug mode ${state.debugMode ? "enabled" : "disabled"}.`);
+            if (state.debugMode) setStatus("Debug mode enabled.");
+        });
+    }
+
+    // Crash log viewer
+    if (dom.crashLogBtn && dom.crashLogContent) {
+        dom.crashLogBtn.addEventListener("click", async () => {
+            const isShown = dom.crashLogContent.style.display !== "none";
+            if (isShown) {
+                dom.crashLogContent.style.display = "none";
+                dom.crashLogBtn.textContent = "View";
+            } else {
+                dom.crashLogContent.style.display = "block";
+                dom.crashLogBtn.textContent = "Hide";
+                dom.crashLogContent.textContent = "Loading...";
+                try {
+                    const log = await invoke("get_crash_log");
+                    dom.crashLogContent.textContent = log || "No entries.";
+                } catch (e) {
+                    dom.crashLogContent.textContent = "Failed to read crash log.";
+                }
+            }
+        });
+    }
+
+    // Show reference DOIs toggle
+    if (dom.showRefDoisCheckbox) {
+        dom.showRefDoisCheckbox.checked = state.showRefDois;
+        dom.showRefDoisCheckbox.addEventListener("change", () => {
+            state.showRefDois = dom.showRefDoisCheckbox.checked;
+            window.localStorage.setItem("article-show-ref-dois", state.showRefDois ? "true" : "false");
+        });
+    }
+
+    if (dom.abstractSectionCountInput) {
+        dom.abstractSectionCountInput.value = String(state.abstractSectionCount);
+        const commitSectionCount = () => {
+            applyAbstractSectionCount(dom.abstractSectionCountInput.value);
+            window.localStorage.setItem("article-abstract-sections", String(state.abstractSectionCount));
+            debugLog(`Abstract section count set to ${state.abstractSectionCount}.`);
+        };
+        dom.abstractSectionCountInput.addEventListener("input", commitSectionCount);
+        dom.abstractSectionCountInput.addEventListener("change", commitSectionCount);
+        dom.abstractSectionCountInput.addEventListener("blur", commitSectionCount);
+    }
+
+    // Niche tags textarea
+    if (dom.nicheTagsInput) {
+        dom.nicheTagsInput.value = state.nicheTags.join(", ");
+        let nicheDebounce = null;
+        dom.nicheTagsInput.addEventListener("input", () => {
+            clearTimeout(nicheDebounce);
+            nicheDebounce = setTimeout(() => {
+                state.nicheTags = parseNicheTags(dom.nicheTagsInput.value);
+                window.localStorage.setItem("article-niche-tags", JSON.stringify(state.nicheTags));
+                renderArticles();
+            }, 600);
+        });
+    }
+
+    // Hide niche checkbox
+    if (dom.hideNicheCheckbox) {
+        dom.hideNicheCheckbox.checked = state.hideNiche;
+        dom.hideNicheCheckbox.addEventListener("change", () => {
+            state.hideNiche = dom.hideNicheCheckbox.checked;
+            window.localStorage.setItem("article-hide-niche", state.hideNiche ? "true" : "false");
+            renderArticles();
         });
     }
 
@@ -1908,6 +2434,7 @@ function wireEvents() {
     dom.hotkeysBtn.addEventListener("click", () => {
         dom.hotkeysModal.classList.remove("hidden");
         dom.hotkeysModal.querySelector(".modal-card").classList.add("starry-bg");
+        buildHotkeyTable();
     });
     const closeHotkeys = () => {
         dom.hotkeysModal.classList.add("hidden");
@@ -2064,7 +2591,9 @@ function wireEvents() {
         if (!file) return;
         await uploadManualThumbnail(file);
     });
-    dom.thumbReset.addEventListener("click", resetAutoThumbnail);
+    if (dom.thumbReset) {
+        dom.thumbReset.addEventListener("click", resetAutoThumbnail);
+    }
 
     if (dom.editorOpenBtn) {
         dom.editorOpenBtn.addEventListener("click", () => {
@@ -2116,8 +2645,14 @@ function wireEvents() {
             if (meta.number) dom.issue.value = meta.number;
             if (meta.pages) dom.pages.value = meta.pages;
             if (meta.abstract) dom.abstract.value = meta.abstract;
-            if (meta.doi) dom.doi.value = meta.doi; // updates cleaned DOI
+            if (meta.doi) dom.doi.value = meta.doi;
+            // Store ref DOIs on the current article's metadata in memory
+            if (state.current) {
+                state.current.metadata.ref_dois = meta.ref_dois || [];
+                await persistReferenceDois(state.current.id, state.current.metadata.ref_dois);
+            }
 
+            debugLog(`Crossref metadata fetched for DOI ${doiStr}.`);
             setStatus("Metadata successfully fetched from Crossref.");
         } catch (err) {
             const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
@@ -2402,15 +2937,16 @@ function wireEvents() {
 
         if (evt.key === "Enter" && !dom.modal.classList.contains("hidden")) {
             // Don't trigger if user is in a textarea or the tag input
-            if (evt.target.tagName === "TEXTAREA") return;
-            if (evt.target === dom.tagInput) return;
+            if (evt.target.tagName === "TEXTAREA" || evt.target.tagName === "INPUT") return;
             evt.preventDefault();
             saveMetadata(evt).then(() => closeEditor());
         }
-        // Ctrl+P to paste thumbnail when modal is open
-        if (evt.key === "p" && evt.ctrlKey && !dom.modal.classList.contains("hidden")) {
-            evt.preventDefault();
-            dom.thumbPaste.click();
+        // "p" to paste thumbnail when modal is open (not in inputs)
+        if (evt.key.toLowerCase() === "p" && !evt.ctrlKey && !evt.metaKey && !evt.altKey && !dom.modal.classList.contains("hidden")) {
+            if (evt.target.tagName !== "INPUT" && evt.target.tagName !== "TEXTAREA") {
+                evt.preventDefault();
+                dom.thumbPaste.click();
+            }
         }
     });
 

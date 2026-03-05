@@ -181,6 +181,26 @@ src-tauri/              # Rust backend
 - Article IDs are stable SHA1 hashes of the relative path, so they persist across reindexes as long as files aren't moved.
 - If search performance degrades (probably will be fine until scaling into ~thousands of articles), consider adding SQLite FTS while keeping the same override schema.
 
+## Crossref API Metadata Extraction
+
+The application utilizes the **Crossref API** (`https://api.crossref.org/works/{doi}`) to fetch rich metadata for articles. The following data fields are available from the `message` response object, which you can consider for future automation or visualization features:
+
+* **Title:** Full article title(s).
+* **Authors:** List of authors, containing `given` and `family` names.
+* **Dates:** Published dates including `published`, `published-print`, and `published-online` (which contain the `date-parts` like year, month, day).
+* **Container Title:** The journal name or publication medium.
+* **Volume / Issue / Page:** Specific location markers within the journal.
+* **DOI:** The standardized Digital Object Identifier.
+* **Abstract:** Raw abstract text (which can include JATS XML tags).
+* **References:** A list of references cited in the work. Each reference object can contain:
+  * `DOI`: The DOI of the cited work.
+  * `year`: The publication year of the cited work.
+  * `author`: First author of the cited work.
+  * `article-title`: Title of the cited work.
+  * `unstructured`: A fallback raw text string of the citation if structured fields are missing.
+
+*(Note: While the API provides all this under the 'polite pool', some fields—especially abstracts or references—may be missing from the JSON payload depending on the publisher's deposit).*
+
 ## to-do
 - bugs
   - [x] adding thumbnail image from clipboard (test if other conditions) removes other metadata
@@ -286,18 +306,22 @@ CLI warnings:
 - [x] intrusive red error bar: have it fade after a few seconds or show it at the bottom with an 'x' to close it, but store a log in the '?' button modal and have a checkbox in files to disable showing errors outside of '?'
   - Uncaught TypeError: Cannot set properties of undefined (setting 'value') at http://tauri.localhost/app.js:1106
 
-### immediate
 
-- [ ] create an 'experimental' section in file management which contains the 'auto references compilation' box, and one or two other side branch features
+- [x] add a hotkey customization ability in the keyboard shortcuts "?" modal where the user can select an action and the application will listen for input and assign it to that action.  Ctrl, alt, and shift modifiers should be permitted and it should be clear when listening is occurring.  The action should be the left column with shortcuts on the right and little pencil 'edit' icons to the right of the current shortcuts.  Also, change the default shortcuts so that "ctrl+click" opens the edit modal, "alt+click" opens the abstract modal, "shift+click" copies the BibTex to the clipboard, and "ctrl+shift+click" opens the folder of the selected article
 
-- [ ] make the tag coloration more visible on the border and replace the color mixing behavior with prioritizing the more numerous tag
+- [x] when metadata is extracted through the DOI fetch, extract the DOIs for articles that article references if it is available through the API and list them below the abstract in the abstract view modal.  Also introduce a checkbox in the 'display' dropdown to not display the reference DOIs
 
-- [ ] alternative background themes a la {insert vs code popular options}
+- [?] on DOI fetch from a separate computer, the application will sometimes crash quickly after pressing the button.  This happened first for a book (probably could not find the DOI) and then for an article which probably did have a DOI to access throught he API.  The DOI fetch did work initially on that computer.  If there is an obvious problem and solution, please pursue the solution, but also consider ways to report the error, perhaps maintaining a crashlog in the application's folder
 
-- [ ] extend the edit modal just a little bit vertically to prevent the top and bottom buttons from falling offscreen at the default 1080 pixel height 
+- [x] extend the edit modal just a little bit vertically to prevent the top and bottom buttons from slightly falling out of the clickable space at the default 1080 pixel height 
 
-- [ ] option to persist filter selections between sessions (maybe annoying to see books, manuals, theses, and other non-research articles by default each time)
-  - maybe have a separate list of default-hidden tags
+- [x] there are some tags which will likely not be helpful to the user in ordinary circumstances (e.g., manuals, theses) and should not be displayed by default.  In the 'display' options, create a box to designate the listed tags as hidden by default and then create a checkbox in the 'tags' filter dropdown locked to the bottom with the 'incomplete metadata' checkbox to 'show special tags'
+
+- [x] create an 'experimental' section in file management which contains the 'auto references compilation' box, and one or two other side branch features
+
+- [x] make the tag coloration more visible on the border and replace the color mixing behavior with prioritizing the more numerous tag
+
+- [x] alternative background themes a la {insert vs code popular options}
 
 ### think about more first
 

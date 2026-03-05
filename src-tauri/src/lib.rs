@@ -5,7 +5,7 @@ use image::{DynamicImage, GenericImageView, ImageBuffer, Rgb, RgbImage};
 use lopdf::{Document as PdfDoc, Object};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use reqwest::blocking::Client;
+use reqwest;
 use std::time::Duration;
 use sha1_smol::Sha1;
 use std::collections::HashMap;
@@ -14,7 +14,7 @@ use std::panic;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use futures::stream::{self, StreamExt};
+use futures::stream::{self};
 
 use walkdir::WalkDir;
 
@@ -59,6 +59,7 @@ pub struct Metadata {
     pub keywords: Vec<String>,
     pub tags: Vec<String>,
     pub notes: String,
+    pub ref_dois: Vec<String>,
 }
 
 // ── Crossref API Responses ──────────────────────────────────────────────────
@@ -72,6 +73,17 @@ pub struct CrossrefAuthor {
 pub struct CrossrefDate {
     #[serde(rename = "date-parts")]
     pub date_parts: Option<Vec<Vec<u32>>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CrossrefReference {
+    #[serde(rename = "DOI")]
+    pub doi: Option<String>,
+    pub year: Option<String>,
+    pub author: Option<String>,
+    #[serde(rename = "article-title")]
+    pub article_title: Option<String>,
+    pub unstructured: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -91,6 +103,7 @@ pub struct CrossrefMessage {
     pub DOI: Option<String>,
     #[serde(rename = "abstract")]
     pub abstract_raw: Option<String>,
+    pub reference: Option<Vec<CrossrefReference>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -176,6 +189,7 @@ pub struct MetadataPayload {
     pub tags: Option<Vec<String>>,
     pub notes: Option<String>,
     pub thumbnail_mode: Option<String>,
+    pub ref_dois: Option<Vec<String>>,
 }
 
 // ── App State ───────────────────────────────────────────────────────────────
@@ -439,24 +453,35 @@ fn pdf_dict_int(doc: &PdfDoc, dict: &lopdf::Dictionary, key: &[u8]) -> i64 {
 
 // ── PDF Metadata Extraction ─────────────────────────────────────────────────
 
-fn extract_pdf_text(pdf_path: &Path) -> String {
+fn extract_pdf_text(pdf_path: &Path, long_parse: bool) -> String {
     // Run on a thread with 8 MB stack to avoid stack overflow on complex PDFs
     let path = pdf_path.to_path_buf();
+    let (tx, rx) = std::sync::mpsc::channel();
+
     let handle = thread::Builder::new()
         .stack_size(8 * 1024 * 1024)
         .spawn(move || {
-            panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            let res = panic::catch_unwind(panic::AssertUnwindSafe(|| {
                 pdf_extract::extract_text(&path).unwrap_or_default()
             }))
-            .unwrap_or_default()
+            .unwrap_or_default();
+            let _ = tx.send(res);
         });
-    match handle {
-        Ok(h) => h.join().unwrap_or_default(),
-        Err(_) => String::new(),
+
+    if long_parse {
+        if let Ok(h) = handle {
+            let _ = h.join();
+        }
+        rx.recv().unwrap_or_default()
+    } else {
+        match rx.recv_timeout(std::time::Duration::from_secs(2)) {
+            Ok(s) => s,
+            Err(_) => String::new(),
+        }
     }
 }
 
-fn extract_auto_metadata(pdf_path: &Path) -> AutoMeta {
+fn extract_auto_metadata(pdf_path: &Path, long_parse: bool) -> AutoMeta {
     let (fn_title, fn_authors, fn_year) = parse_filename_metadata(pdf_path);
 
     let fallback = AutoMeta {
@@ -514,7 +539,7 @@ fn extract_auto_metadata(pdf_path: &Path) -> AutoMeta {
         };
 
     // Extract text for DOI and abstract
-    let full_text = extract_pdf_text(pdf_path);
+    let full_text = extract_pdf_text(pdf_path, long_parse);
 
     let title = if !fn_title.is_empty() {
         fn_title
@@ -933,6 +958,16 @@ fn merge_metadata(auto: &AutoMeta, over: &serde_json::Value) -> Metadata {
         } else {
             String::new()
         },
+        ref_dois: over
+            .get("ref_dois")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.trim().to_string()))
+                    .filter(|s| !s.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default(),
     }
 }
 
@@ -995,6 +1030,7 @@ fn process_single_pdf(
     state: &AppState,
     strategy: &str,
     fast: bool,
+    long_parse: bool,
 ) -> Option<Article> {
     let article_id = article_id_for_path(pdf_path, &state.articles_dir);
     let stat = fs::metadata(pdf_path).ok()?;
@@ -1012,12 +1048,12 @@ fn process_single_pdf(
             page_count: 0,
         }
     } else {
-        extract_auto_metadata(pdf_path)
+        extract_auto_metadata(pdf_path, long_parse)
     };
 
     // If we extracted a DOI (or have one via another method), attempt to pull perfectly clean metadata from Crossref
     if !fast && !auto.doi.is_empty() {
-        if let Ok(crossref_meta) = fetch_doi_metadata(auto.doi.clone()) {
+        if let Ok(crossref_meta) = fetch_doi_metadata_sync(state, &auto.doi) {
             if !crossref_meta.title.is_empty() {
                 auto.title = crossref_meta.title;
             }
@@ -1138,7 +1174,7 @@ fn process_single_pdf(
     Some(article)
 }
 
-fn index_articles(state: &mut AppState, strategy: &str, fast: bool) -> IndexPayload {
+fn index_articles(state: &mut AppState, strategy: &str, fast: bool, long_parse: bool) -> IndexPayload {
     state.ensure_dirs();
 
     let mut pdfs: Vec<PathBuf> = Vec::new();
@@ -1161,7 +1197,7 @@ fn index_articles(state: &mut AppState, strategy: &str, fast: bool) -> IndexPayl
     for pdf_path in &pdfs {
         // Wrap the entire per-PDF block so one bad file can't crash the app
         let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-            process_single_pdf(pdf_path, state, strategy, fast)
+            process_single_pdf(pdf_path, state, strategy, fast, long_parse)
         }));
         match result {
             Ok(Some(article)) => articles.push(article),
@@ -1205,7 +1241,7 @@ fn load_index(state: &mut AppState) -> IndexPayload {
             }
         }
     }
-    index_articles(state, &state.default_strategy.clone(), true)
+    index_articles(state, &state.default_strategy.clone(), true, false)
 }
 
 fn find_article_mut<'a>(index: &'a mut IndexPayload, article_id: &str) -> Option<&'a mut Article> {
@@ -1326,6 +1362,7 @@ fn reindex(
     state: tauri::State<'_, Mutex<AppState>>,
     strategy: Option<String>,
     fast: Option<bool>,
+    long_parse: Option<bool>,
 ) -> Result<ReindexResponse, String> {
     let mut st = state.lock().map_err(|e| e.to_string())?;
     let strat = strategy
@@ -1339,7 +1376,8 @@ fn reindex(
     };
 
     let fast_mode = fast.unwrap_or(false);
-    let payload = index_articles(&mut st, &strat, fast_mode);
+    let lp_mode = long_parse.unwrap_or(false);
+    let payload = index_articles(&mut st, &strat, fast_mode, lp_mode);
 
     Ok(ReindexResponse {
         ok: true,
@@ -1437,6 +1475,14 @@ fn save_metadata(
             "auto".to_string()
         };
         obj.insert("thumbnail_mode".into(), serde_json::Value::String(m));
+    }
+    if let Some(dois) = &payload.ref_dois {
+        let arr: Vec<serde_json::Value> = dois
+            .iter()
+            .map(|d| serde_json::Value::String(d.trim().to_string()))
+            .filter(|v| !v.as_str().unwrap_or_default().is_empty())
+            .collect();
+        obj.insert("ref_dois".into(), serde_json::Value::Array(arr));
     }
 
     save_override(&st.overrides_dir, &article_id, &existing);
@@ -1583,33 +1629,50 @@ fn open_pdf(state: tauri::State<'_, Mutex<AppState>>, relpath: String) -> Result
 }
 
 #[tauri::command]
-fn fetch_doi_metadata(doi: String) -> Result<Metadata, String> {
-    let clean_doi = doi.trim();
+async fn fetch_doi_metadata(state: tauri::State<'_, Mutex<AppState>>, doi: String) -> Result<Metadata, String> {
+    let clean_doi = doi.trim().to_string();
     if clean_doi.is_empty() {
         return Err("DOI cannot be empty".into());
     }
 
-    // Build politely, as requested by Crossref
-    let client = Client::builder()
-        .timeout(Duration::from_secs(10))
+    let data_dir = {
+        let st = state.lock().unwrap();
+        st.data_dir.clone()
+    };
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(15))
         .user_agent("LiteratureLibrary/0.8 (mailto:user@localhost)")
         .build()
-        .map_err(|e| format!("Client builder error: {}", e))?;
+        .map_err(|e| {
+            let msg = format!("Client builder error: {}", e);
+            write_crash_log(&data_dir, &msg);
+            msg
+        })?;
 
     let url = format!("https://api.crossref.org/works/{}", clean_doi);
 
-    let resp = client.get(&url).send().map_err(|e| format!("Network error: {}", e))?;
+    let resp = client.get(&url).send().await.map_err(|e| {
+        let msg = format!("Network error fetching DOI '{}': {}", clean_doi, e);
+        write_crash_log(&data_dir, &msg);
+        msg
+    })?;
 
     if !resp.status().is_success() {
-        return Err(format!("API returned status: {}", resp.status()));
+        let msg = format!("API returned status {} for DOI '{}'", resp.status(), clean_doi);
+        write_crash_log(&data_dir, &msg);
+        return Err(msg);
     }
 
-    let crossref: CrossrefResponse = resp.json().map_err(|e| format!("JSON parsing error: {}", e))?;
+    let crossref: CrossrefResponse = resp.json().await.map_err(|e| {
+        let msg = format!("JSON parsing error for DOI '{}': {}", clean_doi, e);
+        write_crash_log(&data_dir, &msg);
+        msg
+    })?;
     let msg = crossref.message;
 
-    let title = msg.title.unwrap_or_default().first().cloned().unwrap_or_default();
-    
-    // Format authors "First Last, First Last"
+    let title = msg.title.unwrap_or_default().into_iter().next().unwrap_or_default();
+
     let mut authors_list = Vec::new();
     if let Some(author_vec) = msg.author {
         for a in author_vec {
@@ -1624,10 +1687,9 @@ fn fetch_doi_metadata(doi: String) -> Result<Metadata, String> {
     }
     let authors = authors_list.join(", ");
 
-    // Get year from published, published-print, or published-online
     let mut year = String::new();
     let dates_to_try = [msg.published, msg.published_print, msg.published_online];
-    for d in dates_to_try.iter().flatten() {
+    for d in dates_to_try.into_iter().flatten() {
         if let Some(parts) = &d.date_parts {
             if let Some(first_part) = parts.first() {
                 if let Some(y) = first_part.first() {
@@ -1638,21 +1700,46 @@ fn fetch_doi_metadata(doi: String) -> Result<Metadata, String> {
         }
     }
 
-    let journal = msg.container_title.unwrap_or_default().first().cloned().unwrap_or_default();
+    let journal = msg.container_title.unwrap_or_default().into_iter().next().unwrap_or_default();
     let volume = msg.volume.unwrap_or_default();
     let number = msg.issue.unwrap_or_default();
     let pages = msg.page.unwrap_or_default();
-    let returned_doi = msg.DOI.unwrap_or(clean_doi.to_string());
-    
-    // Sometimes 'abstract' field throws XML/HTML noise like `<jats:sec><jats:title>Abstract</jats:title>`
+    let returned_doi = msg.DOI.unwrap_or(clean_doi.clone());
+
     let mut abstract_text = msg.abstract_raw.unwrap_or_default();
-    abstract_text = abstract_text.replace("<jats:title>Abstract</jats:title>", "");
-    abstract_text = abstract_text.replace("<jats:p>", "");
+    // Strip common JATS XML tags
+    for tag in &["<jats:title>Abstract</jats:title>", "<jats:p>", "<jats:sec>", "</jats:sec>", "<sec>", "</sec>", "<title>", "</title>"] {
+        abstract_text = abstract_text.replace(tag, "");
+    }
     abstract_text = abstract_text.replace("</jats:p>", "\n\n");
-    abstract_text = abstract_text.replace("<sec>", "");
-    abstract_text = abstract_text.replace("</sec>", "");
-    abstract_text = abstract_text.replace("<title>", "");
-    abstract_text = abstract_text.replace("</title>", "");
+    // Strip any remaining XML-like tags
+    let tag_re = regex::Regex::new(r"<[^>]+>").unwrap();
+    abstract_text = tag_re.replace_all(&abstract_text, "").to_string();
+
+    // Collect reference DOIs
+    let ref_dois: Vec<String> = msg.reference
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|r| {
+            if let Some(d) = r.doi.filter(|d| !d.is_empty()) {
+                let mut out = String::new();
+                if let Some(y) = r.year.filter(|y| !y.is_empty()) {
+                    out.push_str(&format!("({}) ", y));
+                }
+                if let Some(a) = r.author.filter(|a| !a.is_empty()) {
+                    out.push_str(&format!("{}. ", a));
+                }
+                if let Some(t) = r.article_title.or(r.unstructured).filter(|t| !t.is_empty()) {
+                    let words: Vec<&str> = t.split_whitespace().take(4).collect();
+                    out.push_str(&format!("\"{}...\" ", words.join(" ")));
+                }
+                out.push_str(&format!("- {}", d.to_lowercase()));
+                Some(out.trim().to_string())
+            } else {
+                None
+            }
+        })
+        .collect();
 
     let meta = Metadata {
         title,
@@ -1667,6 +1754,132 @@ fn fetch_doi_metadata(doi: String) -> Result<Metadata, String> {
         keywords: Vec::new(),
         tags: Vec::new(),
         notes: String::new(),
+        ref_dois,
+    };
+
+    Ok(meta)
+}
+
+fn fetch_doi_metadata_sync(state: &AppState, doi: &str) -> Result<Metadata, String> {
+    let clean_doi = doi.trim().to_string();
+    if clean_doi.is_empty() {
+        return Err("DOI cannot be empty".into());
+    }
+
+    let data_dir = state.data_dir.clone();
+
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .user_agent("LiteratureLibrary/0.8 (mailto:user@localhost)")
+        .build()
+        .map_err(|e| {
+            let msg = format!("Client builder error: {}", e);
+            write_crash_log(&data_dir, &msg);
+            msg
+        })?;
+
+    let url = format!("https://api.crossref.org/works/{}", clean_doi);
+
+    let resp = client.get(&url).send().map_err(|e| {
+        let msg = format!("Network error fetching DOI '{}': {}", clean_doi, e);
+        write_crash_log(&data_dir, &msg);
+        msg
+    })?;
+
+    if !resp.status().is_success() {
+        let msg = format!("API returned status {} for DOI '{}'", resp.status(), clean_doi);
+        write_crash_log(&data_dir, &msg);
+        return Err(msg);
+    }
+
+    let crossref: CrossrefResponse = resp.json().map_err(|e| {
+        let msg = format!("JSON parsing error for DOI '{}': {}", clean_doi, e);
+        write_crash_log(&data_dir, &msg);
+        msg
+    })?;
+    let msg = crossref.message;
+
+    let title = msg.title.unwrap_or_default().into_iter().next().unwrap_or_default();
+
+    let mut authors_list = Vec::new();
+    if let Some(author_vec) = msg.author {
+        for a in author_vec {
+            let given = a.given.unwrap_or_default();
+            let family = a.family.unwrap_or_default();
+            if !given.is_empty() && !family.is_empty() {
+                authors_list.push(format!("{} {}", given, family));
+            } else if !family.is_empty() {
+                authors_list.push(family);
+            }
+        }
+    }
+    let authors = authors_list.join(", ");
+
+    let mut year = String::new();
+    let dates_to_try = [msg.published, msg.published_print, msg.published_online];
+    for d in dates_to_try.into_iter().flatten() {
+        if let Some(parts) = &d.date_parts {
+            if let Some(first_part) = parts.first() {
+                if let Some(y) = first_part.first() {
+                    year = y.to_string();
+                    break;
+                }
+            }
+        }
+    }
+
+    let journal = msg.container_title.unwrap_or_default().into_iter().next().unwrap_or_default();
+    let volume = msg.volume.unwrap_or_default();
+    let number = msg.issue.unwrap_or_default();
+    let pages = msg.page.unwrap_or_default();
+    let returned_doi = msg.DOI.unwrap_or(clean_doi.clone());
+
+    let mut abstract_text = msg.abstract_raw.unwrap_or_default();
+    for tag in &["<jats:title>Abstract</jats:title>", "<jats:p>", "<jats:sec>", "</jats:sec>", "<sec>", "</sec>", "<title>", "</title>"] {
+        abstract_text = abstract_text.replace(tag, "");
+    }
+    abstract_text = abstract_text.replace("</jats:p>", "\n\n");
+    let tag_re = regex::Regex::new(r"<[^>]+>").unwrap();
+    abstract_text = tag_re.replace_all(&abstract_text, "").to_string();
+
+    let ref_dois: Vec<String> = msg.reference
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|r| {
+            if let Some(d) = r.doi.filter(|d| !d.is_empty()) {
+                let mut out = String::new();
+                if let Some(y) = r.year.filter(|y| !y.is_empty()) {
+                    out.push_str(&format!("({}) ", y));
+                }
+                if let Some(a) = r.author.filter(|a| !a.is_empty()) {
+                    out.push_str(&format!("{}. ", a));
+                }
+                if let Some(t) = r.article_title.or(r.unstructured).filter(|t| !t.is_empty()) {
+                    let words: Vec<&str> = t.split_whitespace().take(4).collect();
+                    out.push_str(&format!("\"{}...\" ", words.join(" ")));
+                }
+                out.push_str(&format!("- {}", d.to_lowercase()));
+                Some(out.trim().to_string())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let meta = Metadata {
+        title,
+        authors,
+        year,
+        journal,
+        volume,
+        number,
+        pages,
+        doi: returned_doi.to_lowercase(),
+        abstract_text: abstract_text.trim().to_string(),
+        keywords: Vec::new(),
+        tags: Vec::new(),
+        notes: String::new(),
+        ref_dois,
     };
 
     Ok(meta)
@@ -1719,6 +1932,7 @@ fn import_pdf(
     state: tauri::State<'_, Mutex<AppState>>,
     filename: String,
     data: String,
+    long_parse: Option<bool>,
 ) -> Result<MutationResponse, String> {
     let mut st = state.lock().map_err(|e| e.to_string())?;
     let _index = load_index(&mut st);
@@ -1782,7 +1996,8 @@ fn import_pdf(
 
     // Process the new PDF
     let strategy = st.default_strategy.clone();
-    let article = process_single_pdf(&output_path, &st, &strategy, true)
+    let lp = long_parse.unwrap_or(false);
+    let article = process_single_pdf(&output_path, &st, &strategy, true, lp)
         .ok_or_else(|| "Failed to process imported PDF".to_string())?;
 
     // Add to the in-memory index
@@ -1801,6 +2016,7 @@ fn import_pdf(
 async fn import_pdfs_from_paths(
     state: tauri::State<'_, Mutex<AppState>>,
     paths: Vec<String>,
+    long_parse: Option<bool>,
 ) -> Result<Vec<MutationResponse>, String> {
     // Clone necessary state for async usage
     let (articles_dir, default_strategy) = {
@@ -1904,7 +2120,8 @@ async fn import_pdfs_from_paths(
         // to crossref will sleep it gracefully, acting as its own throttle limit.
         let article_opt = {
             let st = state.lock().map_err(|e| e.to_string())?;
-            process_single_pdf(&dst, &st, &strategy_arc, true)
+            let lp = long_parse.unwrap_or(false);
+            process_single_pdf(&dst, &st, &strategy_arc, true, lp)
         };
         
         if let Some(article) = article_opt {
@@ -2088,6 +2305,25 @@ fn restore_backup(
     }
 }
 
+// ── Crash Log ────────────────────────────────────────────────────────────────
+
+fn write_crash_log(data_dir: &Path, message: &str) {
+    use std::io::Write;
+    let log_path = data_dir.join("crash.log");
+    let timestamp = chrono::Utc::now().to_rfc3339();
+    let line = format!("[{}] {}\n", timestamp, message);
+    if let Ok(mut f) = fs::OpenOptions::new().create(true).append(true).open(&log_path) {
+        let _ = f.write_all(line.as_bytes());
+    }
+}
+
+#[tauri::command]
+fn get_crash_log(state: tauri::State<'_, Mutex<AppState>>) -> String {
+    let data_dir = state.lock().unwrap().data_dir.clone();
+    let log_path = data_dir.join("crash.log");
+    fs::read_to_string(&log_path).unwrap_or_else(|_| "No crash log found.".to_string())
+}
+
 // ── App Setup ───────────────────────────────────────────────────────────────
 
 pub fn run() {
@@ -2134,6 +2370,7 @@ pub fn run() {
             create_backup,
             get_backups,
             restore_backup,
+            get_crash_log,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
