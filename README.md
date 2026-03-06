@@ -134,7 +134,7 @@ Current pipeline:
    - Falls back to a lightweight heuristic tokenizer that protects many non-boundary periods (for example: `e.g.`, `et al.`, initials like `J. Smith`, acronyms like `U.S.`, and decimals like `3.14`).
 3. Section chunking:
    - Sentences are grouped into roughly equal-length sections without splitting sentence bodies.
-   - The number of sections follows the `Abstract Sections` setting (default `3`).
+   - The number of sections follows the `Abstract partitioning strength` setting (default `4`).
 
 This system is designed to reduce common PDF copy-paste noise while keeping abstract structure readable in both metadata and preview views.
 
@@ -153,17 +153,33 @@ During this scan, duplicate DOIs will be presented to the user for deletion.
 
 ## Data Layout
 
+### Development Mode (`npx tauri dev`)
+
 ```text
-Articles/                          # your source PDFs (add files here)
-library_data/
-  index.json                       # generated catalog (auto-rebuilt on reindex)
-  thumbnails/                      # auto-generated thumbnails
-  manual_thumbnails/               # uploaded manual thumbnail overrides
-  overrides/
-    <article_id>.json              # your edits (metadata/tags/notes/thumbnail mode)
+<project-root>/
+  Articles/                        # source PDFs
+  library_data/
+    index.json                     # generated catalog (auto-rebuilt on reindex)
+    index.backup1.json             # rotating backup (newest backup)
+    index.backup2.json             # rotating backup (older backup)
+    crash.log                      # backend crash/error log
+    thumbnails/                    # auto-generated thumbnails
+    manual_thumbnails/             # uploaded manual thumbnail overrides
+    overrides/
+      <article_id>.json            # per-article overrides (metadata/tags/notes/thumbnail mode)
 ```
 
-> **Tip**: Keep original PDFs in `Articles/` and avoid renaming files after tagging — article IDs are derived from file paths, so moving files creates new IDs.
+### Bundled Release App
+
+In release builds, the same `Articles/` + `library_data/` layout is used, but rooted in the app local data directory.
+
+On Windows this is typically:
+
+```text
+%LOCALAPPDATA%/com.literature-library.desktop/
+```
+
+> **Tip**: Keep original PDFs in `Articles/` and avoid renaming files after tagging - article IDs are derived from relative file paths, so moving/renaming files creates new IDs.
 
 ## How It's Built
 
@@ -173,9 +189,10 @@ library_data/
 |---|---|---|
 | Backend | Rust (Tauri v2) | PDF scanning, metadata extraction, thumbnails, index management |
 | Frontend | Vanilla HTML/CSS/JS | UI rendering, search, filtering, modal editing |
-| IPC | Tauri `invoke()` | Frontend ↔ backend communication (no HTTP server) |
+| IPC | Tauri `invoke()` | Frontend <-> backend command bridge (no HTTP server) |
 | PDF parsing | `lopdf` + `pdf-extract` | Pure-Rust PDF metadata and text extraction |
 | Image processing | `image` crate | Thumbnail compositing with blur + letterbox |
+| Metadata API | Crossref via `reqwest` | DOI metadata fetch + referenced DOI extraction |
 
 ### Backend Commands
 
@@ -188,15 +205,29 @@ The Rust backend exposes these commands to the frontend:
 | `reindex` | Rescan PDFs and rebuild the index |
 | `save_metadata` | Save manual metadata overrides |
 | `upload_thumbnail` | Upload a manual thumbnail image |
+| `remove_article` | Remove an article and its local artifacts |
 | `open_pdf` | Open a PDF in the system default viewer |
+| `open_file_location` | Open file location in system file explorer |
+| `open_articles_folder` | Open the Articles folder |
 | `get_thumbnail_url` | Load a thumbnail as a base64 data URL |
 | `get_root_dir` | Get the application root directory |
+| `import_pdf` | Import one PDF payload |
+| `import_pdfs_from_paths` | Import PDFs from selected paths |
+| `fetch_doi_metadata` | Fetch metadata from Crossref by DOI |
+| `get_article_text_front` | Extract front section text from PDF |
+| `get_article_text_back` | Extract back section text from PDF |
+| `create_backup` | Rotate/create index backups |
+| `get_backups` | List backup slots and timestamps |
+| `restore_backup` | Restore a selected backup file |
+| `get_crash_log` | Read backend crash log contents |
 
 ### Key Dependencies
 
-**Rust**: `tauri`, `lopdf`, `pdf-extract`, `image`, `serde`, `serde_json`, `regex`, `walkdir`, `opener`, `sha1_smol`, `base64`, `chrono`
+**Rust**: `tauri`, `tauri-plugin-shell`, `tauri-plugin-dialog`, `serde`, `serde_json`, `lopdf`, `pdf-extract`, `image`, `reqwest`, `regex`, `walkdir`, `opener`, `sha1_smol`, `base64`, `chrono`, `futures`
 
-**Frontend**: `@tauri-apps/api` (via `withGlobalTauri`)
+**Frontend runtime**: native browser APIs plus Tauri global API (`window.__TAURI__`, enabled via `withGlobalTauri`).
+
+**Frontend tooling**: `@tauri-apps/cli` (dev dependency).
 
 ## Editing the Source
 
@@ -208,11 +239,12 @@ src/                    # Frontend assets
   styles.css            # All styling
   app.js                # Application logic (invoke-based IPC)
 src-tauri/              # Rust backend
-  src/lib.rs            # All backend logic (~1300 lines)
+  src/lib.rs            # Core backend logic (commands, indexing, metadata, thumbnails)
   src/main.rs           # Entry point
   Cargo.toml            # Rust dependencies
   tauri.conf.json       # Tauri window/build config
   capabilities/         # Tauri v2 permission grants
+  build.rs              # Build-time integration for Tauri
 ```
 
 ### Making Changes
@@ -220,6 +252,7 @@ src-tauri/              # Rust backend
 - **Frontend**: Edit files in `src/`. Changes are picked up automatically in dev mode.
 - **Backend**: Edit `src-tauri/src/lib.rs`. The Rust code recompiles automatically when running `npx tauri dev`.
 - **Add a new command**: Define a `#[tauri::command]` function in `lib.rs`, register it in the `invoke_handler!` macro in `run()`, then call it from JS with `window.__TAURI__.core.invoke("command_name", { args })`.
+- **Keep docs in sync**: If you add/remove commands, update the Backend Commands table above so README stays accurate.
 
 ## Notes for Larger Libraries
 
