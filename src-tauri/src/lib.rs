@@ -14,7 +14,6 @@ use std::panic;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use futures::stream::{self};
 
 use walkdir::WalkDir;
 
@@ -100,7 +99,8 @@ pub struct CrossrefMessage {
     pub volume: Option<String>,
     pub issue: Option<String>,
     pub page: Option<String>,
-    pub DOI: Option<String>,
+    #[serde(rename = "DOI")]
+    pub doi: Option<String>,
     #[serde(rename = "abstract")]
     pub abstract_raw: Option<String>,
     pub reference: Option<Vec<CrossrefReference>>,
@@ -1705,7 +1705,7 @@ async fn fetch_doi_metadata(state: tauri::State<'_, Mutex<AppState>>, doi: Strin
     let volume = msg.volume.unwrap_or_default();
     let number = msg.issue.unwrap_or_default();
     let pages = msg.page.unwrap_or_default();
-    let returned_doi = msg.DOI.unwrap_or(clean_doi.clone());
+    let returned_doi = msg.doi.unwrap_or(clean_doi.clone());
 
     let mut abstract_text = msg.abstract_raw.unwrap_or_default();
     // Strip common JATS XML tags
@@ -1833,7 +1833,7 @@ fn fetch_doi_metadata_sync(state: &AppState, doi: &str) -> Result<Metadata, Stri
     let volume = msg.volume.unwrap_or_default();
     let number = msg.issue.unwrap_or_default();
     let pages = msg.page.unwrap_or_default();
-    let returned_doi = msg.DOI.unwrap_or(clean_doi.clone());
+    let returned_doi = msg.doi.unwrap_or(clean_doi.clone());
 
     let mut abstract_text = msg.abstract_raw.unwrap_or_default();
     for tag in &["<jats:title>Abstract</jats:title>", "<jats:p>", "<jats:sec>", "</jats:sec>", "<sec>", "</sec>", "<title>", "</title>"] {

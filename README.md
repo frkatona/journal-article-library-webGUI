@@ -140,6 +140,50 @@ library_data/
 
 > **Tip**: Keep original PDFs in `Articles/` and avoid renaming files after tagging — article IDs are derived from file paths, so moving files creates new IDs.
 
+## Syncing Between Computers
+
+If you use this library on multiple machines, keep synchronization simple and predictable.  
+The key requirement is that `Articles/` and `library_data/` stay in sync together.
+
+### Option 1: Sync the whole project folder (simplest)
+
+Put the project folder inside a cloud-synced location (OneDrive, Dropbox, Google Drive, Syncthing, etc.) so both PDFs and metadata move together.
+
+Pros:
+- Easiest setup.
+- Lowest chance of accidentally separating PDFs and metadata.
+
+Watch-outs:
+- Avoid opening/editing on two computers at the same time.
+- Let sync finish before launching the app on another machine.
+
+### Option 2: Sync only data folders
+
+If you keep source code separate, sync only:
+- `Articles/`
+- `library_data/`
+
+Typical tools:
+- Windows: `robocopy`
+- macOS/Linux: `rsync`
+
+This works well if you always preserve the same relative folder structure.
+
+### Option 3: Git-based metadata + shared PDFs
+
+You can version `library_data/` with Git while storing PDFs in:
+- Git LFS, or
+- a shared/network/cloud folder mounted at the same path pattern on each machine.
+
+This gives history for metadata edits but adds workflow overhead (pull/commit/push discipline).
+
+### Practical rules to prevent conflicts
+
+1. Use one machine at a time for metadata editing when possible.
+2. Finish file sync before reindexing or bulk DOI operations on another machine.
+3. Keep PDF file paths stable: article IDs derive from file paths, so moves/renames create new IDs.
+4. Keep periodic backups of `library_data/overrides/` for easy recovery.
+
 ## How It's Built
 
 ### Architecture
@@ -243,7 +287,6 @@ The application utilizes the **Crossref API** (`https://api.crossref.org/works/{
   - [x] remove excess text from top of page
   - [x] give the 'display' dropdown a title like 'files' has "file management"
 
-
 - features
   - [x] allow a left click down (but not a click release) to click out of the metadata modal
   - [x] process pasted input to the "authors" and abstract" fields to try to fix common PDF copy-paste issues (astrices, number/letter superscripts, consistency in '.' after initials, 'and' vs '&',oxford commas, and line breaks)
@@ -280,7 +323,6 @@ The application utilizes the **Crossref API** (`https://api.crossref.org/works/{
     - macs, linux, android, ios? still windows, but with non-x64 CPU architectures?
       - github actions to spin up environment and perform tauri build for each desired platform
   - what happens to the thumbnails on disk and memory when replaced?
-
 
 - stretch or stupid
   - 'check for updates' button
@@ -357,8 +399,6 @@ CLI warnings:
   - [x] use a natural language processing sentence tokenizer model to chunk the abstract into sentences instead of just splitting on periods
   - [x] consider additional artifacts, like hyphenated line wraps and ligatures from the PDFs
   - [x] the degrees symbol appears to sometimes be replaced with "", and +/- symbols seem sometimes replaced with "G"
-
-  
   
 ### think about more first
 

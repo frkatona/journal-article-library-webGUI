@@ -11,6 +11,39 @@ const DEFAULT_HOTKEYS = {
     copyBibtex: { ctrl: false, alt: false, shift: true },  // Shift+click
     openLocation: { ctrl: true, alt: false, shift: true },  // Ctrl+Shift+click
 };
+
+const SHOW_REF_DOIS_KEY = "article-show-ref-dois";
+const SHOW_REF_DOIS_PREF_TOUCHED_KEY = "article-show-ref-dois-pref-touched";
+
+function initShowRefDoisPreference() {
+    const raw = window.localStorage.getItem(SHOW_REF_DOIS_KEY);
+    const wasTouched = window.localStorage.getItem(SHOW_REF_DOIS_PREF_TOUCHED_KEY) === "true";
+
+    // Migrate older installs where this preference could be persisted off unexpectedly.
+    if (!wasTouched && raw === "false") {
+        window.localStorage.setItem(SHOW_REF_DOIS_KEY, "true");
+        return true;
+    }
+    return raw !== "false";
+}
+
+function getReferenceDois(md) {
+    const metadata = md || {};
+    const rawList = [metadata.ref_dois, metadata.refDois, metadata.reference_dois, metadata.referenceDois]
+        .find(Array.isArray) || [];
+
+    return rawList
+        .map((item) => {
+            if (typeof item === "string") return item.trim();
+            if (item && typeof item === "object") {
+                const doiLike = item.DOI || item.doi || item.reference_doi || item.referenceDOI || "";
+                return typeof doiLike === "string" ? doiLike.trim() : "";
+            }
+            return "";
+        })
+        .filter(Boolean);
+}
+
 const state = {
     query: "",
     tags: [],
@@ -43,7 +76,7 @@ const state = {
     hotkeys: JSON.parse(window.localStorage.getItem("article-hotkeys") || "null") || { ...DEFAULT_HOTKEYS },
     nicheTags: JSON.parse(window.localStorage.getItem("article-niche-tags") || "[]"),
     hideNiche: window.localStorage.getItem("article-hide-niche") !== "false",
-    showRefDois: window.localStorage.getItem("article-show-ref-dois") !== "false",
+    showRefDois: initShowRefDoisPreference(),
     acIndex: -1,
     isEscaping: false,
     abstractPreviewArticle: null,
@@ -1464,7 +1497,7 @@ function openAbstract(article) {
     dom.abstractModal.classList.remove("hidden");
 
     // Show stored ref_dois from DOI fetch (if any and enabled)
-    const storedRefDois = md.ref_dois || [];
+    const storedRefDois = getReferenceDois(md);
     let nextReferenceOrdinal = 1;
     if (dom.abstractReferencesSection && storedRefDois.length > 0 && state.showRefDois) {
         const ownDoi = normalizeWhitespace(md.doi).toLowerCase();
@@ -1521,7 +1554,7 @@ function openAbstract(article) {
             const matches = text.match(/\b10\.\d{4,9}\/[-._;()/:A-Za-z0-9]+\b/g) || [];
             const uniqueDois = [...new Set(matches)];
             const ownDoi = normalizeWhitespace(md.doi).toLowerCase();
-            const alreadyShown = new Set((md.ref_dois || []).map((d) =>
+            const alreadyShown = new Set(getReferenceDois(md).map((d) =>
                 normalizeWhitespace(extractDoiFromText(d) || d).toLowerCase(),
             ));
             const refDois = uniqueDois.filter((d) => {
@@ -2049,9 +2082,7 @@ async function saveMetadata(evt) {
     const abstractValue = dom.abstract.value.replace(/\r\n/g, "\n");
     const notesValue = dom.notes.value.replace(/\r\n/g, "\n");
     const trigger = evt?.type || "manual";
-    const refDois = Array.isArray(state.current?.metadata?.ref_dois)
-        ? state.current.metadata.ref_dois
-        : [];
+    const refDois = getReferenceDois(state.current?.metadata);
 
     const payload = {
         title: dom.title.value.trim(),
@@ -2573,7 +2604,8 @@ function wireEvents() {
         dom.showRefDoisCheckbox.checked = state.showRefDois;
         dom.showRefDoisCheckbox.addEventListener("change", () => {
             state.showRefDois = dom.showRefDoisCheckbox.checked;
-            window.localStorage.setItem("article-show-ref-dois", state.showRefDois ? "true" : "false");
+            window.localStorage.setItem(SHOW_REF_DOIS_KEY, state.showRefDois ? "true" : "false");
+            window.localStorage.setItem(SHOW_REF_DOIS_PREF_TOUCHED_KEY, "true");
         });
     }
 
@@ -3195,8 +3227,9 @@ function wireEvents() {
             if (meta.doi) dom.doi.value = meta.doi;
             // Store ref DOIs on the current article's metadata in memory
             if (state.current) {
-                state.current.metadata.ref_dois = meta.ref_dois || [];
-                await persistReferenceDois(state.current.id, state.current.metadata.ref_dois);
+                const fetchedRefDois = getReferenceDois(meta);
+                state.current.metadata.ref_dois = fetchedRefDois;
+                await persistReferenceDois(state.current.id, fetchedRefDois);
             }
 
             debugLog(`Crossref metadata fetched for DOI ${doiStr}.`);

@@ -1,23 +1,11 @@
-### immediate
+### immediate (bug fixes, small features)
 
-- [ ] number the reference DOIs
-
-- [ ] 'new custom theme' -> give it a name and let is save to the file system and be selectable in the theme dropdown
-
-- [ ] fix niche chips preventing autofill elsewhere and appearing with strange characters in the niche field
+- [ ] niche filters not hiding properly
+  - [ ] fix niche chips preventing autofill elsewhere and appearing with strange characters in the niche field
 
 - [ ] default 'warn duplicate DOIs' to on in the file settings
 
-- [ ] when should I be considering a database approach?  is there a nice way to visualize that during development?
-
-- [ ] show 'metadata saved' each time its saved (moving between fields, clicking the save button, pushing 'enter' to exit the modal)
-
-- [ ] check on the warnings in the console log
-  - try to better understand the snake/camel case relationship between the front and back end here
-
-- [ ] consider ways to synchronize metadata (and papers) between multiple computers
-
-- [ ] slider to lower the maximum value
+- [ ] brightness adjustments (lowering max value across the window, filtering the thumbnails, etc.)
 
 - [ ] how can I have the selected article active in the folder when I select "open in folder" like windows does when using "open file location"
 
@@ -28,6 +16,16 @@
   - structure field `DOI` should have a snake case name --> src\lib.rs:103:9
   - `literature-library` (lib) generated 2 warnings (run `cargo fix --lib -p literature-library` to apply 1 suggestion)
    
+### major version revision features
+
+- [ ] consider ways to synchronize metadata (and papers) between multiple computers
+
+- [ ] how-to-use modal for first time user (hotkeys, colors, editing metadata, pasting images, toggling views) with a "show first-time helper" in the '?' modal
+
+### minor version revision features
+
+- [ ] 'new custom theme' -> give it a name and let is save to the file system and be selectable in the theme dropdown
+  
 ### flesh out
 
 - [ ] include a resizing/cropping feature to the 'paste thumbnail image' to encourage getting large screenshots and cropping in
@@ -40,10 +38,10 @@
 
 - [ ] show a prompt to accept or undo the changes for drag-and-drop thumbnails
 
-- [ ] cleaning input
-  - add preferences for how to clean ("and" vs "&" vs none, periods after initials, keep asterisks for PIs, casing {remove all uppercases?  force sentence vs title casing? how to chunk the abstract - 3 * 1/3 sentences?}) in the files menu
+- [ ] pivot how articles are indexed so that filename changes aren't breaking?
 
-- [ ] how-to-use modal for first time user (hotkeys, colors, editing metadata, pasting images, toggling views) with a "show first-time helper" in the '?' modal
+### questions
 
+- when should I be considering a database approach?  is there a nice way to visualize that during development?
 
-- [ ] pivot how articles are indexed so that filename changes aren't breaking
+- try to better understand the snake/camel case relationship between the front and back end here
