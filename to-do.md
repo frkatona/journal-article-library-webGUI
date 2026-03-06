@@ -1,7 +1,12 @@
 ### immediate (bug fixes, small features)
 
+- [ ] try to maintain at least 2 sentences for each section in the abstract separation.
+
 - [ ] niche filters not hiding properly
   - [ ] fix niche chips preventing autofill elsewhere and appearing with strange characters in the niche field
+  - [x] just putting in 'experimental for now'
+
+- [ ] make referenced dois into columns instead of one row and several columns
 
 - [ ] default 'warn duplicate DOIs' to on in the file settings
 

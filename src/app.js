@@ -82,7 +82,7 @@ const state = {
     abstractPreviewArticle: null,
     wellnessTipIndex: Number.parseInt(window.localStorage.getItem("article-wellness-tip-index") || "0", 10),
     showErrorsGlobally: window.localStorage.getItem("article-show-errors") !== "false",
-    abstractSectionCount: Number.parseInt(window.localStorage.getItem("article-abstract-sections") || "3", 10),
+    abstractSectionCount: Number.parseInt(window.localStorage.getItem("article-abstract-sections") || "4", 10),
     debugMode: window.localStorage.getItem("article-debug-mode") === "true",
 };
 
@@ -205,6 +205,7 @@ const dom = {
     nicheTagChipContainer: document.getElementById("niche-tag-chip-container"),
     nicheTagsInput: document.getElementById("niche-tags-input"),
     showRefDoisCheckbox: document.getElementById("show-ref-dois"),
+    abstractSectionCountValue: document.getElementById("abstract-section-count-value"),
     abstractSectionCountInput: document.getElementById("abstract-section-count"),
 };
 const SORT_KEYS = new Set([
@@ -348,9 +349,9 @@ function setFilesMenuOpen(isOpen) {
     if (isOpen && state.displayMenuOpen) setDisplayMenuOpen(false);
 }
 
-function wireDisplaySliderToggles() {
-    if (!dom.displayMenu) return;
-    const sliderFields = Array.from(dom.displayMenu.querySelectorAll("[data-slider-field]"));
+function wireSliderToggles(container) {
+    if (!container) return;
+    const sliderFields = Array.from(container.querySelectorAll("[data-slider-field]"));
     if (sliderFields.length === 0) return;
 
     const collapseAll = () => {
@@ -402,8 +403,8 @@ function setStatus(text, isWarning = false) {
 
 function clampAbstractSectionCount(value) {
     const parsed = Number.parseInt(String(value), 10);
-    if (Number.isNaN(parsed)) return 3;
-    return Math.max(1, Math.min(12, parsed));
+    if (Number.isNaN(parsed)) return 4;
+    return Math.max(1, Math.min(7, parsed));
 }
 
 function applyAbstractSectionCount(value) {
@@ -411,6 +412,9 @@ function applyAbstractSectionCount(value) {
     state.abstractSectionCount = count;
     if (dom.abstractSectionCountInput) {
         dom.abstractSectionCountInput.value = String(count);
+    }
+    if (dom.abstractSectionCountValue) {
+        dom.abstractSectionCountValue.textContent = String(count);
     }
 }
 
@@ -627,7 +631,7 @@ function splitSentencesIntoSections(sentences, sectionCount) {
         const remainingSections = targetSections - sectionIndex;
         const remainingSentences = clean.length - index;
         if (remainingSections === 1) {
-            sections.push(clean.slice(index).join(" "));
+            sections.push(clean.slice(index));
             break;
         }
 
@@ -642,11 +646,41 @@ function splitSentencesIntoSections(sentences, sectionCount) {
         }
         if (take < 1) take = 1;
 
-        sections.push(clean.slice(index, index + take).join(" "));
+        sections.push(clean.slice(index, index + take));
         index += take;
     }
 
-    return sections.filter(Boolean);
+    // If a section ends up with a single sentence, merge it into the neighboring
+    // section that currently has fewer sentences (while preserving sentence order).
+    let changed = true;
+    while (changed && sections.length > 1) {
+        changed = false;
+        if (sections.every((section) => section.length === 1)) break;
+
+        for (let i = 0; i < sections.length; i++) {
+            if (sections[i].length !== 1) continue;
+
+            const leftCount = i > 0 ? sections[i - 1].length : Number.POSITIVE_INFINITY;
+            const rightCount = i < sections.length - 1 ? sections[i + 1].length : Number.POSITIVE_INFINITY;
+            const loneSentence = sections[i][0];
+
+            if (!Number.isFinite(leftCount) && !Number.isFinite(rightCount)) continue;
+
+            if (leftCount <= rightCount && Number.isFinite(leftCount)) {
+                sections[i - 1].push(loneSentence);
+            } else if (Number.isFinite(rightCount)) {
+                sections[i + 1].unshift(loneSentence);
+            } else if (Number.isFinite(leftCount)) {
+                sections[i - 1].push(loneSentence);
+            }
+
+            sections.splice(i, 1);
+            changed = true;
+            break;
+        }
+    }
+
+    return sections.map((section) => section.join(" ")).filter(Boolean);
 }
 
 function cleanAbstract(raw, sectionCount = 3) {
@@ -2485,7 +2519,8 @@ function wireEvents() {
     applyAbstractSectionCount(state.abstractSectionCount);
     setDisplayMenuOpen(false);
     setFilesMenuOpen(false);
-    wireDisplaySliderToggles();
+    wireSliderToggles(dom.displayMenu);
+    wireSliderToggles(dom.filesMenu);
 
     dom.searchInput.addEventListener("input", debouncedSearch);
 
@@ -2614,7 +2649,7 @@ function wireEvents() {
         const commitSectionCount = () => {
             applyAbstractSectionCount(dom.abstractSectionCountInput.value);
             window.localStorage.setItem("article-abstract-sections", String(state.abstractSectionCount));
-            debugLog(`Abstract section count set to ${state.abstractSectionCount}.`);
+            debugLog(`Abstract partitioning strength set to ${state.abstractSectionCount}.`);
         };
         dom.abstractSectionCountInput.addEventListener("input", commitSectionCount);
         dom.abstractSectionCountInput.addEventListener("change", commitSectionCount);
