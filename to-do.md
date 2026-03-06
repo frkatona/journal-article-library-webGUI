@@ -4,23 +4,13 @@
 
 - [ ] 'new custom theme' -> give it a name and let is save to the file system and be selectable in the theme dropdown
 
-- [x] have the niche tags use chips components
-  - [ ] fix it preventing autofill elsewhere and appearing with strange characters in the niche field
-
-- abstract style
-  - [x] center align year/author/journal and move the 'open article' button
-  - [x] un-bold year
+- [ ] fix niche chips preventing autofill elsewhere and appearing with strange characters in the niche field
 
 - [ ] default 'warn duplicate DOIs' to on in the file settings
 
 - [ ] when should I be considering a database approach?  is there a nice way to visualize that during development?
 
 - [ ] show 'metadata saved' each time its saved (moving between fields, clicking the save button, pushing 'enter' to exit the modal)
-
-- [ ] fine-tune the abstract sentence separation
-  - [x] use a natural language processing sentence tokenizer model to chunk the abstract into sentences instead of just splitting on periods
-  - [x] consider additional artifacts, like hyphenated line wraps and ligatures from the PDFs
-  - [ ] the 'degrees' symbol appears to sometimes be replaced with "", and +/- symbols seem sometimes replaced with "G"
 
 - [ ] check on the warnings in the console log
   - try to better understand the snake/camel case relationship between the front and back end here

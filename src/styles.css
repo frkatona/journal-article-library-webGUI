@@ -345,6 +345,29 @@ main {
   max-width: 210px;
 }
 
+.slider-collapsible [data-slider-toggle] {
+  cursor: pointer;
+  user-select: none;
+}
+
+.slider-collapsible:not(.expanded)>input[type="range"] {
+  display: none;
+}
+
+.slider-collapsible>input[type="range"] {
+  width: 100%;
+}
+
+.slider-caret {
+  color: var(--muted);
+  font-size: 0.76rem;
+  transition: transform 140ms ease;
+}
+
+.slider-collapsible.expanded .slider-caret {
+  transform: rotate(90deg);
+}
+
 .sort-field {
   min-width: 200px;
 }

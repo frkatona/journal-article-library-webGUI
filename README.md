@@ -348,7 +348,16 @@ CLI warnings:
     - create a little animation for this one
   - Reset your posture - squeeze your should blades together; hold 5 seconds; repeat 5 times
   - Mouth check!  Relax your jaw and let your tongue rest gently against the roof of your mouth
-  - Affect Labeling - "labeling negative feelings can down-regulate distress" - (2022)[https://doi.org/10.1371/journal.pone.0279303]
+  - Affect Labeling - "labeling negative feelings can down-regulate distress" - (2022)[https://doi.org/10.1371/journal.pone.0279303].
+- abstract style
+  - [x] center align year/author/journal and move the 'open article' button
+  - [x] un-bold year
+- [x] have the niche tags use chips components
+- [x] fine-tune the abstract sentence separation
+  - [x] use a natural language processing sentence tokenizer model to chunk the abstract into sentences instead of just splitting on periods
+  - [x] consider additional artifacts, like hyphenated line wraps and ligatures from the PDFs
+  - [x] the degrees symbol appears to sometimes be replaced with "", and +/- symbols seem sometimes replaced with "G"
+
   
   
 ### think about more first

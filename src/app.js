@@ -315,6 +315,50 @@ function setFilesMenuOpen(isOpen) {
     if (isOpen && state.displayMenuOpen) setDisplayMenuOpen(false);
 }
 
+function wireDisplaySliderToggles() {
+    if (!dom.displayMenu) return;
+    const sliderFields = Array.from(dom.displayMenu.querySelectorAll("[data-slider-field]"));
+    if (sliderFields.length === 0) return;
+
+    const collapseAll = () => {
+        sliderFields.forEach((field) => {
+            field.classList.remove("expanded");
+            const toggle = field.querySelector("[data-slider-toggle]");
+            if (toggle) toggle.setAttribute("aria-expanded", "false");
+        });
+    };
+
+    sliderFields.forEach((field) => {
+        const toggle = field.querySelector("[data-slider-toggle]");
+        if (!(toggle instanceof HTMLElement)) return;
+
+        toggle.setAttribute("role", "button");
+        toggle.setAttribute("tabindex", "0");
+        toggle.setAttribute("aria-expanded", field.classList.contains("expanded") ? "true" : "false");
+
+        const activate = (evt) => {
+            if (evt.type === "click") {
+                const clickTarget = evt.target;
+                if (clickTarget instanceof HTMLElement && clickTarget.closest("[data-slider-inline-control]")) return;
+                evt.preventDefault();
+            } else if (evt.type === "keydown") {
+                if (evt.key !== "Enter" && evt.key !== " ") return;
+                evt.preventDefault();
+            }
+
+            const willExpand = !field.classList.contains("expanded");
+            collapseAll();
+            if (willExpand) {
+                field.classList.add("expanded");
+                toggle.setAttribute("aria-expanded", "true");
+            }
+        };
+
+        toggle.addEventListener("click", activate);
+        toggle.addEventListener("keydown", activate);
+    });
+}
+
 function setStatus(text, isWarning = false) {
     dom.statusLine.textContent = text;
     dom.statusLine.classList.toggle("warning", isWarning);
@@ -2410,6 +2454,7 @@ function wireEvents() {
     applyAbstractSectionCount(state.abstractSectionCount);
     setDisplayMenuOpen(false);
     setFilesMenuOpen(false);
+    wireDisplaySliderToggles();
 
     dom.searchInput.addEventListener("input", debouncedSearch);
 

@@ -212,41 +212,64 @@
                                 <option value="courier">Courier New</option>
                             </select>
                         </label>
-                        <label class="field" style="margin-top: 4px;">
-                            <div style="display:flex; justify-content:space-between; align-items:flex-end;">
+                        <div class="field slider-collapsible" data-slider-field style="margin-top: 4px;">
+                            <div data-slider-toggle style="display:flex; justify-content:space-between; align-items:flex-end; gap:8px;">
                                 <span>Card Height <strong id="card-height-value">138</strong>px</span>
-                                <label
-                                    style="display:flex; align-items:center; gap:4px; font-size:0.8rem; cursor:pointer;"
-                                    title="Auto-scale heights to remove letterboxing">
-                                    <input id="card-height-autofit" type="checkbox" /> Auto-fit
-                                </label>
+                                <div style="display:flex; align-items:center; gap:8px;">
+                                    <label data-slider-inline-control
+                                        style="display:flex; align-items:center; gap:4px; font-size:0.8rem; cursor:pointer;"
+                                        title="Auto-scale heights to remove letterboxing">
+                                        <input id="card-height-autofit" type="checkbox" /> Auto-fit
+                                    </label>
+                                    <span class="slider-caret" aria-hidden="true">&#9656;</span>
+                                </div>
                             </div>
                             <input id="card-height-slider" type="range" min="100" max="640" step="2" value="138" />
-                        </label>
-                        <label class="field">
-                            <span>Card Width <strong id="card-width-value">200</strong>px</span>
+                        </div>
+                        <div class="field slider-collapsible" data-slider-field>
+                            <span data-slider-toggle
+                                style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                                <span>Card Width <strong id="card-width-value">200</strong>px</span>
+                                <span class="slider-caret" aria-hidden="true">&#9656;</span>
+                            </span>
                             <input id="card-width-slider" type="range" min="120" max="600" step="2" value="200" />
-                        </label>
-                        <label class="field">
-                            <span>Card Font <strong id="card-font-value">14</strong>px</span>
+                        </div>
+                        <div class="field slider-collapsible" data-slider-field>
+                            <span data-slider-toggle
+                                style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                                <span>Card Font <strong id="card-font-value">14</strong>px</span>
+                                <span class="slider-caret" aria-hidden="true">&#9656;</span>
+                            </span>
                             <input id="card-font-slider" type="range" min="10" max="32" step="1" value="14" />
-                        </label>
-                        <label class="field">
-                            <span>Modal Backdrop Darkness <strong id="modal-backdrop-value">58</strong>%</span>
+                        </div>
+                        <div class="field slider-collapsible" data-slider-field>
+                            <span data-slider-toggle
+                                style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                                <span>Modal Backdrop Darkness <strong id="modal-backdrop-value">58</strong>%</span>
+                                <span class="slider-caret" aria-hidden="true">&#9656;</span>
+                            </span>
                             <input id="modal-backdrop-slider" type="range" min="0" max="95" step="1" value="58" />
-                        </label>
-                        <label class="field">
-                            <span>UI Surface Opacity <strong id="surface-opacity-value">100</strong>%</span>
+                        </div>
+                        <div class="field slider-collapsible" data-slider-field>
+                            <span data-slider-toggle
+                                style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                                <span>UI Surface Opacity <strong id="surface-opacity-value">100</strong>%</span>
+                                <span class="slider-caret" aria-hidden="true">&#9656;</span>
+                            </span>
                             <input id="surface-opacity-slider" type="range" min="30" max="100" step="1" value="100" />
-                        </label>
+                        </div>
                         <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
                             <input id="tint-by-tag" type="checkbox" />
                             <span style="font-size:0.82rem;">Tint by Tag</span>
                         </label>
-                        <label class="field">
-                            <span>Color Intensity <strong id="color-intensity-value">13</strong>%</span>
+                        <div class="field slider-collapsible" data-slider-field>
+                            <span data-slider-toggle
+                                style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                                <span>Color Intensity <strong id="color-intensity-value">13</strong>%</span>
+                                <span class="slider-caret" aria-hidden="true">&#9656;</span>
+                            </span>
                             <input id="color-intensity-slider" type="range" min="0" max="100" step="1" value="13" />
-                        </label>
+                        </div>
                         <button id="edit-tag-colors-btn" type="button" class="ghost">Edit Tag Colors</button>
                     </div>
                 </div>

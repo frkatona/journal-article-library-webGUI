@@ -1635,10 +1635,11 @@ async fn fetch_doi_metadata(state: tauri::State<'_, Mutex<AppState>>, doi: Strin
         return Err("DOI cannot be empty".into());
     }
 
-    let data_dir = {
-        let st = state.lock().unwrap();
-        st.data_dir.clone()
-    };
+    let data_dir = state
+        .lock()
+        .map_err(|e| format!("State lock error during DOI fetch: {}", e))?
+        .data_dir
+        .clone();
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(15))
@@ -2199,25 +2200,35 @@ fn get_article_text_front(
     state: tauri::State<'_, Mutex<AppState>>,
     article_id: String,
 ) -> Result<String, String> {
-    let mut st = state.lock().map_err(|e| e.to_string())?;
-    let index = load_index(&mut st);
-    let article = index
-        .articles
-        .iter()
-        .find(|a| a.id == article_id)
-        .ok_or_else(|| "Article not found".to_string())?;
-
-    let pdf_path = st.articles_dir.join(&article.pdf_filename);
+    let (pdf_path, data_dir) = {
+        let mut st = state.lock().map_err(|e| e.to_string())?;
+        let index = load_index(&mut st);
+        let article = index
+            .articles
+            .iter()
+            .find(|a| a.id == article_id)
+            .ok_or_else(|| "Article not found".to_string())?;
+        (st.articles_dir.join(&article.pdf_filename), st.data_dir.clone())
+    };
     if !pdf_path.exists() {
         return Err("PDF file not found".into());
     }
 
-    match pdf_extract::extract_text(&pdf_path) {
-        Ok(text) => {
+    match panic::catch_unwind(panic::AssertUnwindSafe(|| pdf_extract::extract_text(&pdf_path))) {
+        Ok(Ok(text)) => {
             let prefix: String = text.chars().take(10000).collect();
             Ok(prefix)
         }
-        Err(e) => Err(format!("Failed to extract text from PDF: {:?}", e)),
+        Ok(Err(e)) => {
+            let msg = format!("Failed to extract front text from PDF '{}': {:?}", pdf_path.display(), e);
+            write_crash_log(&data_dir, &msg);
+            Err(msg)
+        }
+        Err(_) => {
+            let msg = format!("Panic while extracting front text from PDF '{}'.", pdf_path.display());
+            write_crash_log(&data_dir, &msg);
+            Err(msg)
+        }
     }
 }
 
@@ -2226,27 +2237,37 @@ fn get_article_text_back(
     state: tauri::State<'_, Mutex<AppState>>,
     article_id: String,
 ) -> Result<String, String> {
-    let mut st = state.lock().map_err(|e| e.to_string())?;
-    let index = load_index(&mut st);
-    let article = index
-        .articles
-        .iter()
-        .find(|a| a.id == article_id)
-        .ok_or_else(|| "Article not found".to_string())?;
-
-    let pdf_path = st.articles_dir.join(&article.pdf_filename);
+    let (pdf_path, data_dir) = {
+        let mut st = state.lock().map_err(|e| e.to_string())?;
+        let index = load_index(&mut st);
+        let article = index
+            .articles
+            .iter()
+            .find(|a| a.id == article_id)
+            .ok_or_else(|| "Article not found".to_string())?;
+        (st.articles_dir.join(&article.pdf_filename), st.data_dir.clone())
+    };
     if !pdf_path.exists() {
         return Err("PDF file not found".into());
     }
 
-    match pdf_extract::extract_text(&pdf_path) {
-        Ok(text) => {
+    match panic::catch_unwind(panic::AssertUnwindSafe(|| pdf_extract::extract_text(&pdf_path))) {
+        Ok(Ok(text)) => {
             let total_chars = text.chars().count();
             let start = total_chars.saturating_sub(15000);
             let suffix: String = text.chars().skip(start).collect();
             Ok(suffix)
         }
-        Err(e) => Err(format!("Failed to extract text from PDF: {:?}", e)),
+        Ok(Err(e)) => {
+            let msg = format!("Failed to extract back text from PDF '{}': {:?}", pdf_path.display(), e);
+            write_crash_log(&data_dir, &msg);
+            Err(msg)
+        }
+        Err(_) => {
+            let msg = format!("Panic while extracting back text from PDF '{}'.", pdf_path.display());
+            write_crash_log(&data_dir, &msg);
+            Err(msg)
+        }
     }
 }
 
@@ -2319,7 +2340,10 @@ fn write_crash_log(data_dir: &Path, message: &str) {
 
 #[tauri::command]
 fn get_crash_log(state: tauri::State<'_, Mutex<AppState>>) -> String {
-    let data_dir = state.lock().unwrap().data_dir.clone();
+    let data_dir = match state.lock() {
+        Ok(st) => st.data_dir.clone(),
+        Err(e) => return format!("Could not access crash log directory: {}", e),
+    };
     let log_path = data_dir.join("crash.log");
     fs::read_to_string(&log_path).unwrap_or_else(|_| "No crash log found.".to_string())
 }
@@ -2347,6 +2371,24 @@ pub fn run() {
 
             let app_state = AppState::new(root_dir);
             app_state.ensure_dirs();
+            let panic_log_dir = app_state.data_dir.clone();
+            let default_hook = panic::take_hook();
+            panic::set_hook(Box::new(move |info| {
+                let location = info
+                    .location()
+                    .map(|loc| format!("{}:{}", loc.file(), loc.line()))
+                    .unwrap_or_else(|| "unknown location".to_string());
+                let payload = if let Some(s) = info.payload().downcast_ref::<&str>() {
+                    (*s).to_string()
+                } else if let Some(s) = info.payload().downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "non-string panic payload".to_string()
+                };
+                let message = format!("PANIC at {}: {}", location, payload);
+                write_crash_log(&panic_log_dir, &message);
+                default_hook(info);
+            }));
             app.manage(Mutex::new(app_state));
             Ok(())
         })
