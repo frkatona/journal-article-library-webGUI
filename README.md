@@ -6,17 +6,87 @@ Windows application for browsing local PDFs, geared towards collections of scien
 
 The PDFs still open in the default viewer, but the browser facilitates searches with visual thumbnail cards with various customizations.  There are also tags/filters with custom colorization and search functions, fields for note-taking, abstract previews, and hotkeys for tedious tasks, like BibTex-to-clipboard.
 
-## example front page
+## front page
 
-![hero shot of front page](readme-images/hero.png)
+Drag-and-drop PDFs onto the open application window. The PDFs will be copied to the `Articles/` folder at the project root and displayed as a card in the application
 
-## example abstract modal
+![front page](readme-images/hero.png)
+
+---
+
+## metadata editing
+
+![metadata](readme-images/metadata.png)
+
+ - use 'fetch' to automatically parse PDF for DOI and fill metadata found on API request (internet connection required)
+
+ - take a custom thumbnail with Windows snip tool (windows + shift + S) and click "Paste from Clipboard"
+
+ - 'tags' are entered and managed as chips with tab-autocompletion
+
+---
+
+## abstract preview
 
 ![example of modal which appears of the abstract when abstract button is selected](readme-images/abstract_modal.png)
 
+ - abstract text content added to the metadata modal, whether parsed from PDF or manually pasted, are automatically processed and segmented to a cleaner, more digestable view here
+
+ - if metadata was 'fetched' in the metadata modal, hyperlinked reference DOIs automatically populate here
+
+---
+
+## tags and filters
+
+![tags and filters](readme-images/filters.png)
+
+- select from tags assigned to articles in their metadata modal
+
+- choose filter mode (show matches with 'any', 'all', or 'none' of the selected tags) 
+
+---
+
+## shortcuts
+
+![shortcuts](readme-images/shortcuts.png)
+
+- click event modifiers on article cards
+ - open the article in the default PDF viewer
+ - open the metadata editor modal
+ - open the abstract modal
+ - open the article file location on device
+ - copy the BibTeX-formatted citation information to the clipboard (LaTeX bibliography file formatting)
+
+- keyboard events
+  - paste thumbnail from clipboard (while anywhere in the metadata modal OR to the card under the cursor in the card view)
+  - save and exit metadata modal
+  
+---
+
+## display and themes
+
+![themes](readme-images/themes.png)
+
+ - display settings unrelated to color theme are also available in the display menu
+   - font
+   - card size
+   - modal opacity
+   - modal focus (background darkening)
+ - simple file view from the front page toggle (Card <-> List)
+
+---
+
+# Installation
+
+Download the latest installer on the GitHub repo releases page [here](https://github.com/frkatona/journal-article-library-webGUI/releases)
+
+# Development details
+
 Built with [Tauri v2](https://tauri.app/) (Rust backend + JS frontend).  The windows installer is available in the releases tab.
 
-## Installation
+- edits are saved as override files in `library_data/overrides/` and survive reindexing
+
+## Dev build
 
 ### Prerequisites
 
@@ -45,43 +115,7 @@ npx tauri dev
 
 This compiles the Rust backend and opens the app window with hot-reload for frontend changes.
 
-## Usage
-
-### Adding Articles
-
-Drag-and-drop PDFs onto the open application window.  The PDFs will be copied to the `Articles/` folder at the project root.
-
-#### Filename Convention (Optional)
-
-For default auto-extraction, name your PDFs using this pattern:
-
-```text
-(<year>) <authors> - <title>.pdf
-```
-
-For example: `(2023) Chen, Li - Neural Architecture Search.pdf`
-
-The app will parse title, authors, and year directly from this pattern. If your filenames don't follow this convention, the app will still work — it falls back to PDF metadata and the raw filename, with a metadata API fallback for known DOIs.
-
-### Browsing & Searching
-
-- **Search bar**: type any keyword to filter articles across all metadata fields (title, authors, abstract, tags, DOI, notes, etc.)
-- **Tag filter**: use the dropdown to filter by assigned tags
-- **Sort**: choose primary and secondary sort criteria (year, title, authors, journal)
-- **View modes**: toggle between thumbnail card grid and compact list view
-- **Card size**: adjust the card height slider in the settings panel
-
-### Editing Metadata
-
-Click the `edit metadata` button (also, `ctrl+shift+click`) on any article card to open the edit modal. You can modify:
-
-- Title, authors, year, journal, DOI
-- Abstract
-- Tags (comma-separated)
-- Notes
-- Thumbnail mode (auto or manual)
-
-All manual edits are saved as override files in `library_data/overrides/` and survive reindexing.
+# Misc. notes
 
 ### Pasted Abstract Processing
 
@@ -104,21 +138,12 @@ Current pipeline:
 
 This system is designed to reduce common PDF copy-paste noise while keeping abstract structure readable in both metadata and preview views.
 
-### Thumbnails
+### Thumbnails auto-generation attempts
 
 The app can attempt a thumbnail auto-generation from your PDFs:
 
-- **Hybrid** (default): extracts the best embedded image from the PDF; falls back to a placeholder if none found
+- **Hybrid**: extracts the best embedded image from the PDF; falls back to a placeholder if none found
 - **Embedded**: only uses embedded images from the PDF
-- **Manual upload**: drag-and-drop or click to upload a custom thumbnail image
-
-To change the thumbnail strategy, use the settings panel in the app header.
-
-The suggested method, however, is to snip your preferred thumbnail image `windows+shift+s` and then upload it in the  `edit metadata` window with the `paste from clipboard` button under the current image preview.
-
-### Opening PDFs
-
-Left-click on any article card to open the PDF in your system's default viewer.
 
 ### Reindexing
 
@@ -139,50 +164,6 @@ library_data/
 ```
 
 > **Tip**: Keep original PDFs in `Articles/` and avoid renaming files after tagging — article IDs are derived from file paths, so moving files creates new IDs.
-
-## Syncing Between Computers
-
-If you use this library on multiple machines, keep synchronization simple and predictable.  
-The key requirement is that `Articles/` and `library_data/` stay in sync together.
-
-### Option 1: Sync the whole project folder (simplest)
-
-Put the project folder inside a cloud-synced location (OneDrive, Dropbox, Google Drive, Syncthing, etc.) so both PDFs and metadata move together.
-
-Pros:
-- Easiest setup.
-- Lowest chance of accidentally separating PDFs and metadata.
-
-Watch-outs:
-- Avoid opening/editing on two computers at the same time.
-- Let sync finish before launching the app on another machine.
-
-### Option 2: Sync only data folders
-
-If you keep source code separate, sync only:
-- `Articles/`
-- `library_data/`
-
-Typical tools:
-- Windows: `robocopy`
-- macOS/Linux: `rsync`
-
-This works well if you always preserve the same relative folder structure.
-
-### Option 3: Git-based metadata + shared PDFs
-
-You can version `library_data/` with Git while storing PDFs in:
-- Git LFS, or
-- a shared/network/cloud folder mounted at the same path pattern on each machine.
-
-This gives history for metadata edits but adds workflow overhead (pull/commit/push discipline).
-
-### Practical rules to prevent conflicts
-
-1. Use one machine at a time for metadata editing when possible.
-2. Finish file sync before reindexing or bulk DOI operations on another machine.
-3. Keep PDF file paths stable: article IDs derive from file paths, so moves/renames create new IDs.
-4. Keep periodic backups of `library_data/overrides/` for easy recovery.
 
 ## How It's Built
 
@@ -266,11 +247,9 @@ The application utilizes the **Crossref API** (`https://api.crossref.org/works/{
 
 *(Note: While the API provides all this under the 'polite pool', some fields—especially abstracts or references—may be missing from the JSON payload depending on the publisher's deposit).*
 
-## to-do
-- bugs
-  - [x] adding thumbnail image from clipboard (test if other conditions) removes other metadata
-
-- design/UX
+## changelog
+- [x] bug: adding thumbnail image from clipboard (test if other conditions) removes other metadata
+- design/UX features/qol
   - [x] default to fast search on, rework checkbox to on = slow search (name?)
   - better toggle switch visibility
   - better organization of hamburger menu options
@@ -286,48 +265,30 @@ The application utilizes the **Crossref API** (`https://api.crossref.org/works/{
   - [x] address the chips component options taking space below the window for the default window size (is it a problem at 1080p?)
   - [x] remove excess text from top of page
   - [x] give the 'display' dropdown a title like 'files' has "file management"
-
-- features
-  - [x] allow a left click down (but not a click release) to click out of the metadata modal
-  - [x] process pasted input to the "authors" and abstract" fields to try to fix common PDF copy-paste issues (astrices, number/letter superscripts, consistency in '.' after initials, 'and' vs '&',oxford commas, and line breaks)
-    - [ ] sometimes logic breaking characters (I think citations in the abstracts...perhaps consider cases where the authors are separated, though probably not worth it)
-    - add checkbox to enable this automatic paste processing (enabled by default)
-  - [x] also fuzzy-search autofill prompting after each character and solidifying after entering them like listing email addresses in a gmail 'send' field
-  - [x] add 'open article' and 'open file location' to the metadata editor
-  - [x] 'any' 'all' and 'none' tag filtering options
-  - [x] attempt to extract DOIs from the papers in the references section for each paper and display them in the abstract viewer
-    - [x] BREAKING - it does this during the abstract modal opening (gated behind 'files' setting)
-  - [x] for the "fetch data" button, if a DOI is not given in the DOI field, attempt to parse the first 3 pages of the PDF for a DOI 
-  - [x] add a checkbox with the height slider to automatically change the height of cards such that the black borders are not necessary in thumbnails
-  - [x] 'include' toggle to include 'all' vs include 'any' for tags
-  - [x] prompt user with metadata modal on import of new PDF 
-  - how to handle multiple PDFs imported at once?
+- [x] allow a left click down (but not a click release) to click out of the metadata modal
+- [x] process pasted input to the "authors" and abstract" fields to try to fix common PDF copy-paste issues (astrices, number/letter superscripts, consistency in '.' after initials, 'and' vs '&',oxford commas, and line breaks)
+  - [ ] sometimes logic breaking characters (I think citations in the abstracts...perhaps consider cases where the authors are separated, though probably not worth it)
+  - add checkbox to enable this automatic paste processing (enabled by default)
+- [x] also fuzzy-search autofill prompting after each character and solidifying after entering them like listing email addresses in a gmail 'send' field
+- [x] add 'open article' and 'open file location' to the metadata editor
+- [x] 'any' 'all' and 'none' tag filtering options
+- [x] attempt to extract DOIs from the papers in the references section for each paper and display them in the abstract viewer
+  - [x] BREAKING - it does this during the abstract modal opening (gated behind 'files' setting)
+- [x] for the "fetch data" button, if a DOI is not given in the DOI field, attempt to parse the first 3 pages of the PDF for a DOI 
+- [x] add a checkbox with the height slider to automatically change the height of cards such that the black borders are not necessary in thumbnails
+- [x] 'include' toggle to include 'all' vs include 'any' for tags
+- [x] prompt user with metadata modal on import of new PDF 
+- how to handle multiple PDFs imported at once?
 - [x] on re-index, check for duplicate DOIs and prompt user "remove the following duplicates? :"
 - [x] turn 'filter incomplete' from button to another checkbox in the tag filter dropdown
   - [x] just call the checkbox "incomplete fields"
   - [x] extend the tag-based coloration and the hotkeys for opening the abstract and metadata modals to the rows in the list view
-
   - hotkeys
     - [x] 'esc', 'enter', or click out of box to exit metadata modal
     - [x] ctrl + shift + click to open 'edit metadata'
     - [x] alt + shift + click to open abstract
   - [x] add 'added date' to metadata.  allow editing, but fill it automatically with the day when a file is added or indexed for the first time.  Also, 'last selected date' (which updates every time the article is selected)
   - [x] ctrl + scroll to resize cards (both dimensions)
-  
-- questions
-  - non-PDF-based sources for inspiration? (design, UX, hotkeys, optimizations, etc.)?
-  - is there a length limit on titles?  what about filenames?  should I process drag-and-drop pdfs to change the file name?  should I conduct references to the PDFs through some extracted hash in case files get renamed (and handle duplicates on index)?
-  - [x] where are these thumbnail images going?  they're not populating the folder
-  - when does scaling become a concern?  what is involved in implementing a database?
-  - How to compile to an installer for alternative devices?
-    - macs, linux, android, ios? still windows, but with non-x64 CPU architectures?
-      - github actions to spin up environment and perform tauri build for each desired platform
-  - what happens to the thumbnails on disk and memory when replaced?
-
-- stretch or stupid
-  - 'check for updates' button
-  - network mode to cluster based on shared tags, a la obsidian
-  - make a video showing the features (hotkeys, colors, thumbnail replacement, drag-and-drop)
 
 broken corrections:
  - [x] modal height scaling not working
@@ -399,6 +360,10 @@ CLI warnings:
   - [x] use a natural language processing sentence tokenizer model to chunk the abstract into sentences instead of just splitting on periods
   - [x] consider additional artifacts, like hyphenated line wraps and ligatures from the PDFs
   - [x] the degrees symbol appears to sometimes be replaced with "", and +/- symbols seem sometimes replaced with "G"
+- [x] number the reference DOIs
+- [x] show 'metadata saved' each time its saved (moving between fields, clicking the save button, pushing 'enter' to exit the modal)
+- [x] try to maintain at least 2 sentences for each section in the abstract separation.
+- [x] save space in display -> hide the slider until the user clicks on the button
   
 ### think about more first
 
@@ -419,7 +384,22 @@ CLI warnings:
 
 - [ ] change how articles are indexed so that filename changes aren't breaking
 
-### global version update
+- questions
+  - non-PDF-based sources for inspiration? (design, UX, hotkeys, optimizations, etc.)?
+  - is there a length limit on titles?  what about filenames?  should I process drag-and-drop pdfs to change the file name?  should I conduct references to the PDFs through some extracted hash in case files get renamed (and handle duplicates on index)?
+  - [x] where are these thumbnail images going?  they're not populating the folder
+  - when does scaling become a concern?  what is involved in implementing a database?
+  - How to compile to an installer for alternative devices?
+    - macs, linux, android, ios? still windows, but with non-x64 CPU architectures?
+      - github actions to spin up environment and perform tauri build for each desired platform
+  - what happens to the thumbnails on disk and memory when replaced?
+
+- stretch or stupid
+  - 'check for updates' button
+  - network mode to cluster based on shared tags, a la obsidian
+  - make a video showing the features (hotkeys, colors, thumbnail replacement, drag-and-drop)
+
+### global version updating
 
 ```bash
 node update-version.js <version>

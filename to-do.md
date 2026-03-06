@@ -1,7 +1,5 @@
 ### immediate (bug fixes, small features)
 
-- [ ] try to maintain at least 2 sentences for each section in the abstract separation.
-
 - [ ] niche filters not hiding properly
   - [ ] fix niche chips preventing autofill elsewhere and appearing with strange characters in the niche field
   - [x] just putting in 'experimental for now'
@@ -14,12 +12,14 @@
 
 - [ ] how can I have the selected article active in the folder when I select "open in folder" like windows does when using "open file location"
 
-- [ ] save space in display -> hide the slider until the user clicks on the button
+
 
 - [ ] warnings
   - warning: unused import: `self` --> src\lib.rs:17:23
   - structure field `DOI` should have a snake case name --> src\lib.rs:103:9
   - `literature-library` (lib) generated 2 warnings (run `cargo fix --lib -p literature-library` to apply 1 suggestion)
+
+- [ ] demo mode (uses a tmp articles and thumbnails folder and index json to delete on exit)
    
 ### major version revision features
 
