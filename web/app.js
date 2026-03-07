@@ -8,11 +8,16 @@ const state = {
   current: null,
   viewMode: window.localStorage.getItem("article-view-mode") || "preview",
   cardHeight: Number.parseInt(window.localStorage.getItem("article-card-height") || "138", 10),
+  autoFitHeight: window.localStorage.getItem("article-autofit-height") === "true",
   cardFont: Number.parseInt(window.localStorage.getItem("article-card-font") || "14", 10),
   fontFamily: window.localStorage.getItem("article-font-family") || "segoe",
   primarySort: window.localStorage.getItem("article-primary-sort") || "year_desc",
   secondarySort: window.localStorage.getItem("article-secondary-sort") || "title_asc",
+  tagFilterMode: window.localStorage.getItem("article-tag-mode") || "all",
+  filterIncomplete: window.localStorage.getItem("article-filter-incomplete") === "true",
   menuOpen: false,
+  showErrorsGlobally: window.localStorage.getItem("article-show-errors") !== "false",
+  autoRefCompile: window.localStorage.getItem("article-auto-ref") === "true",
 };
 
 const dom = {
@@ -23,11 +28,13 @@ const dom = {
   secondarySort: document.getElementById("secondary-sort"),
   cardHeightSlider: document.getElementById("card-height-slider"),
   cardHeightValue: document.getElementById("card-height-value"),
+  cardHeightAutofit: document.getElementById("card-height-autofit"),
   cardFontSlider: document.getElementById("card-font-slider"),
   cardFontValue: document.getElementById("card-font-value"),
   fontFamilySelect: document.getElementById("font-family-select"),
   searchInput: document.getElementById("search-input"),
   tagFilter: document.getElementById("tag-filter"),
+  filterIncomplete: document.getElementById("filter-incomplete"),
   strategySelect: document.getElementById("strategy-select"),
   viewMode: document.getElementById("view-mode"),
   reindexBtn: document.getElementById("reindex-btn"),
@@ -46,6 +53,7 @@ const dom = {
   year: document.getElementById("f-year"),
   journal: document.getElementById("f-journal"),
   doi: document.getElementById("f-doi"),
+  doiFetchBtn: document.getElementById("doi-fetch-btn"),
   abstract: document.getElementById("f-abstract"),
   tags: document.getElementById("f-tags"),
   notes: document.getElementById("f-notes"),
@@ -54,6 +62,19 @@ const dom = {
   abstractTitle: document.getElementById("abstract-title"),
   abstractMeta: document.getElementById("abstract-meta"),
   abstractText: document.getElementById("abstract-text"),
+  abstractReferencesSection: document.getElementById("abstract-references-section"),
+  abstractReferencesList: document.getElementById("abstract-references-list"),
+  duplicateModal: document.getElementById("duplicate-modal"),
+  duplicateClose: document.getElementById("duplicate-close"),
+  duplicateList: document.getElementById("duplicate-list"),
+  metaRemove: document.getElementById("meta-remove"),
+  errorBanner: document.getElementById("error-banner"),
+  errorBannerText: document.getElementById("error-banner-text"),
+  errorBannerClose: document.getElementById("error-banner-close"),
+  showErrorsCheckbox: document.getElementById("show-errors-checkbox"),
+  autoRefCompile: document.getElementById("auto-ref-compile"),
+  errorLogList: document.getElementById("error-log-list"),
+  errorLogClear: document.getElementById("error-log-clear"),
 };
 
 const SORT_KEYS = new Set([
@@ -104,6 +125,8 @@ function applyCardHeight(value) {
   document.documentElement.style.setProperty("--thumb-height", `${thumbHeight}px`);
   dom.cardHeightSlider.value = String(cardHeight);
   dom.cardHeightValue.textContent = String(cardHeight);
+  dom.grid.classList.toggle("autofit-cards", Boolean(state.autoFitHeight));
+  dom.cardHeightSlider.disabled = Boolean(state.autoFitHeight);
 }
 
 function clampCardFont(value) {
@@ -144,6 +167,9 @@ function setMenuOpen(isOpen) {
 function setStatus(text, isWarning = false) {
   dom.statusLine.textContent = text;
   dom.statusLine.classList.toggle("warning", isWarning);
+  if (isWarning) {
+    logGlobalError(text, "", "");
+  }
 }
 
 function debounce(fn, waitMs) {
@@ -259,7 +285,7 @@ async function copyToClipboard(text) {
     try {
       await navigator.clipboard.writeText(clean);
       return true;
-    } catch {}
+    } catch { }
   }
   try {
     const area = document.createElement("textarea");
@@ -314,7 +340,39 @@ function openAbstract(article) {
   dom.abstractMeta.textContent = metaBits.join(" | ");
   const abstractText = typeof md.abstract === "string" ? md.abstract.trim() : "";
   dom.abstractText.textContent = abstractText || "No abstract available.";
+
+  if (dom.abstractReferencesSection) {
+    dom.abstractReferencesSection.style.display = "none";
+    clearNode(dom.abstractReferencesList);
+  }
+
   dom.abstractModal.classList.remove("hidden");
+
+  if (dom.abstractReferencesSection) {
+    fetchJson(`/api/articles/${article.id}/text-back`).then(res => {
+      if (!res || !res.text) return;
+      const matches = res.text.match(/\b10\.\d{4,9}\/[-._;()/:A-Za-z0-9]+\b/g) || [];
+      const uniqueDois = [...new Set(matches)];
+      const ownDoi = normalizeWhitespace(md.doi);
+      const refDois = uniqueDois.filter(d => d && d !== ownDoi);
+
+      if (refDois.length > 0) {
+        refDois.forEach(doi => {
+          const link = document.createElement("a");
+          link.href = `https://doi.org/${doi}`;
+          link.target = "_blank";
+          link.textContent = doi;
+          link.style.display = "block";
+          link.style.color = "var(--accent)";
+          link.style.textDecoration = "none";
+          link.addEventListener("mouseover", () => link.style.textDecoration = "underline");
+          link.addEventListener("mouseout", () => link.style.textDecoration = "none");
+          dom.abstractReferencesList.appendChild(link);
+        });
+        dom.abstractReferencesSection.style.display = "block";
+      }
+    }).catch(err => console.warn("Failed to extract backend text:", err));
+  }
 }
 
 function closeAbstract() {
@@ -400,15 +458,86 @@ function buildDetailsTable(articles) {
 
   const table = document.createElement("table");
   table.className = "details-table";
-  table.innerHTML =
-    "<thead><tr><th>Year</th><th>Authors</th><th>Title</th><th>Journal</th><th>DOI</th><th>Actions</th></tr></thead>";
+
+  const thead = document.createElement("thead");
+  const trHead = document.createElement("tr");
+  const cols = [
+    { label: "Year", sortKey: "year" },
+    { label: "Authors", sortKey: "authors" },
+    { label: "Title", sortKey: "title" },
+    { label: "Journal", sortKey: "journal" },
+    { label: "DOI", sortKey: "doi" },
+    { label: "Actions", sortKey: null }
+  ];
+  cols.forEach(col => {
+    const th = document.createElement("th");
+    th.textContent = col.label;
+    if (col.sortKey) {
+      th.style.cursor = "pointer";
+      th.title = `Sort by ${col.label}`;
+      const isPrimary = state.primarySort.startsWith(col.sortKey);
+      if (isPrimary) {
+        th.textContent += state.primarySort.endsWith("_desc") ? " ▼" : " ▲";
+      }
+      th.addEventListener("click", () => {
+        if (state.primarySort.startsWith(col.sortKey)) {
+          state.primarySort = state.primarySort.endsWith("_desc") ? `${col.sortKey}_asc` : `${col.sortKey}_desc`;
+        } else {
+          state.primarySort = col.sortKey === "year" ? "year_desc" : `${col.sortKey}_asc`;
+        }
+        dom.primarySort.value = state.primarySort;
+        window.localStorage.setItem("article-primary-sort", state.primarySort);
+        renderArticles();
+      });
+    }
+    trHead.appendChild(th);
+  });
+  thead.appendChild(trHead);
+  table.appendChild(thead);
 
   const body = document.createElement("tbody");
   articles.forEach((article) => {
     const md = article.metadata || {};
     const row = document.createElement("tr");
     row.className = "details-row";
-    row.addEventListener("click", () => openPdf(article));
+
+    row.tabIndex = 0;
+    row.addEventListener("click", (evt) => {
+      if (evt.ctrlKey && evt.shiftKey) {
+        evt.preventDefault();
+        evt.stopPropagation();
+        openEditor(article);
+        return;
+      }
+      if (evt.ctrlKey || evt.metaKey) {
+        evt.preventDefault();
+        evt.stopPropagation();
+        const bib = generateBibtex(article);
+        copyToClipboard(bib).then((ok) => {
+          setStatus(ok ? "BibTeX copied to clipboard" : "Failed to copy BibTeX", !ok);
+        });
+        return;
+      }
+      if (evt.altKey) {
+        evt.preventDefault();
+        evt.stopPropagation();
+        openFileLocation(article);
+        return;
+      }
+      openPdf(article);
+    });
+    row.addEventListener("keydown", (evt) => {
+      if (evt.target !== row) return;
+      if (evt.key === "e" || evt.key === "E") {
+        evt.preventDefault();
+        evt.stopPropagation();
+        openEditor(article);
+      } else if (evt.key === "Enter" || evt.key === " ") {
+        evt.preventDefault();
+        evt.stopPropagation();
+        openPdf(article);
+      }
+    });
 
     const tdYear = document.createElement("td");
     tdYear.textContent = normalizeWhitespace(md.year) || "-";
@@ -459,16 +588,7 @@ function buildDetailsTable(articles) {
     const actionWrap = document.createElement("div");
     actionWrap.className = "table-actions";
 
-    const abstractBtn = document.createElement("button");
-    abstractBtn.type = "button";
-    abstractBtn.className = "card-btn";
-    abstractBtn.textContent = "Abstract";
-    abstractBtn.addEventListener("click", (evt) => {
-      evt.preventDefault();
-      evt.stopPropagation();
-      openAbstract(article);
-    });
-    actionWrap.appendChild(abstractBtn);
+
 
     const editBtn = document.createElement("button");
     editBtn.type = "button";
@@ -534,7 +654,9 @@ async function loadArticles() {
   setStatus("Loading articles...");
   const query = encodeURIComponent(state.query);
   const tag = encodeURIComponent(state.tag);
-  const res = await fetchJson(`/api/articles?query=${query}&tag=${tag}&limit=500`);
+  const match_mode = encodeURIComponent(state.tagFilterMode);
+  const filter_incomplete = encodeURIComponent(state.filterIncomplete);
+  const res = await fetchJson(`/api/articles?query=${query}&tag=${tag}&match_mode=${match_mode}&filter_incomplete=${filter_incomplete}&limit=500`);
   state.articles = res.articles || [];
   state.total = res.total || 0;
   state.generatedAt = res.generated_at || "";
@@ -565,7 +687,7 @@ function openEditor(article) {
 function closeEditor() {
   state.current = null;
   dom.modal.classList.add("hidden");
-  dom.thumbFile.value = "";
+  if (dom.thumbFile) dom.thumbFile.value = "";
   dom.modalThumbWrap.classList.remove("drag-active");
 }
 
@@ -590,35 +712,14 @@ async function saveMetadata(evt) {
     notes: notesValue,
   };
 
-  const formData = new FormData();
-  formData.append("title", payload.title);
-  formData.append("authors", payload.authors);
-  formData.append("year", payload.year);
-  formData.append("journal", payload.journal);
-  formData.append("doi", payload.doi);
-  formData.append("abstract", payload.abstract);
-  formData.append("notes", payload.notes);
-  payload.tags.forEach((tag) => formData.append("tags", tag));
-
   setStatus("Saving metadata...");
   try {
-    const postMetadata = (requestBody, headers = undefined) =>
-      fetchJson(`/api/articles/${state.current.id}/metadata`, {
-        method: "POST",
-        headers,
-        body: requestBody,
-      });
-
-    let result = await postMetadata(formData);
-    let savedArticle = result?.article || null;
-    const requestedAbstract = abstractValue.trim();
-    let savedAbstract = normalizeWhitespace(savedArticle?.metadata?.abstract);
-
-    if (requestedAbstract && !savedAbstract) {
-      result = await postMetadata(JSON.stringify(payload), { "Content-Type": "application/json" });
-      savedArticle = result?.article || savedArticle;
-      savedAbstract = normalizeWhitespace(savedArticle?.metadata?.abstract);
-    }
+    const result = await fetchJson(`/api/articles/${currentId}/metadata`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const savedArticle = result?.article || null;
 
     if (!savedArticle) {
       throw new Error("Server did not return updated article.");
@@ -636,11 +737,7 @@ async function saveMetadata(evt) {
     openEditor(savedArticle);
 
     await loadTags();
-    if (requestedAbstract && !savedAbstract) {
-      setStatus("Save warning: server returned an empty abstract.", true);
-    } else {
-      setStatus("Metadata saved.");
-    }
+    setStatus("Metadata saved.");
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     setStatus(`Save failed: ${message}`, true);
@@ -714,8 +811,98 @@ async function reindex() {
     });
     await Promise.all([loadTags(), loadArticles()]);
     setStatus("Reindex complete.");
+    if (state.articles.length > 0) {
+      checkDuplicates();
+    }
   } finally {
     dom.reindexBtn.disabled = false;
+  }
+}
+
+async function checkDuplicates() {
+  // Group articles by DOI
+  const doiMap = new Map();
+  for (const article of state.articles) {
+    const doi = (article.metadata && article.metadata.doi || "").trim();
+    if (!doi) continue;
+    if (!doiMap.has(doi)) doiMap.set(doi, []);
+    doiMap.get(doi).push(article);
+  }
+
+  const duplicates = [];
+  for (const [doi, list] of doiMap.entries()) {
+    if (list.length > 1) {
+      duplicates.push({ doi, articles: list });
+    }
+  }
+
+  if (duplicates.length === 0) return;
+
+  // Show modal
+  clearNode(dom.duplicateList);
+  for (const group of duplicates) {
+    const groupEl = document.createElement("div");
+    groupEl.style.border = "1px solid var(--line)";
+    groupEl.style.padding = "10px";
+    groupEl.style.borderRadius = "6px";
+
+    const header = document.createElement("h3");
+    header.style.margin = "0 0 10px 0";
+    header.style.fontSize = "1rem";
+    header.textContent = `DOI: ${group.doi}`;
+    groupEl.appendChild(header);
+
+    for (const article of group.articles) {
+      const row = document.createElement("div");
+      row.style.display = "flex";
+      row.style.justifyContent = "space-between";
+      row.style.alignItems = "center";
+      row.style.padding = "6px 0";
+      row.style.borderTop = "1px solid var(--line)";
+
+      const info = document.createElement("div");
+      const title = document.createElement("div");
+      title.style.fontWeight = "bold";
+      title.textContent = article.metadata?.title || article.pdf_filename;
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      meta.textContent = article.pdf_filename;
+      info.appendChild(title);
+      info.appendChild(meta);
+
+      const delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "danger";
+      delBtn.style.padding = "4px 8px";
+      delBtn.style.fontSize = "0.8rem";
+      delBtn.textContent = "Remove";
+      delBtn.addEventListener("click", async () => {
+        if (!confirm(`Permanently remove ${article.pdf_filename}?`)) return;
+        try {
+          await fetchJson(`/api/articles/${article.id}`, { method: "DELETE" });
+          row.remove();
+          state.articles = state.articles.filter(a => a.id !== article.id);
+          renderArticles();
+          if (groupEl.querySelectorAll("button").length <= 1) {
+            groupEl.remove();
+          }
+          if (dom.duplicateList.querySelectorAll("h3").length === 0) {
+            dom.duplicateModal.classList.add("hidden");
+          }
+        } catch (err) {
+          alert(`Failed to remove: ${err}`);
+        }
+      });
+
+      row.appendChild(info);
+      row.appendChild(delBtn);
+      groupEl.appendChild(row);
+    }
+    dom.duplicateList.appendChild(groupEl);
+  }
+
+  if (dom.duplicateModal) {
+    dom.duplicateModal.classList.remove("hidden");
   }
 }
 
@@ -744,6 +931,43 @@ function wireEvents() {
     state.tag = dom.tagFilter.value.trim();
     await loadArticles();
   });
+  const tagMatchRadios = document.querySelectorAll('input[name="tag-match-mode"]');
+  const tmAnyLbl = document.getElementById("tm-any-lbl");
+  const tmAllLbl = document.getElementById("tm-all-lbl");
+
+  function updateTagMatchUI(mode) {
+    if (mode === "all") {
+      if (tmAllLbl) { tmAllLbl.style.background = "var(--accent)"; tmAllLbl.style.color = "white"; }
+      if (tmAnyLbl) { tmAnyLbl.style.background = "var(--bg)"; tmAnyLbl.style.color = "var(--text)"; }
+    } else {
+      if (tmAnyLbl) { tmAnyLbl.style.background = "var(--accent)"; tmAnyLbl.style.color = "white"; }
+      if (tmAllLbl) { tmAllLbl.style.background = "var(--bg)"; tmAllLbl.style.color = "var(--text)"; }
+    }
+  }
+
+  if (tagMatchRadios.length > 0) {
+    const initialMode = state.tagFilterMode === "all" ? "all" : "any";
+    tagMatchRadios.forEach(r => {
+      r.checked = r.value === initialMode;
+      r.addEventListener("change", async (e) => {
+        if (e.target.checked) {
+          state.tagFilterMode = e.target.value;
+          window.localStorage.setItem("article-tag-mode", state.tagFilterMode);
+          updateTagMatchUI(state.tagFilterMode);
+          await loadArticles();
+        }
+      });
+    });
+    updateTagMatchUI(initialMode);
+  }
+  if (dom.filterIncomplete) {
+    dom.filterIncomplete.checked = state.filterIncomplete;
+    dom.filterIncomplete.addEventListener("change", async () => {
+      state.filterIncomplete = dom.filterIncomplete.checked;
+      window.localStorage.setItem("article-filter-incomplete", String(state.filterIncomplete));
+      await loadArticles();
+    });
+  }
   dom.viewMode.addEventListener("change", () => {
     state.viewMode = dom.viewMode.value === "details" ? "details" : "preview";
     window.localStorage.setItem("article-view-mode", state.viewMode);
@@ -770,6 +994,16 @@ function wireEvents() {
     applyCardHeight(dom.cardHeightSlider.value);
     window.localStorage.setItem("article-card-height", String(state.cardHeight));
   });
+
+  if (dom.cardHeightAutofit) {
+    dom.cardHeightAutofit.checked = state.autoFitHeight;
+    dom.cardHeightAutofit.addEventListener("change", () => {
+      state.autoFitHeight = dom.cardHeightAutofit.checked;
+      window.localStorage.setItem("article-autofit-height", String(state.autoFitHeight));
+      applyCardHeight(state.cardHeight);
+    });
+  }
+
   dom.cardFontSlider.addEventListener("input", () => {
     applyCardFont(dom.cardFontSlider.value);
     window.localStorage.setItem("article-card-font", String(state.cardFont));
@@ -780,9 +1014,29 @@ function wireEvents() {
       window.localStorage.setItem("article-font-family", state.fontFamily);
     });
   }
+  dom.metaRemove.addEventListener("click", async () => {
+    if (!state.current) return;
+    const md = state.current.metadata || {};
+    const title = md.title || state.current.pdf_filename;
+    if (!confirm(`Are you sure you want to permanently remove "${title}"? This will delete the PDF file and cannot be undone.`)) {
+      return;
+    }
+    setStatus("Removing article...");
+    try {
+      await fetchJson(`/api/articles/${state.current.id}`, { method: "DELETE" });
+      closeEditor();
+      await Promise.all([loadTags(), loadArticles()]);
+      setStatus("Article removed.");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      setStatus(`Failed to remove article: ${message}`, true);
+    }
+  });
+
   dom.reindexBtn.addEventListener("click", reindex);
   dom.modalClose.addEventListener("click", closeEditor);
   dom.abstractClose.addEventListener("click", closeAbstract);
+  if (dom.duplicateClose) dom.duplicateClose.addEventListener("click", () => dom.duplicateModal.classList.add("hidden"));
   dom.form.addEventListener("submit", saveMetadata);
   dom.thumbUpload.addEventListener("click", () => uploadManualThumbnail());
   dom.thumbFile.addEventListener("change", async () => {
@@ -790,6 +1044,82 @@ function wireEvents() {
     if (!file) return;
     await uploadManualThumbnail(file);
   });
+
+  if (dom.doiFetchBtn) {
+    dom.doiFetchBtn.addEventListener("click", async () => {
+      let doiStr = dom.doi.value.trim();
+      const originalText = dom.doiFetchBtn.textContent;
+      dom.doiFetchBtn.textContent = "Fetching...";
+      dom.doiFetchBtn.disabled = true;
+
+      if (!doiStr) {
+        try {
+          const res = await fetchJson(`/api/articles/${state.current.id}/text-front`);
+          const match = (res.text || "").match(/\b10\.\d{4,9}\/[-._;()/:A-Za-z0-9]+\b/);
+          if (match) {
+            doiStr = match[0];
+            dom.doi.value = doiStr;
+            setStatus("DOI found in PDF text.");
+          } else {
+            alert("No DOI found in PDF text. Please input a DOI string manually.");
+            dom.doiFetchBtn.textContent = originalText;
+            dom.doiFetchBtn.disabled = false;
+            return;
+          }
+        } catch (err) {
+          alert(`Failed to extract text from PDF: ${err.message || err}`);
+          dom.doiFetchBtn.textContent = originalText;
+          dom.doiFetchBtn.disabled = false;
+          return;
+        }
+      }
+
+      try {
+        const resp = await fetch(`https://api.crossref.org/works/${encodeURIComponent(doiStr)}`);
+        if (!resp.ok) throw new Error(`Crossref API returned ${resp.status}`);
+        const crossref = await resp.json();
+        const msg = crossref.message;
+
+        const title = msg.title?.[0] || "";
+        const authors_list = (msg.author || []).map(a => {
+          if (a.given && a.family) return `${a.given} ${a.family}`;
+          return a.family || "";
+        }).filter(Boolean);
+        const authors = authors_list.join(", ");
+
+        let year = "";
+        const dates_to_try = [msg.published, msg["published-print"], msg["published-online"]];
+        for (const d of dates_to_try) {
+          if (d && d["date-parts"] && d["date-parts"][0] && d["date-parts"][0][0]) {
+            year = String(d["date-parts"][0][0]);
+            break;
+          }
+        }
+
+        const journal = msg["container-title"]?.[0] || "";
+        const returned_doi = msg.DOI || doiStr;
+
+        let abstract_text = msg.abstract_raw || msg.abstract || "";
+        abstract_text = abstract_text.replace(/<[^>]*>?/gm, "").trim();
+
+        if (title) dom.title.value = title;
+        if (authors) dom.authors.value = authors;
+        if (year) dom.year.value = year;
+        if (journal) dom.journal.value = journal;
+        if (abstract_text) dom.abstract.value = abstract_text;
+        if (returned_doi) dom.doi.value = returned_doi;
+
+        setStatus("Metadata successfully fetched from Crossref.");
+      } catch (err) {
+        alert(`Failed to fetch DOI metadata from Crossref: ${err.message || err}`);
+        setStatus(`DOI Fetch Failed: ${err.message || err}`, true);
+      } finally {
+        dom.doiFetchBtn.textContent = originalText;
+        dom.doiFetchBtn.disabled = false;
+      }
+    });
+  }
+
 
   ["dragenter", "dragover"].forEach((name) => {
     dom.modalThumbWrap.addEventListener(name, (evt) => {
@@ -815,6 +1145,27 @@ function wireEvents() {
   });
   dom.thumbReset.addEventListener("click", resetAutoThumbnail);
 
+  if (dom.errorBannerClose) {
+    dom.errorBannerClose.addEventListener("click", () => {
+      dom.errorBanner.style.display = "none";
+    });
+  }
+  if (dom.errorLogClear) {
+    dom.errorLogClear.addEventListener("click", () => {
+      if (dom.errorLogList) dom.errorLogList.innerHTML = "";
+    });
+  }
+  if (dom.showErrorsCheckbox) {
+    dom.showErrorsCheckbox.checked = state.showErrorsGlobally;
+    dom.showErrorsCheckbox.addEventListener("change", () => {
+      state.showErrorsGlobally = dom.showErrorsCheckbox.checked;
+      window.localStorage.setItem("article-show-errors", String(state.showErrorsGlobally));
+      if (!state.showErrorsGlobally && dom.errorBanner) {
+        dom.errorBanner.style.display = "none";
+      }
+    });
+  }
+
   document.addEventListener("click", (evt) => {
     if (!state.menuOpen) return;
     if (dom.settingsWrap.contains(evt.target)) return;
@@ -827,6 +1178,33 @@ function wireEvents() {
     }
   });
 }
+
+function logGlobalError(message, source, lineno) {
+  const time = new Date().toLocaleTimeString();
+  const li = document.createElement("li");
+  let text = `[${time}] ${message}`;
+  if (source) text += ` (${source}:${lineno})`;
+  li.textContent = text;
+  if (dom.errorLogList) {
+    dom.errorLogList.prepend(li);
+    while (dom.errorLogList.children.length > 50) {
+      dom.errorLogList.removeChild(dom.errorLogList.lastChild);
+    }
+  }
+
+  if (state.showErrorsGlobally) {
+    if (dom.errorBannerText) dom.errorBannerText.textContent = message;
+    if (dom.errorBanner) dom.errorBanner.style.display = "flex";
+  }
+}
+
+window.addEventListener("error", (e) => {
+  logGlobalError(e.message, e.filename, e.lineno);
+});
+
+window.addEventListener("unhandledrejection", (e) => {
+  logGlobalError(e.reason?.message || String(e.reason));
+});
 
 async function init() {
   wireEvents();

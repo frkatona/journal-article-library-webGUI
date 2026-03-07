@@ -628,6 +628,8 @@ def build_app(default_strategy: str) -> Flask:
     def api_articles() -> Any:
         query = normalize_text(request.args.get("query")).lower()
         tag = normalize_text(request.args.get("tag")).lower()
+        match_mode = normalize_text(request.args.get("match_mode", "all")).lower()
+        filter_incomplete = request.args.get("filter_incomplete", "false").lower() == "true"
         try:
             limit = max(1, min(500, int(request.args.get("limit", 200))))
             offset = max(0, int(request.args.get("offset", 0)))
@@ -646,11 +648,28 @@ def build_app(default_strategy: str) -> Flask:
             ]
 
         if tag:
-            rows = [
-                article
-                for article in rows
-                if tag in [normalize_text(t).lower() for t in article.get("metadata", {}).get("tags", [])]
-            ]
+            tags_to_match = [t.strip() for t in tag.split(",") if t.strip()]
+            if match_mode == "any":
+                rows = [
+                    article
+                    for article in rows
+                    if any(t in [normalize_text(art_t).lower() for art_t in article.get("metadata", {}).get("tags", [])] for t in tags_to_match)
+                ]
+            else:
+                rows = [
+                    article
+                    for article in rows
+                    if all(t in [normalize_text(art_t).lower() for art_t in article.get("metadata", {}).get("tags", [])] for t in tags_to_match)
+                ]
+
+        if filter_incomplete:
+            def is_incomplete(art: dict[str, Any]) -> bool:
+                md = art.get("metadata", {})
+                has_abstract = bool(md.get("abstract", "").strip())
+                has_tags = bool(md.get("tags", []))
+                return not (has_abstract and has_tags)
+            
+            rows = [a for a in rows if is_incomplete(a)]
 
         total = len(rows)
         rows = rows[offset : offset + limit]
@@ -744,6 +763,97 @@ def build_app(default_strategy: str) -> Flask:
         updated_article = update_index_article(article_id, override)
 
         return jsonify({"ok": True, "article": updated_article})
+
+    @app.get("/api/articles/<article_id>/text-front")
+    def api_get_article_text_front(article_id: str) -> Any:
+        index_data = load_index()
+        article = find_article(index_data, article_id)
+        if article is None:
+            abort(404, "Article not found.")
+        
+        pdf_path = ARTICLES_DIR / article["pdf_filename"]
+        if not pdf_path.exists():
+            abort(404, "PDF missing.")
+            
+        try:
+            doc = fitz.open(pdf_path)
+            text = ""
+            for i in range(min(3, doc.page_count)):
+                page = doc.load_page(i)
+                text += page.get_text() + "\n"
+            return jsonify({"ok": True, "text": text})
+        except Exception as e:
+            abort(500, f"Error reading PDF: {e}")
+
+    @app.get("/api/articles/<article_id>/text-back")
+    def api_get_article_text_back(article_id: str) -> Any:
+        index_data = load_index()
+        article = find_article(index_data, article_id)
+        if article is None:
+            abort(404, "Article not found.")
+        
+        pdf_path = ARTICLES_DIR / article["pdf_filename"]
+        if not pdf_path.exists():
+            abort(404, "PDF missing.")
+            
+        try:
+            doc = fitz.open(pdf_path)
+            text = ""
+            start_page = max(0, doc.page_count - 4)
+            for i in range(start_page, doc.page_count):
+                page = doc.load_page(i)
+                text += page.get_text() + "\n"
+            return jsonify({"ok": True, "text": text})
+        except Exception as e:
+            abort(500, f"Error reading PDF: {e}")
+
+    @app.delete("/api/articles/<article_id>")
+    def api_delete_article(article_id: str) -> Any:
+        index_data = load_index()
+        article = find_article(index_data, article_id)
+        if article is None:
+            abort(404, "Article not found.")
+        
+        # Remove primary PDF
+        pdf_relpath = article.get("pdf_relpath")
+        if pdf_relpath:
+            pdf_path = ROOT_DIR / pdf_relpath
+            if pdf_path.exists():
+                try:
+                    pdf_path.unlink()
+                except OSError:
+                    pass
+
+        # Remove manual thumbnail
+        manual_thumb = MANUAL_THUMBNAILS_DIR / f"{article_id}.jpg"
+        if manual_thumb.exists():
+            try:
+                manual_thumb.unlink()
+            except OSError:
+                pass
+                
+        # Remove auto thumbnail
+        auto_thumb = THUMBNAILS_DIR / f"{article_id}.jpg"
+        if auto_thumb.exists():
+            try:
+                auto_thumb.unlink()
+            except OSError:
+                pass
+                
+        # Remove override meta
+        override_file = OVERRIDES_DIR / f"{article_id}.json"
+        if override_file.exists():
+            try:
+                override_file.unlink()
+            except OSError:
+                pass
+                
+        # Remove from index
+        index_data["articles"] = [a for a in index_data.get("articles", []) if a.get("id") != article_id]
+        index_data["article_count"] = len(index_data["articles"])
+        INDEX_PATH.write_text(json.dumps(index_data, indent=2), encoding="utf-8")
+        
+        return jsonify({"ok": True})
 
     return app
 

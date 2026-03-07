@@ -1,0 +1,600 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FRK PDF Manager</title>
+    <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+    <header id="topbar" class="topbar">
+        <div class="controls">
+            <label class="field">
+                <span>Search</span>
+                <input id="search-input" type="search" placeholder="title, author, abstract, DOI, tags, notes..." />
+            </label>
+            <label class="field" style="position:relative;" id="tag-filter-container">
+                <span>Tag Filter</span>
+                <div id="tag-filter-btn" class="custom-select-btn">All tags (<span id="tag-filter-count">0</span>)</div>
+                <div id="tag-filter-menu" class="custom-select-menu hidden">
+                    <div class="tag-filter-actions" style="flex-wrap: wrap; gap: 4px;">
+                        <button type="button" id="tag-filter-all" class="ghost"
+                            style="padding:4px 8px; font-size:0.8rem;">Select All</button>
+                        <button type="button" id="tag-filter-none" class="ghost"
+                            style="padding:4px 8px; font-size:0.8rem;">Clear All</button>
+                        <div class="field"
+                            style="flex-direction:row;align-items:center;gap:8px;padding: 6px 8px; margin: 0; border-bottom: 1px solid var(--line);">
+                            <span style="font-size:0.82rem; color: var(--text);">Match:</span>
+                            <div
+                                style="display:flex; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; font-size: 0.8rem; margin-left: auto;">
+                                <label style="cursor: pointer; position: relative;">
+                                    <input type="radio" name="tag-match-mode" value="any"
+                                        style="position:absolute; opacity:0;" />
+                                    <span id="tm-any-lbl"
+                                        style="display:block; padding: 2px 8px; background: var(--bg); color: var(--text);">Any</span>
+                                </label>
+                                <label style="cursor: pointer; position: relative; border-left: 1px solid var(--line);">
+                                    <input type="radio" name="tag-match-mode" value="all"
+                                        style="position:absolute; opacity:0;" checked />
+                                    <span id="tm-all-lbl"
+                                        style="display:block; padding: 2px 8px; background: var(--accent); color: white;">All</span>
+                                </label>
+                                <label style="cursor: pointer; position: relative; border-left: 1px solid var(--line);">
+                                    <input type="radio" name="tag-match-mode" value="none"
+                                        style="position:absolute; opacity:0;" />
+                                    <span id="tm-none-lbl"
+                                        style="display:block; padding: 2px 8px; background: var(--bg); color: var(--text);">None</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="tag-filter-list" class="tag-filter-list"></div>
+                    <hr style="border:none;border-top:1px solid var(--line);margin:6px 0;">
+                    <label id="show-niche-row" class="hidden"
+                        style="display:flex;align-items:center;gap:8px;padding:4px 8px;cursor:pointer;font-size:0.85rem;">
+                        <input id="show-niche" type="checkbox" />
+                        <span>Show niche</span>
+                    </label>
+                    <label
+                        style="display:flex;align-items:center;gap:8px;padding:4px 8px;cursor:pointer;font-size:0.85rem;">
+                        <input id="filter-incomplete" type="checkbox" />
+                        <span>Incomplete metadata only</span>
+                    </label>
+                </div>
+            </label>
+
+            <label class="field compact sort-field">
+                <span>Primary Sort</span>
+                <select id="primary-sort">
+                    <option value="year_desc">Year (newest)</option>
+                    <option value="year_asc">Year (oldest)</option>
+                    <option value="title_asc">Title (A-Z)</option>
+                    <option value="authors_asc">Authors (A-Z)</option>
+                    <option value="journal_asc">Journal (A-Z)</option>
+                    <option value="doi_asc">DOI (A-Z)</option>
+                    <option value="file_modified_desc">Modified (newest)</option>
+                    <option value="file_modified_asc">Modified (oldest)</option>
+                    <option value="date_added_desc">Added (newest)</option>
+                    <option value="date_added_asc">Added (oldest)</option>
+                    <option value="last_opened_desc">Opened (newest)</option>
+                    <option value="last_opened_asc">Opened (oldest)</option>
+                </select>
+            </label>
+            <label class="field compact sort-field">
+                <span>Secondary Sort</span>
+                <select id="secondary-sort">
+                    <option value="title_asc">Title (A-Z)</option>
+                    <option value="year_desc">Year (newest)</option>
+                    <option value="year_asc">Year (oldest)</option>
+                    <option value="authors_asc">Authors (A-Z)</option>
+                    <option value="journal_asc">Journal (A-Z)</option>
+                    <option value="doi_asc">DOI (A-Z)</option>
+                    <option value="file_modified_desc">Modified (newest)</option>
+                    <option value="file_modified_asc">Modified (oldest)</option>
+                    <option value="date_added_desc">Added (newest)</option>
+                    <option value="date_added_asc">Added (oldest)</option>
+                    <option value="last_opened_desc">Opened (newest)</option>
+                    <option value="last_opened_asc">Opened (oldest)</option>
+                    <option value="none">None</option>
+                </select>
+            </label>
+            <div class="settings-wrap" style="display: flex; align-items: center; gap: 8px;">
+                <div class="view-toggle header-view-toggle" title="Toggle cards/list view">
+                    <span class="view-toggle-label">Cards</span>
+                    <label class="toggle-switch">
+                        <input id="view-mode-toggle" type="checkbox" />
+                        <span class="toggle-track"></span>
+                    </label>
+                    <span class="view-toggle-label">List</span>
+                </div>
+                <div id="settings-wrap-files" style="position: relative;">
+                    <button id="files-menu-toggle" class="menu-toggle" type="button" aria-expanded="false"
+                        aria-controls="files-menu" style="padding: 4px 10px; font-weight: 600;">
+                        <span>Files</span>
+                    </button>
+                    <div id="files-menu" class="settings-menu hidden" role="menu">
+                        <div class="menu-section-header"
+                            style="font-size: 0.75rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; padding: 4px 8px; margin-bottom: 4px;">
+                            File Management</div>
+                        <button id="open-articles-btn" type="button" class="ghost">Open Articles Folder</button>
+                        <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                            <input id="show-errors-checkbox" type="checkbox" checked />
+                            <span style="font-size:0.82rem;">Show errors globally</span>
+                        </label>
+                        <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                            <input id="show-ref-dois" type="checkbox" />
+                            <span style="font-size:0.82rem;">Show reference DOIs in abstract</span>
+                        </label>
+                        <div class="field slider-collapsible" data-slider-field>
+                            <span data-slider-toggle
+                                style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                                <span>Abstract Partitioning Strength <strong id="abstract-section-count-value">4</strong></span>
+                                <span class="slider-caret" aria-hidden="true">&#9656;</span>
+                            </span>
+                            <input id="abstract-section-count" type="range" min="1" max="7" step="1" value="4" />
+                        </div>
+                        <details id="experimental-section" style="margin-top: 2px;">
+                            <summary
+                                style="cursor: pointer; font-size: 0.75rem; font-weight: 700; color: var(--accent-2); text-transform: uppercase; letter-spacing: 0.05em; padding: 6px 4px; list-style: none; display: flex; align-items: center; gap: 5px; user-select: none;">
+                                <span id="experimental-arrow"
+                                    style="display:inline-block; transition: transform 0.2s;">▶</span> Experimental
+                            </summary>
+                            <div
+                                style="display: flex; flex-direction: column; gap: 8px; padding: 6px 4px 2px 12px; border-left: 2px solid rgba(245,179,77,0.3);">
+                                <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                                    <input id="auto-ref-compile" type="checkbox" />
+                                    <span style="font-size:0.82rem;">Auto references compilation</span>
+                                </label>
+                                <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                                    <input id="show-dupe-warnings" type="checkbox" />
+                                    <span style="font-size:0.82rem;">Warn on duplicate DOIs</span>
+                                </label>
+                                <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                                    <input id="debug-mode" type="checkbox" />
+                                    <span style="font-size:0.82rem;">Debug mode (verbose routine output)</span>
+                                </label>
+                                <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                                    <input id="long-parse" type="checkbox" />
+                                    <span style="font-size:0.82rem;">Long Parse (&gt;2s PDF timeout)</span>
+                                </label>
+                                <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                                    <input id="parse-pdfs" type="checkbox" />
+                                    <span style="font-size:0.82rem;">Parse PDFs</span>
+                                </label>
+                                <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                                    <input id="enable-niche" type="checkbox" />
+                                    <span style="font-size:0.82rem;">Enable niche</span>
+                                </label>
+                                <label id="niche-tags-field" class="field hidden">
+                                    <span style="font-size:0.82rem; color:var(--muted);">Niche Tags <em
+                                            style="font-weight:400;">(hidden by default)</em></span>
+                                    <div id="niche-tag-chip-container" class="tag-chip-container" style="min-height:40px;">
+                                        <input id="niche-tags-input" type="text" class="tag-chip-input"
+                                            placeholder="Add niche tag..." autocomplete="off" />
+                                    </div>
+                                </label>
+                                <button id="storage-report-btn" type="button" class="ghost">Show Storage Report</button>
+                                <pre id="storage-report-content"
+                                    style="display:none; margin:0; padding:8px; background:var(--bg); border:1px solid rgba(245,179,77,0.45); border-radius:6px; font-size:0.72rem; max-height:260px; overflow:auto; white-space:pre-wrap; word-break:break-word; color:var(--text);"></pre>
+                                <button id="restore-backup-btn" type="button" class="ghost" style="color:var(--accent);">Restore
+                                    Backup</button>
+                            </div>
+                        </details>
+                        <button id="crash-log-btn" type="button" class="ghost"
+                            style="font-size:0.78rem; padding:4px 8px;">View Crash Log</button>
+                        <pre id="crash-log-content"
+                            style="display:none; margin:0; padding:8px; background:var(--bg); border:1px solid var(--line); border-radius:6px; font-size:0.72rem; max-height:140px; overflow-y:auto; white-space:pre-wrap; word-break:break-all; color:var(--danger);"></pre>
+
+                        <hr style="border: none; border-top: 1px dashed var(--danger); margin: 8px 0; opacity: 0.5;" />
+
+                        <button id="reindex-btn" type="button">Reindex</button>
+                    </div>
+                </div>
+
+                <div id="settings-wrap-display" style="position: relative;">
+                    <button id="display-menu-toggle" class="menu-toggle" type="button" aria-expanded="false"
+                        aria-controls="display-menu" style="padding: 4px 10px; font-weight: 600;">
+                        <span>Display</span>
+                    </button>
+                    <div id="display-menu" class="settings-menu hidden" role="menu">
+                        <div class="menu-section-header"
+                            style="font-size: 0.75rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; padding: 4px 8px; margin-bottom: 4px;">
+                            Display Customization</div>
+                        <label class="field">
+                            <span>Theme</span>
+                            <select id="theme-select">
+                                <option value="ocean">Ocean Dark</option>
+                                <option value="midnight">Midnight</option>
+                                <option value="nord">Nord</option>
+                                <option value="monokai">Monokai</option>
+                                <option value="solarized">Solarized Dark</option>
+                                <option value="light">High Contrast Light</option>
+                            </select>
+                        </label>
+                        <label class="field">
+                            <span>Font</span>
+                            <select id="font-family-select">
+                                <option value="segoe">Segoe UI</option>
+                                <option value="arial">Arial</option>
+                                <option value="georgia">Georgia</option>
+                                <option value="trebuchet">Trebuchet MS</option>
+                                <option value="courier">Courier New</option>
+                            </select>
+                        </label>
+                        <hr style="border:none; border-top:1px solid var(--line); margin:6px 0; opacity:0.6;" />
+                        <div class="field slider-collapsible" data-slider-field style="margin-top: 4px;">
+                            <div data-slider-toggle style="display:flex; justify-content:space-between; align-items:flex-end; gap:8px;">
+                                <span>Card Height <strong id="card-height-value">138</strong>px</span>
+                                <div style="display:flex; align-items:center; gap:8px;">
+                                    <label data-slider-inline-control
+                                        style="display:flex; align-items:center; gap:4px; font-size:0.8rem; cursor:pointer;"
+                                        title="Auto-scale heights to remove letterboxing">
+                                        <input id="card-height-autofit" type="checkbox" /> Auto-fit
+                                    </label>
+                                    <span class="slider-caret" aria-hidden="true">&#9656;</span>
+                                </div>
+                            </div>
+                            <input id="card-height-slider" type="range" min="100" max="640" step="2" value="138" />
+                        </div>
+                        <div class="field slider-collapsible" data-slider-field>
+                            <span data-slider-toggle
+                                style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                                <span>Card Width <strong id="card-width-value">200</strong>px</span>
+                                <span class="slider-caret" aria-hidden="true">&#9656;</span>
+                            </span>
+                            <input id="card-width-slider" type="range" min="120" max="600" step="2" value="200" />
+                        </div>
+                        <div class="field slider-collapsible" data-slider-field>
+                            <span data-slider-toggle
+                                style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                                <span>Card Font <strong id="card-font-value">14</strong>px</span>
+                                <span class="slider-caret" aria-hidden="true">&#9656;</span>
+                            </span>
+                            <input id="card-font-slider" type="range" min="10" max="32" step="1" value="14" />
+                        </div>
+                        <div class="field slider-collapsible" data-slider-field>
+                            <span data-slider-toggle
+                                style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                                <span>Modal Backdrop Darkness <strong id="modal-backdrop-value">58</strong>%</span>
+                                <span class="slider-caret" aria-hidden="true">&#9656;</span>
+                            </span>
+                            <input id="modal-backdrop-slider" type="range" min="0" max="95" step="1" value="58" />
+                        </div>
+                        
+                        <div class="field slider-collapsible" data-slider-field>
+                            <span data-slider-toggle
+                                style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                                <span>UI Surface Opacity <strong id="surface-opacity-value">100</strong>%</span>
+                                <span class="slider-caret" aria-hidden="true">&#9656;</span>
+                            </span>
+                            <input id="surface-opacity-slider" type="range" min="30" max="100" step="1" value="100" />
+                        </div>
+                                                <hr style="border:none; border-top:1px solid var(--line); margin:6px 0; opacity:0.6;" />
+
+                        <label class="field">
+                            <span>Filter Mode</span>
+                            <select id="night-filter-mode">
+                                <option value="warm">Warm</option>
+                                <option value="scalar_dimming">Scalar dimming</option>
+                                <option value="gamma_remap">Gamma re-map</option>
+                                <option value="luminance_remap">Luminance re-map</option>
+                                <option value="sigmoid_contrast">Sigmoid contrast shaping</option>
+                                <option value="soft_knee">Soft-knee compression</option>
+                            </select>
+                        </label>
+                        <div class="field slider-collapsible" data-slider-field>
+                            <span data-slider-toggle
+                                style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                                <span>Filter Strength <strong id="night-filter-strength-value">0</strong>%</span>
+                                <span class="slider-caret" aria-hidden="true">&#9656;</span>
+                            </span>
+                            <input id="night-filter-strength-slider" type="range" min="0" max="100" step="1" value="0" />
+                        </div>
+                        <hr style="border:none; border-top:1px solid var(--line); margin:6px 0; opacity:0.6;" />
+                        <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                            <input id="tint-by-tag" type="checkbox" />
+                            <span style="font-size:0.82rem;">Tint by Tag</span>
+                        </label>
+                        <div class="field slider-collapsible" data-slider-field>
+                            <span data-slider-toggle
+                                style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                                <span>Color Intensity <strong id="color-intensity-value">13</strong>%</span>
+                                <span class="slider-caret" aria-hidden="true">&#9656;</span>
+                            </span>
+                            <input id="color-intensity-slider" type="range" min="0" max="100" step="1" value="13" />
+                        </div>
+                        <button id="edit-tag-colors-btn" type="button" class="ghost">Edit Tag Colors</button>
+                    </div>
+                </div>
+
+                <button id="hotkeys-btn" type="button" class="icon-toggle" aria-label="Keyboard Shortcuts"
+                    style="border-radius:50%; width: 34px; height: 34px; padding: 0; display:flex; align-items:center; justify-content:center; font-weight: bold; font-size: 1.1rem; border: 1px solid var(--line); background: var(--bg-soft); color: var(--muted);">?</button>
+            </div>
+    </header>
+
+    <main>
+        <section class="stats-row">
+            <p id="status-line">Loading...</p>
+        </section>
+        <section id="grid" class="grid" aria-live="polite"></section>
+
+        <div id="empty-state" class="hidden"
+            style="text-align: center; margin-top: 80px; padding: 40px; border: 2px dashed var(--line); border-radius: 12px; margin-inline: 40px;">
+            <h2 style="margin-bottom: 24px; color: var(--fg);">No articles found</h2>
+            <p style="margin-bottom: 32px; color: var(--fg-dim);">Drag and drop PDF files anywhere, select them
+                manually, or place them in the 'Articles' folder.</p>
+            <div style="display: flex; gap: 16px; justify-content: center;">
+                <button id="empty-upload-btn" type="button"
+                    style="background: var(--accent); color: #000; font-weight: 600;">Upload File(s)</button>
+                <button id="empty-reindex-btn" type="button" class="ghost">Reindex Folder</button>
+                <input type="file" id="empty-file-input" accept=".pdf" multiple class="hidden" />
+            </div>
+        </div>
+    </main>
+
+    <div id="edit-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h2 id="modal-title">Edit Article</h2>
+                <button id="modal-close" type="button" title="Escape">Close</button>
+            </div>
+            <div class="modal-layout">
+                <div id="modal-thumb-wrap" class="modal-thumb-wrap">
+                    <img id="modal-thumb" src="" alt="Article thumbnail" />
+                    <p class="drop-hint">Drag and drop an image here to replace thumbnail.</p>
+                    <div class="thumb-tools">
+                        <button id="thumb-paste" type="button" title="paste image">Paste from Clipboard</button>
+                        <button id="thumb-reset" type="button" class="ghost hidden">Extract Image from File</button>
+                        <hr style="border: none; border-top: 1px dashed var(--line); margin: 4px 0; width: 100%;" />
+                        <button id="editor-open-btn" type="button" class="ghost" style="color:var(--accent);">Open
+                            Article</button>
+                        <button id="editor-locate-btn" type="button" class="ghost">Open File Location</button>
+                    </div>
+                </div>
+                <form id="metadata-form">
+                    <label class="field">
+                        <span>Title</span>
+                        <input id="f-title" name="title" type="text" />
+                    </label>
+                    <label class="field">
+                        <span>Authors</span>
+                        <input id="f-authors" name="authors" type="text" />
+                    </label>
+                    <div class="inline-row">
+                        <label class="field">
+                            <span>Year</span>
+                            <input id="f-year" name="year" type="text" />
+                        </label>
+                        <label class="field">
+                            <span>Journal / Subject</span>
+                            <input id="f-journal" name="journal" type="text" />
+                        </label>
+                    </div>
+                    <div class="inline-row">
+                        <label class="field">
+                            <span>Volume</span>
+                            <input id="f-volume" name="volume" type="text" />
+                        </label>
+                        <label class="field">
+                            <span>Issue</span>
+                            <input id="f-issue" name="number" type="text" />
+                        </label>
+                        <label class="field">
+                            <span>Pages</span>
+                            <input id="f-pages" name="pages" type="text" />
+                        </label>
+                    </div>
+                    <label class="field compact">
+                        <span>DOI</span>
+                        <div style="display:flex;gap:8px;">
+                            <input id="f-doi" name="doi" type="text" style="flex:1;" />
+                            <button id="doi-fetch-btn" type="button" class="accent"
+                                style="padding: 0 12px; font-weight: bold;"
+                                title="Fetch metadata via Crossref using this DOI">Fetch</button>
+                        </div>
+                    </label>
+                    <label class="field">
+                        <span>Abstract</span>
+                        <textarea id="f-abstract" name="abstract" rows="5"></textarea>
+                    </label>
+                    <div class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                        <label style="display:flex;align-items:center;gap:8px;min-width:0;cursor:pointer;">
+                            <input id="paste-cleanup" type="checkbox" checked />
+                            <span style="font-size:0.82rem;">Auto-clean pasted text</span>
+                        </label>
+                        <button id="abstract-clean-btn" type="button" class="ghost" data-skip-autosave="true"
+                            style="margin-left:auto; font-size:0.78rem; padding:4px 8px;">Clean</button>
+                    </div>
+                    <label class="field">
+                        <span>Tags</span>
+                        <div id="tag-chip-container" class="tag-chip-container">
+                            <input id="f-tag-input" type="text" class="tag-chip-input" placeholder="Add tag..."
+                                autocomplete="off" />
+                            <div id="tag-autocomplete" class="tag-autocomplete hidden"></div>
+                        </div>
+                    </label>
+                    <label class="field">
+                        <span>Notes</span>
+                        <textarea id="f-notes" name="notes" rows="4"></textarea>
+                    </label>
+                    <div class="modal-actions">
+                        <button id="meta-remove" type="button" class="danger" style="margin-right: auto;">Remove
+                            Article</button>
+                        <button id="meta-save" type="submit">Save Metadata</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div id="abstract-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="abstract-title">
+        <div class="modal-card abstract-modal-card">
+            <div class="modal-header">
+                <h2 id="abstract-title">Abstract</h2>
+            </div>
+            <div class="abstract-body">
+                <div class="abstract-meta-strip">
+                    <div class="abstract-meta-divider"></div>
+                    <div class="abstract-meta-row">
+                        <p id="abstract-meta" class="meta"></p>
+                    </div>
+                    <div id="abstract-meta-divider" class="abstract-meta-divider"></div>
+                </div>
+                <div id="abstract-text"></div>
+                <div id="abstract-references-section" class="meta"
+                    style="margin-top:20px; border-top:1px solid var(--line); padding-top:10px; display:none;">
+                    <h3 style="font-size:0.9rem; margin-bottom:8px;">Referenced DOIs</h3>
+                    <div id="abstract-references-list" class="abstract-references-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="drop-overlay" class="hidden">
+        <div class="drop-message">Drop PDF files here to import</div>
+    </div>
+
+    <svg aria-hidden="true" focusable="false"
+        style="position:absolute; width:0; height:0; overflow:hidden; pointer-events:none;">
+        <defs>
+            <filter id="night-display-filter" x="-20%" y="-20%" width="140%" height="140%"
+                color-interpolation-filters="sRGB">
+                <feColorMatrix id="night-filter-pre-matrix" type="matrix"
+                    values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0" />
+                <feComponentTransfer id="night-filter-transfer">
+                    <feFuncR id="night-filter-func-r" type="table" tableValues="0 1" />
+                    <feFuncG id="night-filter-func-g" type="table" tableValues="0 1" />
+                    <feFuncB id="night-filter-func-b" type="table" tableValues="0 1" />
+                    <feFuncA type="identity" />
+                </feComponentTransfer>
+                <feColorMatrix id="night-filter-post-matrix" type="matrix"
+                    values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0" />
+            </filter>
+        </defs>
+    </svg>
+
+    <script src="app.js" defer></script>
+    <!-- Global Error Banner -->
+    <div id="error-banner"
+        style="position: fixed; bottom: 0; left: 0; right: 0; background: var(--danger, #dc3545); color: white; padding: 12px 20px; z-index: 99999; display: none; justify-content: space-between; align-items: center; box-shadow: 0 -2px 10px rgba(0,0,0,0.2);">
+        <span id="error-banner-text" style="font-family: monospace; font-size: 0.85rem; word-break: break-word;"></span>
+        <button id="error-banner-close" type="button"
+            style="background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer; padding: 0; line-height: 1;">&times;</button>
+    </div>
+
+    <!-- Tag Color Editor Panel -->
+    <div id="tag-color-editor" class="modal hidden" role="dialog" aria-modal="true">
+        <div class="modal-card" style="max-width:420px;">
+            <div class="modal-header">
+                <h2>Tag Colors</h2>
+                <button id="tag-color-close" class="close-btn" type="button">&times;</button>
+            </div>
+            <div id="tag-color-list" class="tag-color-list"></div>
+            <div style="padding:12px; border-top:1px solid var(--line); display:flex; justify-content:flex-end;">
+                <button id="tag-color-reset-all" type="button" class="secondary"
+                    style="font-size:0.85rem; padding:6px 12px;">Reset All Colors</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Duplicate Check Modal -->
+    <div id="duplicate-modal" class="modal hidden" role="dialog" aria-modal="true">
+        <div class="modal-card" style="max-width:600px;">
+            <div class="modal-header">
+                <h2>Duplicate DOIs Found</h2>
+                <button id="duplicate-close" class="close-btn" type="button">&times;</button>
+            </div>
+            <div style="padding: 12px 16px;">
+                <p class="meta" style="margin-bottom:12px;">The following articles share the same DOI. You can remove
+                    duplicates.</p>
+                <div id="duplicate-list"
+                    style="display:flex; flex-direction:column; gap:16px; max-height:400px; overflow-y:auto; padding-right:8px;">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Restore Backup Modal -->
+    <div id="backup-modal" class="modal-overlay hidden">
+        <div class="modal-content" style="max-width: 400px; text-align: center;">
+            <button id="backup-close" class="modal-close" aria-label="Close">×</button>
+            <h2 style="margin-top:0;">Restore Data Backup</h2>
+            <p class="meta" style="margin-bottom:20px;">
+                The application automatically backs up your metadata every 10 minutes.
+                Select a backup to instantly restore your library index.
+            </p>
+            <div id="backup-options" style="display:flex; flex-direction:column; gap:10px;">
+                <!-- Buttons injected via JS -->
+            </div>
+            <p id="backup-status" class="meta" style="margin-top:15px; color:var(--accent); display:none;"></p>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast hidden"></div>
+    <div id="thumbnail-undo" class="thumbnail-undo hidden" role="status" aria-live="polite">
+        <div class="thumbnail-undo-row">
+            <span id="thumbnail-undo-message">Undo image replacement?</span>
+            <button id="thumbnail-undo-btn" type="button">Undo</button>
+        </div>
+        <div class="thumbnail-undo-track" aria-hidden="true">
+            <div id="thumbnail-undo-progress" class="thumbnail-undo-progress"></div>
+        </div>
+    </div>
+
+    <!-- Hotkeys Modal -->
+    <div id="hotkeys-modal" class="modal hidden" role="dialog" aria-modal="true">
+        <div class="modal-card"
+            style="max-width:420px; display:flex; flex-direction:column; height:clamp(400px,92vh,1020px); overflow:hidden; padding-bottom:0;">
+            <div class="modal-header" style="flex-shrink:0;">
+                <h2>Keyboard Shortcuts</h2>
+                <button id="hotkeys-close" class="close-btn" type="button">&times;</button>
+            </div>
+            <div style="padding:12px 16px; overflow-y:auto; flex:1;">
+                <div id="hotkey-table-container">
+                    <!-- JS-populated hotkey table -->
+                </div>
+                <div style="margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span
+                            style="font-size: 0.8rem; color: var(--muted); font-weight: 600; letter-spacing: 0.03em;">Error
+                            Log</span>
+                        <div style="display:flex; align-items:center; gap:6px;">
+                            <button id="error-log-copy" type="button" class="ghost"
+                                style="font-size: 0.75rem; padding: 2px 6px;">Copy</button>
+                            <button id="error-log-clear" type="button" class="ghost"
+                                style="font-size: 0.75rem; padding: 2px 6px;">Clear</button>
+                        </div>
+                    </div>
+                    <ul id="error-log-list"
+                        style="margin-top: 8px; padding-left: 0; list-style: none; max-height: 100px; overflow-y: auto; font-family: monospace; font-size: 0.75rem; color: var(--danger); word-break: break-all; display: flex; flex-direction: column; gap: 4px;">
+                    </ul>
+                </div>
+            </div>
+            <div
+                style="text-align: center; border-top: 1px solid var(--line); padding: 12px 16px; background: var(--bg); flex-shrink:0;">
+                <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:10px; align-items:center;">
+                    <div id="hotkey-tip-text"
+                        style="font-size:0.78rem; color:var(--text); line-height:1.35; text-align:center;"></div>
+                    <div style="display:flex; align-items:center; justify-content:center; gap:10px;">
+                        <a id="hotkey-tip-source" href="#" target="_blank" rel="noopener noreferrer"
+                            style="font-size:0.75rem; color:var(--accent); text-align:center; text-decoration:none;"></a>
+                        <!--
+                        <button id="hotkey-tip-next" type="button" class="ghost"
+                            aria-label="Next tip" title="Next tip"
+                            style="padding:2px 8px; font-size:0.95rem; line-height:1; min-width:30px;">&#x21bb;</button>
+                        -->
+                    </div>
+                </div>
+                <div style="border-top:1px solid var(--line); opacity:0.7; margin:0 0 10px;"></div>
+                <a id="version-link" href="https://github.com/frkatona/journal-article-library-webGUI/tree/tauri"
+                    target="_blank" rel="noopener noreferrer"
+                    style="font-size: 0.8rem; color: var(--muted); font-weight: 600; cursor: pointer; letter-spacing: 0.03em; text-decoration:none;">v0.9.0</a>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>
