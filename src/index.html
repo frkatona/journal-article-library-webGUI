@@ -255,6 +255,7 @@
                             </span>
                             <input id="modal-backdrop-slider" type="range" min="0" max="95" step="1" value="58" />
                         </div>
+                        
                         <div class="field slider-collapsible" data-slider-field>
                             <span data-slider-toggle
                                 style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
@@ -262,6 +263,27 @@
                                 <span class="slider-caret" aria-hidden="true">&#9656;</span>
                             </span>
                             <input id="surface-opacity-slider" type="range" min="30" max="100" step="1" value="100" />
+                        </div>
+                                                <hr style="border:none; border-top:1px solid var(--line); margin:6px 0; opacity:0.6;" />
+
+                        <label class="field">
+                            <span>Filter Mode</span>
+                            <select id="night-filter-mode">
+                                <option value="warm">Warm</option>
+                                <option value="scalar_dimming">Scalar dimming</option>
+                                <option value="gamma_remap">Gamma re-map</option>
+                                <option value="luminance_remap">Luminance re-map</option>
+                                <option value="sigmoid_contrast">Sigmoid contrast shaping</option>
+                                <option value="soft_knee">Soft-knee compression</option>
+                            </select>
+                        </label>
+                        <div class="field slider-collapsible" data-slider-field>
+                            <span data-slider-toggle
+                                style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                                <span>Filter Strength <strong id="night-filter-strength-value">0</strong>%</span>
+                                <span class="slider-caret" aria-hidden="true">&#9656;</span>
+                            </span>
+                            <input id="night-filter-strength-slider" type="range" min="0" max="100" step="1" value="0" />
                         </div>
                         <hr style="border:none; border-top:1px solid var(--line); margin:6px 0; opacity:0.6;" />
                         <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
@@ -426,6 +448,25 @@
     <div id="drop-overlay" class="hidden">
         <div class="drop-message">Drop PDF files here to import</div>
     </div>
+
+    <svg aria-hidden="true" focusable="false"
+        style="position:absolute; width:0; height:0; overflow:hidden; pointer-events:none;">
+        <defs>
+            <filter id="night-display-filter" x="-20%" y="-20%" width="140%" height="140%"
+                color-interpolation-filters="sRGB">
+                <feColorMatrix id="night-filter-pre-matrix" type="matrix"
+                    values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0" />
+                <feComponentTransfer id="night-filter-transfer">
+                    <feFuncR id="night-filter-func-r" type="table" tableValues="0 1" />
+                    <feFuncG id="night-filter-func-g" type="table" tableValues="0 1" />
+                    <feFuncB id="night-filter-func-b" type="table" tableValues="0 1" />
+                    <feFuncA type="identity" />
+                </feComponentTransfer>
+                <feColorMatrix id="night-filter-post-matrix" type="matrix"
+                    values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0" />
+            </filter>
+        </defs>
+    </svg>
 
     <script src="app.js" defer></script>
     <!-- Global Error Banner -->

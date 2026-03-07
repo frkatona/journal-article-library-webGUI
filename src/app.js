@@ -72,6 +72,8 @@ const state = {
     colorIntensity: Number.parseInt(window.localStorage.getItem("article-color-intensity") || "13", 10),
     modalBackdropDarkness: Number.parseInt(window.localStorage.getItem("article-modal-backdrop-darkness") || "58", 10),
     surfaceOpacity: Number.parseInt(window.localStorage.getItem("article-surface-opacity") || "100", 10),
+    nightFilterMode: window.localStorage.getItem("article-night-filter-mode") || "warm",
+    nightFilterStrength: Number.parseInt(window.localStorage.getItem("article-night-filter-strength") || "0", 10),
     tagColors: JSON.parse(window.localStorage.getItem("article-tag-colors") || "{}"),
     hotkeys: JSON.parse(window.localStorage.getItem("article-hotkeys") || "null") || { ...DEFAULT_HOTKEYS },
     nicheTags: JSON.parse(window.localStorage.getItem("article-niche-tags") || "[]"),
@@ -84,6 +86,7 @@ const state = {
     showErrorsGlobally: window.localStorage.getItem("article-show-errors") !== "false",
     abstractSectionCount: Number.parseInt(window.localStorage.getItem("article-abstract-sections") || "4", 10),
     debugMode: window.localStorage.getItem("article-debug-mode") === "true",
+    modalArrowBusy: false,
 };
 
 const dom = {
@@ -107,6 +110,14 @@ const dom = {
     modalBackdropValue: document.getElementById("modal-backdrop-value"),
     surfaceOpacitySlider: document.getElementById("surface-opacity-slider"),
     surfaceOpacityValue: document.getElementById("surface-opacity-value"),
+    nightFilterMode: document.getElementById("night-filter-mode"),
+    nightFilterStrengthSlider: document.getElementById("night-filter-strength-slider"),
+    nightFilterStrengthValue: document.getElementById("night-filter-strength-value"),
+    nightFilterPreMatrix: document.getElementById("night-filter-pre-matrix"),
+    nightFilterPostMatrix: document.getElementById("night-filter-post-matrix"),
+    nightFilterFuncR: document.getElementById("night-filter-func-r"),
+    nightFilterFuncG: document.getElementById("night-filter-func-g"),
+    nightFilterFuncB: document.getElementById("night-filter-func-b"),
     colorIntensitySlider: document.getElementById("color-intensity-slider"),
     colorIntensityValue: document.getElementById("color-intensity-value"),
     fontFamilySelect: document.getElementById("font-family-select"),
@@ -324,6 +335,146 @@ function applySurfaceOpacity(value) {
     document.documentElement.style.setProperty("--surface-opacity-factor", (opacityPercent / 100).toFixed(2));
     if (dom.surfaceOpacitySlider) dom.surfaceOpacitySlider.value = String(opacityPercent);
     if (dom.surfaceOpacityValue) dom.surfaceOpacityValue.textContent = String(opacityPercent);
+}
+
+const NIGHT_FILTER_MODES = new Set([
+    "warm",
+    "scalar_dimming",
+    "gamma_remap",
+    "luminance_remap",
+    "sigmoid_contrast",
+    "soft_knee",
+]);
+
+const IDENTITY_COLOR_MATRIX = "1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0";
+const LUMA_PRE_MATRIX = "0.2126 0.7152 0.0722 0 0  -0.1063 -0.3576 0.4639 0 0.5  0.3937 -0.3576 -0.0361 0 0.5  0 0 0 1 0";
+const LUMA_POST_MATRIX = "1 0 2 0 -1  1 -0.2019 -0.5945 0 0.3982  1 2 0 0 -1  0 0 0 1 0";
+
+function clampUnit(value) {
+    return Math.max(0, Math.min(1, value));
+}
+
+function normalizeNightFilterMode(value) {
+    const mode = normalizeWhitespace(value).toLowerCase();
+    return NIGHT_FILTER_MODES.has(mode) ? mode : "warm";
+}
+
+function clampNightFilterStrength(value) {
+    const n = Number.parseInt(String(value), 10);
+    if (Number.isNaN(n)) return 0;
+    return Math.max(0, Math.min(100, n));
+}
+
+function buildFilterTableValues(mapper, points = 65) {
+    const safePoints = Math.max(2, points);
+    const values = [];
+    for (let i = 0; i < safePoints; i++) {
+        const x = i / (safePoints - 1);
+        values.push(clampUnit(mapper(x)).toFixed(6));
+    }
+    return values.join(" ");
+}
+
+function setFilterMatrix(el, values) {
+    if (el) el.setAttribute("values", values);
+}
+
+function applyNightFilter(modeValue, strengthValue) {
+    const mode = normalizeNightFilterMode(modeValue);
+    const strength = clampNightFilterStrength(strengthValue);
+    const s = strength / 100;
+
+    state.nightFilterMode = mode;
+    state.nightFilterStrength = strength;
+
+    if (dom.nightFilterMode) dom.nightFilterMode.value = mode;
+    if (dom.nightFilterStrengthSlider) dom.nightFilterStrengthSlider.value = String(strength);
+    if (dom.nightFilterStrengthValue) dom.nightFilterStrengthValue.textContent = String(strength);
+
+    if (strength <= 0) {
+        document.body.style.filter = "";
+        setFilterMatrix(dom.nightFilterPreMatrix, IDENTITY_COLOR_MATRIX);
+        setFilterMatrix(dom.nightFilterPostMatrix, IDENTITY_COLOR_MATRIX);
+        if (dom.nightFilterFuncR) dom.nightFilterFuncR.setAttribute("tableValues", "0 1");
+        if (dom.nightFilterFuncG) dom.nightFilterFuncG.setAttribute("tableValues", "0 1");
+        if (dom.nightFilterFuncB) dom.nightFilterFuncB.setAttribute("tableValues", "0 1");
+        return;
+    }
+
+    document.body.style.filter = "url(#night-display-filter)";
+
+    let mapR = (x) => x;
+    let mapG = (x) => x;
+    let mapB = (x) => x;
+    let preMatrix = IDENTITY_COLOR_MATRIX;
+    let postMatrix = IDENTITY_COLOR_MATRIX;
+
+    switch (mode) {
+        case "warm": {
+            const gScale = 1 - (0.15 * s);
+            const bScale = 1 - (0.4 * s);
+            mapR = (x) => x;
+            mapG = (x) => x * gScale;
+            mapB = (x) => x * bScale;
+            break;
+        }
+        case "scalar_dimming": {
+            const dim = 1 - (0.85 * s);
+            mapR = (x) => x * dim;
+            mapG = (x) => x * dim;
+            mapB = (x) => x * dim;
+            break;
+        }
+        case "gamma_remap": {
+            const gamma = 1 + (2.8 * s);
+            mapR = (x) => Math.pow(x, gamma);
+            mapG = (x) => Math.pow(x, gamma);
+            mapB = (x) => Math.pow(x, gamma);
+            break;
+        }
+        case "luminance_remap": {
+            const gamma = 1 + (2.2 * s);
+            const dim = 1 - (0.25 * s);
+            preMatrix = LUMA_PRE_MATRIX;
+            postMatrix = LUMA_POST_MATRIX;
+            mapR = (y) => Math.pow(y, gamma) * dim;
+            mapG = (u) => u; // Preserve chroma U' channel.
+            mapB = (v) => v; // Preserve chroma V' channel.
+            break;
+        }
+        case "sigmoid_contrast": {
+            const k = 2 + (12 * s);
+            const low = 1 / (1 + Math.exp(k * 0.5));
+            const high = 1 / (1 + Math.exp(-k * 0.5));
+            const span = Math.max(1e-6, high - low);
+            const dim = 1 - (0.45 * s);
+            const shape = (x) => {
+                const sig = 1 / (1 + Math.exp(-k * (x - 0.5)));
+                return ((sig - low) / span) * dim;
+            };
+            mapR = shape;
+            mapG = shape;
+            mapB = shape;
+            break;
+        }
+        case "soft_knee": {
+            const k = 0.35 + (1.65 * s);
+            const dim = 1 - (0.55 * s);
+            const shape = (x) => (x * dim) / (1 + (k * x));
+            mapR = shape;
+            mapG = shape;
+            mapB = shape;
+            break;
+        }
+        default:
+            break;
+    }
+
+    setFilterMatrix(dom.nightFilterPreMatrix, preMatrix);
+    setFilterMatrix(dom.nightFilterPostMatrix, postMatrix);
+    if (dom.nightFilterFuncR) dom.nightFilterFuncR.setAttribute("tableValues", buildFilterTableValues(mapR));
+    if (dom.nightFilterFuncG) dom.nightFilterFuncG.setAttribute("tableValues", buildFilterTableValues(mapG));
+    if (dom.nightFilterFuncB) dom.nightFilterFuncB.setAttribute("tableValues", buildFilterTableValues(mapB));
 }
 
 function applyFontFamily(value) {
@@ -910,6 +1061,32 @@ function sortArticles(articles) {
     return sorted;
 }
 
+function getVisibleSortedArticles() {
+    const nicheSet = new Set((state.nicheTags || []).map((t) => t.toLowerCase()));
+    const visible = state.hideNiche && nicheSet.size > 0
+        ? state.articles.filter((article) => {
+            const tags = (article.metadata?.tags || []).map((t) => t.trim().toLowerCase());
+            return !tags.some((t) => nicheSet.has(t));
+        })
+        : state.articles;
+    return sortArticles(visible);
+}
+
+function getNeighborArticleById(articleId, direction) {
+    if (!articleId) return null;
+    const ordered = getVisibleSortedArticles();
+    const currentIndex = ordered.findIndex((article) => article.id === articleId);
+    if (currentIndex < 0) return null;
+    const nextIndex = currentIndex + direction;
+    if (nextIndex < 0 || nextIndex >= ordered.length) return null;
+    return ordered[nextIndex];
+}
+
+function resolveArticleById(articleId) {
+    if (!articleId) return null;
+    return state.articles.find((article) => article.id === articleId) || null;
+}
+
 async function copyToClipboard(text) {
     const clean = normalizeWhitespace(text);
     if (!clean) return false;
@@ -1112,6 +1289,8 @@ const CLICK_ACTIONS = [
 const KEYBOARD_SHORTCUTS = [
     { label: "Paste thumbnail", key: "pasteThumb", description: "P" },
     { label: "Save & close", key: "enter", description: "Ctrl+Enter" },
+    { label: "Toggle abstract/metadata", key: "arrowToggle", description: "Arrow Up/Down (in modal)" },
+    { label: "Prev/next article in modal", key: "arrowNeighbor", description: "Arrow Left/Right (in modal)" },
 ];
 const WELLNESS_TIPS = [
     {
@@ -1421,6 +1600,23 @@ function extractDoiFromText(value) {
     return match ? match[0] : "";
 }
 
+function buildAnnaSciDbUrl(doi) {
+    const cleanDoi = normalizeWhitespace(doi).replace(/\/+$/, "");
+    if (!cleanDoi) return "";
+    return `https://annas-archive.gl/scidb/${encodeURI(cleanDoi)}/`;
+}
+
+async function openExternalUrl(url) {
+    const target = normalizeWhitespace(url);
+    if (!target) return;
+    try {
+        await invoke("open_external_url", { url: target });
+    } catch (err) {
+        // Fallback for environments where backend command might not be present yet.
+        window.open(target, "_blank", "noopener,noreferrer");
+    }
+}
+
 function isDoiInLibrary(doi) {
     if (!doi) return false;
     const cleanDoi = normalizeWhitespace(doi).toLowerCase();
@@ -1440,6 +1636,15 @@ function createAbstractReferenceRow(labelText, ordinal = null, muted = false) {
         row.href = `https://doi.org/${doi}`;
         row.target = "_blank";
         row.rel = "noopener noreferrer";
+
+        row.addEventListener("click", async (evt) => {
+            if (!(evt.ctrlKey && evt.altKey && evt.shiftKey)) return;
+            const annaUrl = buildAnnaSciDbUrl(doi);
+            if (!annaUrl) return;
+            evt.preventDefault();
+            evt.stopPropagation();
+            await openExternalUrl(annaUrl);
+        });
     }
 
     const iconSlot = document.createElement("span");
@@ -1947,23 +2152,16 @@ function renderArticles() {
     clearNode(dom.grid);
     dom.grid.classList.toggle("details-mode", state.viewMode === "details");
 
-    // Filter out niche articles if hideNiche is on
-    const nicheSet = new Set(state.nicheTags.map(t => t.toLowerCase()));
-    const articles = state.hideNiche && nicheSet.size > 0
-        ? state.articles.filter(a => {
-            const tags = (a.metadata?.tags || []).map(t => t.trim().toLowerCase());
-            return !tags.some(t => nicheSet.has(t));
-        })
-        : state.articles;
+    const visibleArticles = getVisibleSortedArticles();
 
-    if (articles.length === 0 && !state.query && state.tags.length === 0) {
+    if (visibleArticles.length === 0 && !state.query && state.tags.length === 0) {
         dom.emptyState.classList.remove("hidden");
         return;
     } else {
         dom.emptyState.classList.add("hidden");
     }
 
-    const sortedArticles = sortArticles(articles);
+    const sortedArticles = visibleArticles;
     if (!sortedArticles.length) {
         const empty = document.createElement("p");
         empty.className = "meta";
@@ -2507,6 +2705,8 @@ function wireEvents() {
     state.fontFamily = normalizeFontKey(state.fontFamily, "segoe");
     state.wellnessTipIndex = normalizeTipIndex(state.wellnessTipIndex);
     state.abstractSectionCount = clampAbstractSectionCount(state.abstractSectionCount);
+    state.nightFilterMode = normalizeNightFilterMode(state.nightFilterMode);
+    state.nightFilterStrength = clampNightFilterStrength(state.nightFilterStrength);
     dom.viewModeToggle.checked = state.viewMode === "details";
     dom.primarySort.value = state.primarySort;
     dom.secondarySort.value = state.secondarySort;
@@ -2516,6 +2716,7 @@ function wireEvents() {
     applyModalBackdropDarkness(state.modalBackdropDarkness);
     applySurfaceOpacity(state.surfaceOpacity);
     applyFontFamily(state.fontFamily);
+    applyNightFilter(state.nightFilterMode, state.nightFilterStrength);
     applyAbstractSectionCount(state.abstractSectionCount);
     setDisplayMenuOpen(false);
     setFilesMenuOpen(false);
@@ -3093,6 +3294,22 @@ function wireEvents() {
             window.localStorage.setItem("article-surface-opacity", String(state.surfaceOpacity));
         });
     }
+    if (dom.nightFilterMode) {
+        dom.nightFilterMode.value = state.nightFilterMode;
+        dom.nightFilterMode.addEventListener("change", () => {
+            applyNightFilter(dom.nightFilterMode.value, state.nightFilterStrength);
+            window.localStorage.setItem("article-night-filter-mode", state.nightFilterMode);
+        });
+    }
+    if (dom.nightFilterStrengthSlider) {
+        const commitNightStrength = () => {
+            applyNightFilter(state.nightFilterMode, dom.nightFilterStrengthSlider.value);
+            window.localStorage.setItem("article-night-filter-strength", String(state.nightFilterStrength));
+        };
+        dom.nightFilterStrengthSlider.addEventListener("input", commitNightStrength);
+        dom.nightFilterStrengthSlider.addEventListener("change", commitNightStrength);
+        dom.nightFilterStrengthSlider.addEventListener("blur", commitNightStrength);
+    }
     // Tag Filter Custom Dropdown
     dom.tagFilterBtn.addEventListener("click", (evt) => {
         evt.preventDefault();
@@ -3478,8 +3695,71 @@ function wireEvents() {
         });
     });
 
+    function handleModalArrowNavigation(evt) {
+        const key = evt.key;
+        if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(key)) return false;
+        if (evt.ctrlKey || evt.metaKey || evt.altKey) return false;
+
+        const metadataOpen = !dom.modal.classList.contains("hidden");
+        const abstractOpen = !dom.abstractModal.classList.contains("hidden");
+        if (!metadataOpen && !abstractOpen) return false;
+
+        // Preserve normal caret/navigation behavior while actively editing metadata fields.
+        if (metadataOpen && isMetadataEditableField(evt.target)) return false;
+
+        const activeArticle = metadataOpen ? state.current : state.abstractPreviewArticle;
+        if (!activeArticle?.id) return false;
+
+        const isToggleKey = key === "ArrowUp" || key === "ArrowDown";
+        const direction = key === "ArrowLeft" ? -1 : 1;
+        const targetArticle = isToggleKey ? activeArticle : getNeighborArticleById(activeArticle.id, direction);
+        if (!targetArticle?.id) return false;
+
+        evt.preventDefault();
+        evt.stopPropagation();
+        if (state.modalArrowBusy) return true;
+        state.modalArrowBusy = true;
+
+        (async () => {
+            if (metadataOpen) {
+                await saveMetadata({ type: isToggleKey ? "arrow-modal-toggle" : "arrow-article-nav" });
+            }
+
+            const resolved = resolveArticleById(targetArticle.id) || targetArticle;
+
+            if (isToggleKey) {
+                if (abstractOpen) {
+                    closeAbstract();
+                    openEditor(resolved);
+                } else {
+                    closeEditor();
+                    openAbstract(resolved);
+                }
+                return;
+            }
+
+            if (abstractOpen) {
+                closeAbstract();
+                openAbstract(resolved);
+            } else {
+                closeEditor();
+                openEditor(resolved);
+            }
+        })()
+            .catch((err) => {
+                const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
+                setStatus(`Arrow navigation failed: ${message}`, true);
+            })
+            .finally(() => {
+                state.modalArrowBusy = false;
+            });
+        return true;
+    }
+
     // Keydown for Modal Escape / Search Focus
     document.addEventListener("keydown", (evt) => {
+        if (handleModalArrowNavigation(evt)) return;
+
         if (evt.key === "Escape") {
             // Priority: autocomplete -> color editor -> abstract -> duplicate/edit modal -> hotkeys -> backup modal
             if (!dom.tagAutocomplete.classList.contains("hidden")) {

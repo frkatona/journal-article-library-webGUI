@@ -74,6 +74,84 @@ Drag-and-drop PDFs onto the open application window. The PDFs will be copied to 
    - modal focus (background darkening)
  - simple file view from the front page toggle (Card <-> List)
 
+### Night Filter Techniques (Code Snippets)
+
+The Display menu includes a `Night Filter Technique` dropdown plus `Night Filter Strength` (`0-100`). Internally:
+
+```js
+const s = strength / 100; // normalize to [0, 1]
+```
+
+1. Warm (`R' = R, G' = 0.85G, B' = 0.6B` at full strength)
+
+```js
+const gScale = 1 - (0.15 * s);
+const bScale = 1 - (0.4 * s);
+mapR = (x) => x;
+mapG = (x) => x * gScale;
+mapB = (x) => x * bScale;
+```
+
+2. Scalar dimming
+
+```js
+const dim = 1 - (0.85 * s);
+mapR = (x) => x * dim;
+mapG = (x) => x * dim;
+mapB = (x) => x * dim;
+```
+
+3. Gamma remapping
+
+```js
+const gamma = 1 + (2.8 * s);
+mapR = (x) => Math.pow(x, gamma);
+mapG = (x) => Math.pow(x, gamma);
+mapB = (x) => Math.pow(x, gamma);
+```
+
+4. Luminance remap (Y/chroma style)
+
+```js
+const gamma = 1 + (2.2 * s);
+const dim = 1 - (0.25 * s);
+preMatrix = LUMA_PRE_MATRIX;
+postMatrix = LUMA_POST_MATRIX;
+mapR = (y) => Math.pow(y, gamma) * dim; // darken luminance
+mapG = (u) => u; // preserve chroma U'
+mapB = (v) => v; // preserve chroma V'
+```
+
+5. Sigmoid contrast shaping
+
+```js
+const k = 2 + (12 * s);
+const low = 1 / (1 + Math.exp(k * 0.5));
+const high = 1 / (1 + Math.exp(-k * 0.5));
+const span = Math.max(1e-6, high - low);
+const dim = 1 - (0.45 * s);
+const shape = (x) => {
+  const sig = 1 / (1 + Math.exp(-k * (x - 0.5)));
+  return ((sig - low) / span) * dim;
+};
+mapR = shape;
+mapG = shape;
+mapB = shape;
+```
+
+6. Soft-knee compression
+
+```js
+const k = 0.35 + (1.65 * s);
+const dim = 1 - (0.55 * s);
+const shape = (x) => (x * dim) / (1 + (k * x));
+mapR = shape;
+mapG = shape;
+mapB = shape;
+```
+
+These functions are sampled into `feComponentTransfer` lookup tables, with optional color-space pre/post transforms for luminance remapping.
+
 ---
 
 # Installation
@@ -404,8 +482,18 @@ CLI warnings:
 - [x] show 'metadata saved' each time its saved (moving between fields, clicking the save button, pushing 'enter' to exit the modal)
 - [x] try to maintain at least 2 sentences for each section in the abstract separation.
 - [x] save space in display -> hide the slider until the user clicks on the button
+- push v0.8.9
 ---
-  
+- [x] alternative db search when modifier clicking reference DOIs
+- [x] arrow key hotkeys on the modals (left/right for moving between articles, up/down for moving between abstract/edit metadata)
+- [x] night time filters
+  - (1) warm (R' = R, G' = 0.85G, B' = 0.6B)
+  - (2) scalar dimming
+  - (3) gamma remapping
+  - (4) luminance remap (convert RGB to a luminance/chrominance representation, apply a darkening curve to Y, then rescale RGB proportionately)
+  - (5) sigmoid contrast shaping
+  - (6) soft-knee compression
+
 ### think about more first
 
 - [ ] include a resizing/cropping feature to the 'paste thumbnail image' to encourage getting large screenshots and cropping in

@@ -1914,6 +1914,18 @@ fn open_articles_folder(state: tauri::State<'_, Mutex<AppState>>) -> Result<(), 
 }
 
 #[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    let target = url.trim();
+    if target.is_empty() {
+        return Err("URL is empty".into());
+    }
+    if !(target.starts_with("http://") || target.starts_with("https://")) {
+        return Err("Only http/https URLs are allowed".into());
+    }
+    opener::open(target).map_err(|e| format!("Failed to open URL: {}", e))
+}
+
+#[tauri::command]
 fn get_thumbnail_url(
     state: tauri::State<'_, Mutex<AppState>>,
     rel_path: String,
@@ -2402,6 +2414,7 @@ pub fn run() {
             open_pdf,
             open_file_location,
             open_articles_folder,
+            open_external_url,
             get_thumbnail_url,
             get_root_dir,
             import_pdf,
