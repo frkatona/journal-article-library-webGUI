@@ -6,8 +6,6 @@
 
 - [ ] make referenced dois into columns instead of one row and several columns
 
-- [ ] default 'warn duplicate DOIs' to on in the file settings
-
 - [ ] brightness adjustments (lowering max value across the window, filtering the thumbnails, etc.)
 
 - [ ] how can I have the selected article active in the folder when I select "open in folder" like windows does when using "open file location"
@@ -47,6 +45,10 @@
 
 ### questions
 
-- when should I be considering a database approach?  is there a nice way to visualize that during development?
+- when should I be considering a database approach?  really ~1000 articles?  
+  - is there a helpful metric to keep an eye on, like time to open the app, or time to render the full library that I can log in the debug? 
+  - is there a good tool for development and visualization of the database implementation?
 
 - try to better understand the snake/camel case relationship between the front and back end here
+
+- is 'warn duplicate DOIs' defaulted on on in the file settings?

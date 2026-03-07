@@ -1,4 +1,4 @@
-# Literature Library
+﻿# Literature Library
 
 Windows application for browsing local PDFs, geared towards collections of scientific literature. 
 
@@ -150,6 +150,12 @@ The app can attempt a thumbnail auto-generation from your PDFs:
 Click the **re-index** button in the `Files` menu to rescan `Articles/` and rebuild the index. This re-extracts metadata and regenerates auto thumbnails while preserving all your manual edits and tags.  
 
 During this scan, duplicate DOIs will be presented to the user for deletion.
+
+## Note on size
+
+testing on my desktop with 110 files with thumbnails, metadata, and DOI reference extractions, the PDFs themselves still accounted for about 97% of the project folder size and the application responsiveness was high
+
+I hope to continue to test scaling into more realistic article library counts
 
 ## Data Layout
 
@@ -362,6 +368,7 @@ CLI warnings:
 - [x] add display option for how many sections to separate abstract into (default 3)
 - [x] create a debug mode checkbox in the file settings under 'experimental' for visualizing verbose output for more routine actions
 - [x] remove 'extract image from file' from the production build
+---
 - [x] remove soft light theme or replace it with another one with better contrast
   - [x] remaining fixes: lighter text in the dropdown menus and the list view elements
   - [x] and the track of the cards-lists toggle switch
@@ -397,6 +404,7 @@ CLI warnings:
 - [x] show 'metadata saved' each time its saved (moving between fields, clicking the save button, pushing 'enter' to exit the modal)
 - [x] try to maintain at least 2 sentences for each section in the abstract separation.
 - [x] save space in display -> hide the slider until the user clicks on the button
+---
   
 ### think about more first
 
