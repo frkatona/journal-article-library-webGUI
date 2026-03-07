@@ -1,240 +1,144 @@
 ﻿# Literature Library
 
-  
-
 Windows application for browsing local PDFs, geared towards collections of scientific literature.
 
-  
-
-![logo](src-tauri/icons/Square310x310Logo.png)
-
-  
+![alt text](src-tauri/icons/Square150x150Logo.png)
 
 The PDFs still open in the default viewer, but the browser facilitates searches with visual thumbnail cards with various customizations.  There are also tags/filters with custom colorization and search functions, fields for note-taking, abstract previews, and hotkeys for tedious tasks, like BibTex-to-clipboard.
 
-  
-
 ## Front Page
-
-  
 
 Drag-and-drop PDFs onto the open application window top copy automatically into the `Articles/` folder at the project root and display them as cards in the application.
 
-  
-
 ![front page](readme-images/hero.png)
-
-  
 
  - primary and secondary sort based on article content (title, publication date, etc.) or metadata (recently added, last opened, etc.)
 
  - toggle between the visual 'cards' UI or or the traditional simplified 'list' view.
 
-  
-
 ---
-
-  
 
 ## Metadata Editor
 
-  
-
 Fully automated parsing from PDFs of journal articles is unreliable for even standard metadata, much less the extraction and sizing of unique/appealing thumbnails.  The metadata editor here attempts to streamline the process of finding, managing, and editing metadata and thumbnail images.
-
-  
 
 ![metadata](readme-images/metadata.png)
 
-  
+- use 'fetch' to automatically parse PDF for DOI and fill metadata found on API request
 
- - use 'fetch' to automatically parse PDF for DOI and fill metadata found on API request
+  - my experience suggests a reliability of about 9 of 10 'modern' articles and perhaps 3 of 10 'dated' articles
 
-   - my experience suggests a reliability of about 9 of 10 'modern' articles and perhaps 3 of 10 'dated' articles
+  - requires internet connection
 
-   - requires internet connection
+  - abstracts are often excluded from the API extraction, but the artifacts often associated with copying PDF content are addressed through some scripting through both heuristic and NLP solutions (see abstract preview below)
 
-   - abstracts are often excluded from the API extraction, but the artifacts often associated with copying PDF content are addressed through some scripting through both heuristic and NLP solutions (see abstract preview below)
+- take a custom thumbnail with Windows snip tool (windows + shift + S) and click "Paste from Clipboard" (*default hotkey `P`*)
 
-  
-
- - take a custom thumbnail with Windows snip tool (windows + shift + S) and click "Paste from Clipboard"
-
-  
-
- - 'tags' are entered and managed as chips with tab-autocompletion
-
-  
+- 'tags' are entered and managed as chips with tab-autocompletion
 
 ---
-
-  
 
 ## Abstract Preview
 
-  
-
  Abstract text added to the metadata modal, whether parsed from PDF or manually pasted, is automatically processed and segmented to a more digestable view here.  This is intended to be paired with the `view abstract preview` hotkey to streamline scanning of articles' tenor across a library.
-
-  
 
 ![example of modal which appears of the abstract when abstract button is selected](readme-images/abstract_modal.png)
 
-  
+- if abstract appears unexpected formatted, try playing with the `abstract partitioning strength` slider in the `Files` menu, as well as the `Clean` button in the metadata modal
 
- - if abstract appears unexpected formatted, try playing with the `abstract partitioning strength` slider in the `Files` menu, as well as the `Clean` button in the metadata modal
-
-  
-
- - if metadata was 'fetched' in the metadata modal, hyperlinked reference DOIs automatically populate here
-
-  
+- if metadata was 'fetched' in the metadata modal, hyperlinked reference DOIs automatically populate here
 
 ---
-
-  
 
 ## Tags and Filters
 
-  
-
 Similarly, the article tags from the metadata modal can be filtered to view project-, concept-, or technique-specific collections.
-
-  
 
 ![tags and filters](readme-images/filters.png)
 
-  
-
 - select from tags assigned to articles in their metadata modal
 
-  - chips components offer tab auto-completion for existing tags
-
-  
+- chips components offer tab auto-completion for existing tags
 
 - choose filter mode (show matches with 'any', 'all', or 'none' of the selected tags)
 
-  
-
 ---
-
-  
 
 ## Shortcuts
 
-  
-
 Customize various mouse/keyboard hotkeys to, for instance, open the article location in the file system, or copy BibTeX citation to the clipboard.
-
   
-
 ![shortcuts](readme-images/shortcuts.png)
-
-  
 
 - click event modifiers on article cards
 
-   - open the article in the default PDF viewer
+  - open the article in the default PDF viewer
 
-   - open the metadata editor modal
+  - open the metadata editor modal
 
-   - open the abstract modal
+  - open the abstract modal
 
-   - open the article file location on device
+  - open the article file location on device
 
-   - copy the BibTeX-formatted citation information to the clipboard (LaTeX bibliography file formatting)
-
-  
+  - copy the BibTeX-formatted citation information to the clipboard (LaTeX bibliography file formatting)
 
 - keyboard events
 
-  - paste thumbnail from clipboard (while anywhere in the metadata modal OR to the card under the cursor in the card view)
+  - paste thumbnail from clipboard (while anywhere in the metadata modal OR to the card under the cursor in the card view)
 
-  - save and exit metadata modal
+  - save and exit metadata modal
 
-  - move between articles or modals
+  - move between articles or modals
 
 ---
-
-  
 
 ## Display, Themes, and Color Filters
 
-  
-
 Various color themes
-
-  
 
 ![themes](readme-images/themes.png)
 
-  
+- display settings unrelated to color theme are also available in the display menu
 
- - display settings unrelated to color theme are also available in the display menu
+  - font
 
-   - font
+  - card size
 
-   - card size
+  - modal opacity
 
-   - modal opacity
+  - modal focus (background darkening)
 
-   - modal focus (background darkening)
-
- - to mitigate eye strain in low-light environments, also try to add a filter from the `filter modes` options
+- to mitigate eye strain in low-light environments, also try to add a filter from the `filter modes` options
 
 ---
 
-  
-
 # Installation
-
-  
 
 Download the latest installer on the GitHub repo releases page [here](https://github.com/frkatona/journal-article-library-webGUI/releases)
 
-  
-
 # Development details
-
-  
 
 Built with [Tauri v2](https://tauri.app/) (Rust backend + JS frontend).  The windows installer is available in the releases tab.
 
-  
-
 - edits are saved as override files in `library_data/overrides/` and survive reindexing
-
-  
 
 ## Dev build
 
-  
-
 ### Prerequisites
-
-  
 
 - [Rust](https://rustup.rs/) (stable toolchain)
 
 - [Node.js](https://nodejs.org/) (v18+)
 
-  
-
 ### Build from Source
-
-  
 
 ```powershell
 
 # Clone or download this repository, then from the repo root:
 
-  
-
 # 1. Install the Tauri CLI
 
 npm install
-
-  
 
 # 2. Build the release binary
 
@@ -242,15 +146,9 @@ npx tauri build
 
 ```
 
-  
-
 The installer/executable will be output to `src-tauri/target/release/bundle/`.
 
-  
-
 ### Run in Development Mode
-
-  
 
 ```powershell
 
@@ -258,23 +156,13 @@ npx tauri dev
 
 ```
 
-  
-
 This compiles the Rust backend and opens the app window with hot-reload for frontend changes.
-
-  
 
 # Misc. notes
 
-  
-
 ### Night Filter Techniques (Code Snippets)
 
-  
-
 The Display menu includes a `Night Filter Technique` dropdown plus `Night Filter Strength` (`0-100`). Internally:
-
-  
 
 ```js
 
@@ -282,11 +170,7 @@ const s = strength / 100; // normalize to [0, 1]
 
 ```
 
-  
-
 1. Warm (`R' = R, G' = 0.85G, B' = 0.6B` at full strength)
-
-  
 
 ```js
 
@@ -302,11 +186,7 @@ mapB = (x) => x * bScale;
 
 ```
 
-  
-
 2. Scalar dimming
-
-  
 
 ```js
 
@@ -320,11 +200,7 @@ mapB = (x) => x * dim;
 
 ```
 
-  
-
 3. Gamma remapping
-
-  
 
 ```js
 
@@ -338,11 +214,7 @@ mapB = (x) => Math.pow(x, gamma);
 
 ```
 
-  
-
 4. Luminance remap (Y/chroma style)
-
-  
 
 ```js
 
@@ -362,11 +234,7 @@ mapB = (v) => v; // preserve chroma V'
 
 ```
 
-  
-
 5. Sigmoid contrast shaping
-
-  
 
 ```js
 
@@ -396,11 +264,7 @@ mapB = shape;
 
 ```
 
-  
-
 6. Soft-knee compression
-
-  
 
 ```js
 
@@ -418,103 +282,57 @@ mapB = shape;
 
 ```
 
-  
-
 These functions are sampled into `feComponentTransfer` lookup tables, with optional color-space pre/post transforms for luminance remapping.
-
-  
 
 ---
 
-  
-
 ### Pasted Abstract Processing
-
-  
 
 When `Auto-clean pasted text` is enabled in the metadata modal, pasted abstract text is processed before insertion.
 
-  
-
 Current pipeline:
-
-  
 
 1. PDF artifact cleanup:
 
-   - Normalizes Unicode text (NFKC) where possible.
+   - Normalizes Unicode text (NFKC) where possible.
 
-   - Removes soft hyphens and invisible joiner/zero-width characters.
+   - Removes soft hyphens and invisible joiner/zero-width characters.
 
-   - Replaces common PDF ligatures (`ff`, `fi`, `fl`, `ffi`, `ffl`, `ft`, `st`) when copied as single glyphs.
+   - Replaces common PDF ligatures (`ff`, `fi`, `fl`, `ffi`, `ffl`, `ft`, `st`) when copied as single glyphs.
 
-   - Repairs many hyphenated line-wraps (for example, `inter-\nnational` -> `international`).
+   - Repairs many hyphenated line-wraps (for example, `inter-\nnational` -> `international`).
 
-   - Removes common super/subscript debris from copied text.
+   - Removes common super/subscript debris from copied text.
 
 2. Sentence tokenization:
 
-   - Uses `Intl.Segmenter` sentence mode when available.
+   - Uses `Intl.Segmenter` sentence mode when available.
 
-   - Falls back to a lightweight heuristic tokenizer that protects many non-boundary periods (for example: `e.g.`, `et al.`, initials like `J. Smith`, acronyms like `U.S.`, and decimals like `3.14`).
+   - Falls back to a lightweight heuristic tokenizer that protects many non-boundary periods (for example: `e.g.`, `et al.`, initials like `J. Smith`, acronyms like `U.S.`, and decimals like `3.14`).
 
 3. Section chunking:
 
-   - Sentences are grouped into roughly equal-length sections without splitting sentence bodies.
+   - Sentences are grouped into roughly equal-length sections without splitting sentence bodies.
 
-   - The number of sections follows the `Abstract partitioning strength` setting (default `4`).
-
-  
+   - The number of sections follows the `Abstract partitioning strength` setting (default `4`).
 
 This system is designed to reduce common PDF copy-paste noise while keeping abstract structure readable in both metadata and preview views.
 
-  
-
-### Thumbnails auto-generation attempts
-
-  
-
-The app can attempt a thumbnail auto-generation from your PDFs:
-
-  
-
-- **Hybrid**: extracts the best embedded image from the PDF; falls back to a placeholder if none found
-
-- **Embedded**: only uses embedded images from the PDF
-
-  
-
 ### Reindexing
-
-  
 
 Click the **re-index** button in the `Files` menu to rescan `Articles/` and rebuild the index. This re-extracts metadata and regenerates auto thumbnails while preserving all your manual edits and tags.  
 
-  
-
 During this scan, duplicate DOIs will be presented to the user for deletion.
-
-  
 
 ## Note on size
 
-  
-
 testing on my desktop with 110 files with thumbnails, metadata, and DOI reference extractions, the PDFs themselves still accounted for about 97% of the project folder size and the application responsiveness was high
-
-  
 
 I hope to continue to test scaling into more realistic article library counts
 
-  
-
 ## Data Layout
 
-  
-
 ### Development Mode (`npx tauri dev`)
-
-  
 
 ```text
 
@@ -542,19 +360,11 @@ I hope to continue to test scaling into more realistic article library counts
 
 ```
 
-  
-
 ### Bundled Release App
-
-  
 
 In release builds, the same `Articles/` + `library_data/` layout is used, but rooted in the app local data directory.
 
-  
-
 On Windows this is typically:
-
-  
 
 ```text
 
@@ -562,19 +372,11 @@ On Windows this is typically:
 
 ```
 
-  
-
 > **Tip**: Keep original PDFs in `Articles/` and avoid renaming files after tagging - article IDs are derived from relative file paths, so moving/renaming files creates new IDs.
 
-  
-
-## How It's Built
-
-  
+## Under the hood
 
 ### Architecture
-
-  
 
 | Layer | Technology | Role |
 
@@ -592,15 +394,9 @@ On Windows this is typically:
 
 | Metadata API | Crossref via `reqwest` | DOI metadata fetch + referenced DOI extraction |
 
-  
-
 ### Backend Commands
 
-  
-
 The Rust backend exposes these commands to the frontend:
-
-  
 
 | Command | Purpose |
 
@@ -650,15 +446,9 @@ The Rust backend exposes these commands to the frontend:
 
 | `get_crash_log` | Read backend crash log contents |
 
-  
-
-#### Abridged Rust Command Flow
-
-  
+#### Abridged Backend Details
 
 Generalized pseudocode for the Tauri commands above:
-
-  
 
 ```rust
 
@@ -674,8 +464,6 @@ fn get_articles(...) -> Result<ArticlesResponse, String> {
 
 }
 
-  
-
 #[tauri::command]
 
 fn get_tags(...) -> Result<TagsResponse, String> {
@@ -688,8 +476,6 @@ fn get_tags(...) -> Result<TagsResponse, String> {
 
 }
 
-  
-
 #[tauri::command]
 
 fn reindex(...) -> Result<ReindexResponse, String> {
@@ -701,8 +487,6 @@ fn reindex(...) -> Result<ReindexResponse, String> {
     Ok(build_reindex_summary(payload))
 
 }
-
-  
 
 #[tauri::command]
 
@@ -722,8 +506,6 @@ fn save_metadata(article_id, payload) -> Result<MutationResponse, String> {
 
 }
 
-  
-
 #[tauri::command]
 
 fn upload_thumbnail(article_id, data) -> Result<MutationResponse, String> {
@@ -742,8 +524,6 @@ fn upload_thumbnail(article_id, data) -> Result<MutationResponse, String> {
 
 }
 
-  
-
 #[tauri::command]
 
 fn remove_article(article_id) -> Result<bool, String> {
@@ -757,9 +537,7 @@ fn remove_article(article_id) -> Result<bool, String> {
     Ok(true)
 
 }
-
   
-
 #[tauri::command]
 
 fn open_pdf(relpath) -> Result<(), String> {
@@ -773,8 +551,6 @@ fn open_pdf(relpath) -> Result<(), String> {
     Ok(())
 
 }
-
-  
 
 #[tauri::command]
 
@@ -790,8 +566,6 @@ fn open_file_location(relpath) -> Result<(), String> {
 
 }
 
-  
-
 #[tauri::command]
 
 fn open_articles_folder(...) -> Result<(), String> {
@@ -801,8 +575,6 @@ fn open_articles_folder(...) -> Result<(), String> {
     Ok(())
 
 }
-
-  
 
 #[tauri::command]
 
@@ -816,8 +588,6 @@ fn open_external_url(url) -> Result<(), String> {
 
 }
 
-  
-
 #[tauri::command]
 
 fn get_thumbnail_url(rel_path) -> Result<String, String> {
@@ -828,8 +598,6 @@ fn get_thumbnail_url(rel_path) -> Result<String, String> {
 
 }
 
-  
-
 #[tauri::command]
 
 fn get_root_dir(...) -> Result<String, String> {
@@ -837,8 +605,6 @@ fn get_root_dir(...) -> Result<String, String> {
     Ok(root_dir_as_string())
 
 }
-
-  
 
 #[tauri::command]
 
@@ -853,8 +619,6 @@ fn get_storage_report(...) -> Result<StorageReportResponse, String> {
     Ok(StorageReportResponse { root_dir, folders, metadata, ... })
 
 }
-
-  
 
 #[tauri::command]
 
@@ -872,8 +636,6 @@ fn import_pdf(filename, data) -> Result<MutationResponse, String> {
 
 }
 
-  
-
 #[tauri::command]
 
 async fn import_pdfs_from_paths(paths) -> Result<Vec<MutationResponse>, String> {
@@ -890,8 +652,6 @@ async fn import_pdfs_from_paths(paths) -> Result<Vec<MutationResponse>, String> 
 
 }
 
-  
-
 #[tauri::command]
 
 async fn fetch_doi_metadata(doi) -> Result<Metadata, String> {
@@ -901,8 +661,6 @@ async fn fetch_doi_metadata(doi) -> Result<Metadata, String> {
     Ok(extract_title_authors_year_journal_pages_abstract_and_ref_dois(json))
 
 }
-
-  
 
 #[tauri::command]
 
@@ -916,8 +674,6 @@ fn get_article_text_front(article_id) -> Result<String, String> {
 
 }
 
-  
-
 #[tauri::command]
 
 fn get_article_text_back(article_id) -> Result<String, String> {
@@ -929,8 +685,6 @@ fn get_article_text_back(article_id) -> Result<String, String> {
     Ok(last_n_chars(text, 15_000))
 
 }
-
-  
 
 #[tauri::command]
 
@@ -944,8 +698,6 @@ fn create_backup(...) -> Result<bool, String> {
 
 }
 
-  
-
 #[tauri::command]
 
 fn get_backups(...) -> Result<BackupsResponse, String> {
@@ -953,8 +705,6 @@ fn get_backups(...) -> Result<BackupsResponse, String> {
     Ok(read_backup_slots_and_modified_timestamps(data_dir))
 
 }
-
-  
 
 #[tauri::command]
 
@@ -968,8 +718,6 @@ fn restore_backup(backup_name) -> Result<bool, String> {
 
 }
 
-  
-
 #[tauri::command]
 
 fn get_crash_log(...) -> String {
@@ -980,31 +728,17 @@ fn get_crash_log(...) -> String {
 
 ```
 
-  
-
 ### Key Dependencies
-
-  
 
 **Rust**: `tauri`, `tauri-plugin-shell`, `tauri-plugin-dialog`, `serde`, `serde_json`, `lopdf`, `pdf-extract`, `image`, `reqwest`, `regex`, `walkdir`, `opener`, `sha1_smol`, `base64`, `chrono`, `futures`
 
-  
-
 **Frontend runtime**: native browser APIs plus Tauri global API (`window.__TAURI__`, enabled via `withGlobalTauri`).
-
-  
 
 **Frontend tooling**: `@tauri-apps/cli` (dev dependency).
 
-  
-
 ## Editing the Source
 
-  
-
 ### Project Structure
-
-  
 
 ```text
 
@@ -1032,11 +766,7 @@ src-tauri/              # Rust backend
 
 ```
 
-  
-
 ### Making Changes
-
-  
 
 - **Frontend**: Edit files in `src/`. Changes are picked up automatically in dev mode.
 
@@ -1046,11 +776,7 @@ src-tauri/              # Rust backend
 
 - **Keep docs in sync**: If you add/remove commands, update the Backend Commands table above so README stays accurate.
 
-  
-
 ## Notes for Larger Libraries
-
-  
 
 - For very large collections, the per-article override file approach scales well — no single giant JSON to manage.
 
@@ -1058,15 +784,9 @@ src-tauri/              # Rust backend
 
 - If search performance degrades (probably will be fine until scaling into ~thousands of articles), consider adding SQLite FTS while keeping the same override schema.
 
-  
-
 ## Crossref API Metadata Extraction
 
-  
-
 The application utilizes the **Crossref API** (`https://api.crossref.org/works/{doi}`) to fetch rich metadata for articles. The following data fields are available from the `message` response object, which you can consider for future automation or visualization features:
-
-  
 
 * **Title:** Full article title(s).
 
@@ -1094,11 +814,7 @@ The application utilizes the **Crossref API** (`https://api.crossref.org/works/{
 
   * `unstructured`: A fallback raw text string of the citation if structured fields are missing.
 
-  
-
 *(Note: While the API provides all this under the 'polite pool', some fields—especially abstracts or references—may be missing from the JSON payload depending on the publisher's deposit).*
-
-  
 
 ## changelog
 
@@ -1106,43 +822,43 @@ The application utilizes the **Crossref API** (`https://api.crossref.org/works/{
 
 - design/UX features/qol
 
-  - [x] default to fast search on, rework checkbox to on = slow search (name?)
+- [x] default to fast search on, rework checkbox to on = slow search (name?)
 
-  - better toggle switch visibility
+- better toggle switch visibility
 
-  - better organization of hamburger menu options
+- better organization of hamburger menu options
 
-  - refine tag color
+- refine tag color
 
-    - how buttons appear in menu
+  - how buttons appear in menu
 
-    - slider for subtle -> dramatic influence on base hue
+  - slider for subtle -> dramatic influence on base hue
 
-    - toggle between 'mix colors' and 'use biggest tag'
+  - toggle between 'mix colors' and 'use biggest tag'
 
-    - checkbox for color-blind palette
+  - checkbox for color-blind palette
 
-  - menu button color
+- menu button color
 
-  - [x] taskbar icon - remove black box background; add a bit more texture
+- [x] taskbar icon - remove black box background; add a bit more texture
 
-  - [x] remove "upload manual thumbnail" and use its green color for the "paste from clipboard" option
+- [x] remove "upload manual thumbnail" and use its green color for the "paste from clipboard" option
 
-    - [x] change "use auto thumbnail" to "extract image from file"
+  - [x] change "use auto thumbnail" to "extract image from file"
 
-  - [x] address the chips component options taking space below the window for the default window size (is it a problem at 1080p?)
+- [x] address the chips component options taking space below the window for the default window size (is it a problem at 1080p?)
 
-  - [x] remove excess text from top of page
+- [x] remove excess text from top of page
 
-  - [x] give the 'display' dropdown a title like 'files' has "file management"
+- [x] give the 'display' dropdown a title like 'files' has "file management"
 
 - [x] allow a left click down (but not a click release) to click out of the metadata modal
 
 - [x] process pasted input to the "authors" and abstract" fields to try to fix common PDF copy-paste issues (astrices, number/letter superscripts, consistency in '.' after initials, 'and' vs '&',oxford commas, and line breaks)
 
-  - [ ] sometimes logic breaking characters (I think citations in the abstracts...perhaps consider cases where the authors are separated, though probably not worth it)
+- [ ] sometimes logic breaking characters (I think citations in the abstracts...perhaps consider cases where the authors are separated, though probably not worth it)
 
-  - add checkbox to enable this automatic paste processing (enabled by default)
+- add checkbox to enable this automatic paste processing (enabled by default)
 
 - [x] also fuzzy-search autofill prompting after each character and solidifying after entering them like listing email addresses in a gmail 'send' field
 
@@ -1152,7 +868,7 @@ The application utilizes the **Crossref API** (`https://api.crossref.org/works/{
 
 - [x] attempt to extract DOIs from the papers in the references section for each paper and display them in the abstract viewer
 
-  - [x] BREAKING - it does this during the abstract modal opening (gated behind 'files' setting)
+- [x] BREAKING - it does this during the abstract modal opening (gated behind 'files' setting)
 
 - [x] for the "fetch data" button, if a DOI is not given in the DOI field, attempt to parse the first 3 pages of the PDF for a DOI
 
@@ -1168,39 +884,33 @@ The application utilizes the **Crossref API** (`https://api.crossref.org/works/{
 
 - [x] turn 'filter incomplete' from button to another checkbox in the tag filter dropdown
 
-  - [x] just call the checkbox "incomplete fields"
+- [x] just call the checkbox "incomplete fields"
 
-  - [x] extend the tag-based coloration and the hotkeys for opening the abstract and metadata modals to the rows in the list view
+- [x] extend the tag-based coloration and the hotkeys for opening the abstract and metadata modals to the rows in the list view
 
-  - hotkeys
+- hotkeys
 
-    - [x] 'esc', 'enter', or click out of box to exit metadata modal
+  - [x] 'esc', 'enter', or click out of box to exit metadata modal
 
-    - [x] ctrl + shift + click to open 'edit metadata'
+  - [x] ctrl + shift + click to open 'edit metadata'
 
-    - [x] alt + shift + click to open abstract
+  - [x] alt + shift + click to open abstract
 
-  - [x] add 'added date' to metadata.  allow editing, but fill it automatically with the day when a file is added or indexed for the first time.  Also, 'last selected date' (which updates every time the article is selected)
+- [x] add 'added date' to metadata.  allow editing, but fill it automatically with the day when a file is added or indexed for the first time.  Also, 'last selected date' (which updates every time the article is selected)
 
-  - [x] ctrl + scroll to resize cards (both dimensions)
-
-  
+- [x] ctrl + scroll to resize cards (both dimensions)
 
 broken corrections:
 
- - [x] modal height scaling not working
+- [x] modal height scaling not working
 
- - [x] chips component should accept new tags
+- [x] chips component should accept new tags
 
- - [x] ctrl+scroll should scale font size commensurately
-
-  
+- [x] ctrl+scroll should scale font size commensurately
 
 CLI warnings:
 
 - [x] Warn The bundle identifier "com.literature-library.app" set in `"tauri.conf.json" identifier` ends with `.app`. This is not recommended because it conflicts with the application bundle extension on macOS.
-
-  
 
 ### general updates:
 
@@ -1236,7 +946,7 @@ CLI warnings:
 
 - [x] fix bug where tab move cursor to search bar even in the edit modal
 
-  - [x] bug: not tabbing from the chips field to the next field
+- [x] bug: not tabbing from the chips field to the next field
 
 - [x] "remove article" option in metadata (with confirmation dialog)
 
@@ -1268,9 +978,9 @@ CLI warnings:
 
 - [x] remove soft light theme or replace it with another one with better contrast
 
-  - [x] remaining fixes: lighter text in the dropdown menus and the list view elements
+- [x] remaining fixes: lighter text in the dropdown menus and the list view elements
 
-  - [x] and the track of the cards-lists toggle switch
+- [x] and the track of the cards-lists toggle switch
 
 - [x] check which DOIs in the abstract view are already found in the library and place the small ghost icon next to them
 
@@ -1278,9 +988,9 @@ CLI warnings:
 
 - [x] in the abstract modal, bold the year in the year/author/journal line and put another thin divider line below it.  Also, lower the initial shown Referenced DOIs from 5 to 3
 
-  - [x] in the metadata modal, there should be equal distance between the year/author/journal and the separator lines above and below it.  Also, create add an "Open Article" button at the right edge in this section
+- [x] in the metadata modal, there should be equal distance between the year/author/journal and the separator lines above and below it.  Also, create add an "Open Article" button at the right edge in this section
 
-  - [x] add a "show less" button to the abstract modal after "show more" is used which can collapse the list back down to 3
+- [x] add a "show less" button to the abstract modal after "show more" is used which can collapse the list back down to 3
 
 - [x] widen the 'year' column a little in the list view so that the sorting arrow doesn't get forced to the next line when it appears
 
@@ -1296,45 +1006,45 @@ CLI warnings:
 
 - [x] cycle through a series of brief helpful messages above the version number in the "?" modal (also a refresh button to go to the next one)
 
-  - 20/20/20 - every 20 minutes of reading, take 20 seconds to look at something 20 feet away - [mayoclinic](https://www.mayoclinic.org/diseases-conditions/eyestrain/diagnosis-treatment/drc-20372403)
+    - 20/20/20 - every 20 minutes of reading, take 20 seconds to look at something 20 feet away - [mayoclinic](https://www.mayoclinic.org/diseases-conditions/eyestrain/diagnosis-treatment/drc-20372403)
 
-  - Your blink rate drops by up to 80% during screen use, drying the cornea.  Try to make form a habit repeated blinking—for instance, 5 blinks each time you read a paragraph! - [mayoclinic](https://www.mayoclinic.org/diseases-conditions/eyestrain/diagnosis-treatment/drc-20372403)
+    - Your blink rate drops by up to 80% during screen use, drying the cornea.  Try to make form a habit repeated blinking—for instance, 5 blinks each time you read a paragraph! - [mayoclinic](https://www.mayoclinic.org/diseases-conditions/eyestrain/diagnosis-treatment/drc-20372403)
 
-  - When is the last time you took a big sip of water? (coffee doesn't count!)  By the time you notice the thirst, you are already dehydrated!
+    - When is the last time you took a big sip of water? (coffee doesn't count!)  By the time you notice the thirst, you are already dehydrated!
 
-  - Take a moment to deep breathe - sit up straight; inhale for 4 seconds, hold for 7, exhale for 8
+    - Take a moment to deep breathe - sit up straight; inhale for 4 seconds, hold for 7, exhale for 8
 
-    - create a little animation for this one
+      - create a little animation for this one
 
-  - Reset your posture - squeeze your should blades together; hold 5 seconds; repeat 5 times
+    - Reset your posture - squeeze your should blades together; hold 5 seconds; repeat 5 times
 
-  - Mouth check!  Relax your jaw and let your tongue rest gently against the roof of your mouth
+    - Mouth check!  Relax your jaw and let your tongue rest gently against the roof of your mouth
 
-  - Affect Labeling - "labeling negative feelings can down-regulate distress" - (2022)[https://doi.org/10.1371/journal.pone.0279303].
+    - Affect Labeling - "labeling negative feelings can down-regulate distress" - (2022)[https://doi.org/10.1371/journal.pone.0279303].
 
 - abstract style
 
-  - [x] center align year/author/journal and move the 'open article' button
+  - [x] center align year/author/journal and move the 'open article' button
 
-  - [x] un-bold year
+  - [x] un-bold year
 
-- [x] have the niche tags use chips components
+  - [x] have the niche tags use chips components
 
-- [x] fine-tune the abstract sentence separation
+  - [x] fine-tune the abstract sentence separation
 
-  - [x] use a natural language processing sentence tokenizer model to chunk the abstract into sentences instead of just splitting on periods
+  - [x] use a natural language processing sentence tokenizer model to chunk the abstract into sentences instead of just splitting on periods
 
-  - [x] consider additional artifacts, like hyphenated line wraps and ligatures from the PDFs
+  - [x] consider additional artifacts, like hyphenated line wraps and ligatures from the PDFs
 
-  - [x] the degrees symbol appears to sometimes be replaced with "", and +/- symbols seem sometimes replaced with "G"
+  - [x] the degrees symbol appears to sometimes be replaced with "", and +/- symbols seem sometimes replaced with "G"
 
-- [x] number the reference DOIs
+  - [x] number the reference DOIs
 
-- [x] show 'metadata saved' each time its saved (moving between fields, clicking the save button, pushing 'enter' to exit the modal)
+  - [x] show 'metadata saved' each time its saved (moving between fields, clicking the save button, pushing 'enter' to exit the modal)
 
-- [x] try to maintain at least 2 sentences for each section in the abstract separation.
+  - [x] try to maintain at least 2 sentences for each section in the abstract separation.
 
-- [x] save space in display -> hide the slider until the user clicks on the button
+  - [x] save space in display -> hide the slider until the user clicks on the button
 
 - push v0.8.9
 
@@ -1346,27 +1056,27 @@ CLI warnings:
 
 - [x] night time filters
 
-  - (1) warm
+  - (1) warm
 
-  - (2) scalar dimming
+  - (2) scalar dimming
 
-  - (3) gamma remapping
+  - (3) gamma remapping
 
-  - (4) luminance remap (convert RGB to a luminance/chrominance representation, apply a darkening curve to Y, then rescale RGB proportionately)
+  - (4) luminance remap (convert RGB to a luminance/chrominance representation, apply a darkening curve to Y, then rescale RGB proportionately)
 
-  - (5) sigmoid contrast shaping
+  - (5) sigmoid contrast shaping
 
-  - (6) soft-knee compression
+  - (6) soft-knee compression
 
 - [x] 'open file location' make selected article the active element in file explorer like Windows 'open file location' does rather than simply opening the containing folder
 
 - [x] build console warnings
 
-  - warning: unused import: `self` --> src\lib.rs:17:23
+  - warning: unused import: `self` --> src\lib.rs:17:23
 
-  - structure field `DOI` should have a snake case name --> src\lib.rs:103:9
+  - structure field `DOI` should have a snake case name --> src\lib.rs:103:9
 
-  - `literature-library` (lib) generated 2 warnings (run `cargo fix --lib -p literature-library` to apply 1 suggestion)
+  - `literature-library` (lib) generated 2 warnings (run `cargo fix --lib -p literature-library` to apply 1 suggestion)
 
 - [x] offer time-bound prompt to undo the changes for drag-and-drop thumbnails
 
@@ -1374,83 +1084,59 @@ CLI warnings:
 
 - [x] move experimental niche system out of visibility until enabled
 
-  
-
 ---
-
-  
 
 ### think about more first
 
-  
-
 - [ ] include a resizing/cropping feature to the 'paste thumbnail image' to encourage getting large screenshots and cropping in
 
-  - allow dragging the thumbnail image around and scrolling in and out in the preview to
+  - allow dragging the thumbnail image around and scrolling in and out in the preview to
 
-  - maybe basic image editing, like masking
+  - maybe basic image editing, like masking
 
-  - dedicated screenshot button that maintains an ideal aspect ratio for the thumbnail?
+  - dedicated screenshot button that maintains an ideal aspect ratio for the thumbnail?
 
-    - scroll makes it bigger or smaller and when it's below a certain pixel size, an enlarged preview window follows it around like a magnifying glass
-
-  
+    - scroll makes it bigger or smaller and when it's below a certain pixel size, an enlarged preview window follows it around like a magnifying glass
 
 - [ ] auto-rescale stored image when resolution is unecessarily high
 
-  
-
 - [ ] show a prompt to accept or undo the changes for drag-and-drop thumbnails
-
-  
 
 - [ ] expand on auto-cleaning pasted text
 
-  - add preferences for how to clean ("and" vs "&" vs none, periods after initials, keep asterisks for PIs, casing {remove all uppercases?  force sentence vs title casing? how to chunk the abstract - 3 * 1/3 sentences?}) in the files menu
-
-  
+- add preferences for how to clean ("and" vs "&" vs none, periods after initials, keep asterisks for PIs, casing {remove all uppercases?  force sentence vs title casing? how to chunk the abstract - 3 * 1/3 sentences?}) in the files menu
 
 - [ ] how-to-use modal for first time user (hotkeys, colors, editing metadata, pasting images, toggling views) with a "show first-time helper" in the '?' modal
 
-  
-
 - [ ] change how articles are indexed so that filename changes aren't breaking
-
-  
 
 - questions
 
-  - non-PDF-based sources for inspiration? (design, UX, hotkeys, optimizations, etc.)?
+  - non-PDF-based sources for inspiration? (design, UX, hotkeys, optimizations, etc.)?
 
-  - is there a length limit on titles?  what about filenames?  should I process drag-and-drop pdfs to change the file name?  should I conduct references to the PDFs through some extracted hash in case files get renamed (and handle duplicates on index)?
+  - is there a length limit on titles?  what about filenames?  should I process drag-and-drop pdfs to change the file name?  should I conduct references to the PDFs through some extracted hash in case files get renamed (and handle duplicates on index)?
 
-  - [x] where are these thumbnail images going?  they're not populating the folder
+  - [x] where are these thumbnail images going?  they're not populating the folder
 
-  - when does scaling become a concern?  what is involved in implementing a database?
+  - when does scaling become a concern?  what is involved in implementing a database?
 
-  - How to compile to an installer for alternative devices?
+  - How to compile to an installer for alternative devices?
 
-    - macs, linux, android, ios? still windows, but with non-x64 CPU architectures?
+    - macs, linux, android, ios? still windows, but with non-x64 CPU architectures?
 
-      - github actions to spin up environment and perform tauri build for each desired platform
+      - github actions to spin up environment and perform tauri build for each desired platform
 
-  - what happens to the thumbnails on disk and memory when replaced?
+  - what happens to the thumbnails on disk and memory when replaced?
 
-  
+- stretch ideas
 
-- stretch or stupid
+  - 'check for updates' button
 
-  - 'check for updates' button
+  - network mode to cluster based on shared tags, a la obsidian
 
-  - network mode to cluster based on shared tags, a la obsidian
-
-  - make a video showing the features (hotkeys, colors, thumbnail replacement, drag-and-drop)
-
-  
+  - make a video showing the features (hotkeys, colors, thumbnail replacement, drag-and-drop)
 
 ### global version updating
-
-  
 
 ```bash
 
