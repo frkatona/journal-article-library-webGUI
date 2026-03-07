@@ -12,9 +12,9 @@ Drag-and-drop PDFs onto the open application window top copy automatically into 
 
 ![front page](readme-images/hero.png)
 
- - primary and secondary sort based on article content (title, publication date, etc.) or metadata (recently added, last opened, etc.)
+- primary and secondary sort based on article content (title, publication date, etc.) or metadata (recently added, last opened, etc.)
 
- - toggle between the visual 'cards' UI or or the traditional simplified 'list' view.
+- toggle between the visual 'cards' UI or or the traditional simplified 'list' view.
 
 ---
 
@@ -133,17 +133,11 @@ Built with [Tauri v2](https://tauri.app/) (Rust backend + JS frontend).  The wi
 ### Build from Source
 
 ```powershell
-
 # Clone or download this repository, then from the repo root:
-
 # 1. Install the Tauri CLI
-
 npm install
-
 # 2. Build the release binary
-
 npx tauri build
-
 ```
 
 The installer/executable will be output to `src-tauri/target/release/bundle/`.
@@ -151,9 +145,7 @@ The installer/executable will be output to `src-tauri/target/release/bundle/`.
 ### Run in Development Mode
 
 ```powershell
-
 npx tauri dev
-
 ```
 
 This compiles the Rust backend and opens the app window with hot-reload for frontend changes.
@@ -165,121 +157,83 @@ This compiles the Rust backend and opens the app window with hot-reload for fron
 The Display menu includes a `Night Filter Technique` dropdown plus `Night Filter Strength` (`0-100`). Internally:
 
 ```js
-
 const s = strength / 100; // normalize to [0, 1]
-
 ```
 
 1. Warm (`R' = R, G' = 0.85G, B' = 0.6B` at full strength)
 
 ```js
-
 const gScale = 1 - (0.15 * s);
-
 const bScale = 1 - (0.4 * s);
 
 mapR = (x) => x;
-
 mapG = (x) => x * gScale;
-
 mapB = (x) => x * bScale;
-
 ```
 
 2. Scalar dimming
 
 ```js
-
 const dim = 1 - (0.85 * s);
 
 mapR = (x) => x * dim;
-
 mapG = (x) => x * dim;
-
 mapB = (x) => x * dim;
-
 ```
 
 3. Gamma remapping
 
 ```js
-
 const gamma = 1 + (2.8 * s);
 
 mapR = (x) => Math.pow(x, gamma);
-
 mapG = (x) => Math.pow(x, gamma);
-
 mapB = (x) => Math.pow(x, gamma);
-
 ```
 
 4. Luminance remap (Y/chroma style)
 
 ```js
-
 const gamma = 1 + (2.2 * s);
-
 const dim = 1 - (0.25 * s);
 
 preMatrix = LUMA_PRE_MATRIX;
-
 postMatrix = LUMA_POST_MATRIX;
 
 mapR = (y) => Math.pow(y, gamma) * dim; // darken luminance
-
 mapG = (u) => u; // preserve chroma U'
-
 mapB = (v) => v; // preserve chroma V'
-
 ```
 
 5. Sigmoid contrast shaping
 
 ```js
-
 const k = 2 + (12 * s);
-
 const low = 1 / (1 + Math.exp(k * 0.5));
-
 const high = 1 / (1 + Math.exp(-k * 0.5));
-
 const span = Math.max(1e-6, high - low);
-
 const dim = 1 - (0.45 * s);
 
 const shape = (x) => {
-
   const sig = 1 / (1 + Math.exp(-k * (x - 0.5)));
-
   return ((sig - low) / span) * dim;
-
 };
 
 mapR = shape;
-
 mapG = shape;
-
 mapB = shape;
-
 ```
 
 6. Soft-knee compression
 
 ```js
-
 const k = 0.35 + (1.65 * s);
-
 const dim = 1 - (0.55 * s);
-
 const shape = (x) => (x * dim) / (1 + (k * x));
 
 mapR = shape;
-
 mapG = shape;
-
 mapB = shape;
-
 ```
 
 These functions are sampled into `feComponentTransfer` lookup tables, with optional color-space pre/post transforms for luminance remapping.
