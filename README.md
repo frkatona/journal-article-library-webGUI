@@ -8,17 +8,25 @@ The PDFs still open in the default viewer, but the browser facilitates searches 
 
 ## front page
 
-Drag-and-drop PDFs onto the open application window. The PDFs will be copied to the `Articles/` folder at the project root and displayed as a card in the application
+Drag-and-drop PDFs onto the open application window top copy automatically into the `Articles/` folder at the project root and display them as cards in the application.
 
 ![front page](readme-images/hero.png)
+
+ - primary and secondary sort based on article content (title, publication date, etc.) or metadata (recently added, last opened, etc.)
+ - toggle between the visual 'cards' UI or or the traditional simplified 'list' view. 
 
 ---
 
 ## metadata editing
 
+Fully automated parsing from PDFs of journal articles is unreliable for even standard metadata, much less the extraction and sizing of unique/appealing thumbnails.  The metadata editor here attempts to streamline the process of finding, managing, and editing metadata and thumbnail images.
+
 ![metadata](readme-images/metadata.png)
 
- - use 'fetch' to automatically parse PDF for DOI and fill metadata found on API request (internet connection required)
+ - use 'fetch' to automatically parse PDF for DOI and fill metadata found on API request
+   - my experience suggests a reliability of about 9 of 10 'modern' articles and perhaps 3 of 10 'dated' articles 
+   - requires internet connection
+   - abstracts are often excluded from the API extraction, but the artifacts often associated with copying PDF content are addressed through some scripting through both heuristic and NLP solutions (see abstract preview below)
 
  - take a custom thumbnail with Windows snip tool (windows + shift + S) and click "Paste from Clipboard"
 
@@ -28,9 +36,11 @@ Drag-and-drop PDFs onto the open application window. The PDFs will be copied to 
 
 ## abstract preview
 
+ Abstract text added to the metadata modal, whether parsed from PDF or manually pasted, is automatically processed and segmented to a more digestable view here.  This is intended to be paired with the `view abstract preview` hotkey to streamline scanning of articles' tenor across a library.
+
 ![example of modal which appears of the abstract when abstract button is selected](readme-images/abstract_modal.png)
 
- - abstract text content added to the metadata modal, whether parsed from PDF or manually pasted, are automatically processed and segmented to a cleaner, more digestable view here
+ - if abstract appears unexpected formatted, try playing with the `abstract partitioning strength` slider in the `Files` menu, as well as the `Clean` button in the metadata modal 
 
  - if metadata was 'fetched' in the metadata modal, hyperlinked reference DOIs automatically populate here
 
@@ -38,9 +48,12 @@ Drag-and-drop PDFs onto the open application window. The PDFs will be copied to 
 
 ## tags and filters
 
+Similarly, the article tags from the metadata modal can be filtered to view project-, concept-, or technique-specific collections.
+
 ![tags and filters](readme-images/filters.png)
 
 - select from tags assigned to articles in their metadata modal
+  - chips components offer tab auto-completion for existing tags
 
 - choose filter mode (show matches with 'any', 'all', or 'none' of the selected tags) 
 
@@ -48,22 +61,27 @@ Drag-and-drop PDFs onto the open application window. The PDFs will be copied to 
 
 ## shortcuts
 
+Customize various mouse/keyboard hotkeys to, for instance open the article location in the file system or copy BibTeX citation to the clipboard
+
 ![shortcuts](readme-images/shortcuts.png)
 
 - click event modifiers on article cards
- - open the article in the default PDF viewer
- - open the metadata editor modal
- - open the abstract modal
- - open the article file location on device
- - copy the BibTeX-formatted citation information to the clipboard (LaTeX bibliography file formatting)
+   - open the article in the default PDF viewer
+   - open the metadata editor modal
+   - open the abstract modal
+   - open the article file location on device
+   - copy the BibTeX-formatted citation information to the clipboard (LaTeX bibliography file formatting)
 
 - keyboard events
   - paste thumbnail from clipboard (while anywhere in the metadata modal OR to the card under the cursor in the card view)
   - save and exit metadata modal
+  - move between articles or modals
   
 ---
 
 ## display and themes
+
+Various color themes
 
 ![themes](readme-images/themes.png)
 
@@ -72,7 +90,51 @@ Drag-and-drop PDFs onto the open application window. The PDFs will be copied to 
    - card size
    - modal opacity
    - modal focus (background darkening)
- - simple file view from the front page toggle (Card <-> List)
+ 
+ - to mitigate eye strain in low-light environments, also try to add a filter from the `filter modes` options
+ 
+---
+
+# Installation
+
+Download the latest installer on the GitHub repo releases page [here](https://github.com/frkatona/journal-article-library-webGUI/releases)
+
+# Development details
+
+Built with [Tauri v2](https://tauri.app/) (Rust backend + JS frontend).  The windows installer is available in the releases tab.
+
+- edits are saved as override files in `library_data/overrides/` and survive reindexing
+
+## Dev build
+
+### Prerequisites
+
+- [Rust](https://rustup.rs/) (stable toolchain)
+- [Node.js](https://nodejs.org/) (v18+)
+
+### Build from Source
+
+```powershell
+# Clone or download this repository, then from the repo root:
+
+# 1. Install the Tauri CLI
+npm install
+
+# 2. Build the release binary
+npx tauri build
+```
+
+The installer/executable will be output to `src-tauri/target/release/bundle/`.
+
+### Run in Development Mode
+
+```powershell
+npx tauri dev
+```
+
+This compiles the Rust backend and opens the app window with hot-reload for frontend changes.
+
+# Misc. notes
 
 ### Night Filter Techniques (Code Snippets)
 
@@ -153,47 +215,6 @@ mapB = shape;
 These functions are sampled into `feComponentTransfer` lookup tables, with optional color-space pre/post transforms for luminance remapping.
 
 ---
-
-# Installation
-
-Download the latest installer on the GitHub repo releases page [here](https://github.com/frkatona/journal-article-library-webGUI/releases)
-
-# Development details
-
-Built with [Tauri v2](https://tauri.app/) (Rust backend + JS frontend).  The windows installer is available in the releases tab.
-
-- edits are saved as override files in `library_data/overrides/` and survive reindexing
-
-## Dev build
-
-### Prerequisites
-
-- [Rust](https://rustup.rs/) (stable toolchain)
-- [Node.js](https://nodejs.org/) (v18+)
-
-### Build from Source
-
-```powershell
-# Clone or download this repository, then from the repo root:
-
-# 1. Install the Tauri CLI
-npm install
-
-# 2. Build the release binary
-npx tauri build
-```
-
-The installer/executable will be output to `src-tauri/target/release/bundle/`.
-
-### Run in Development Mode
-
-```powershell
-npx tauri dev
-```
-
-This compiles the Rust backend and opens the app window with hot-reload for frontend changes.
-
-# Misc. notes
 
 ### Pasted Abstract Processing
 
@@ -293,8 +314,10 @@ The Rust backend exposes these commands to the frontend:
 | `open_pdf` | Open a PDF in the system default viewer |
 | `open_file_location` | Open file location in system file explorer |
 | `open_articles_folder` | Open the Articles folder |
+| `open_external_url` | Open an external `http`/`https` URL |
 | `get_thumbnail_url` | Load a thumbnail as a base64 data URL |
 | `get_root_dir` | Get the application root directory |
+| `get_storage_report` | Summarize app-folder and metadata storage usage |
 | `import_pdf` | Import one PDF payload |
 | `import_pdfs_from_paths` | Import PDFs from selected paths |
 | `fetch_doi_metadata` | Fetch metadata from Crossref by DOI |
@@ -304,6 +327,171 @@ The Rust backend exposes these commands to the frontend:
 | `get_backups` | List backup slots and timestamps |
 | `restore_backup` | Restore a selected backup file |
 | `get_crash_log` | Read backend crash log contents |
+
+#### Abridged Rust Command Flow
+
+Generalized pseudocode for the Tauri commands above:
+
+```rust
+#[tauri::command]
+fn get_articles(...) -> Result<ArticlesResponse, String> {
+    let index = load_index_from_state(...);
+    let rows = filter_by_query_tags_and_completeness(index.articles, ...);
+    Ok(paginate_with_index_metadata(rows, index.generated_at, index.thumbnail_strategy, ...))
+}
+
+#[tauri::command]
+fn get_tags(...) -> Result<TagsResponse, String> {
+    let index = load_index_from_state(...);
+    let counts = count_normalized_tags(index.articles);
+    Ok(sort_tags_by_usage_then_name(counts))
+}
+
+#[tauri::command]
+fn reindex(...) -> Result<ReindexResponse, String> {
+    let strategy = validate_requested_strategy(...);
+    let payload = index_articles(&mut state, strategy, fast, long_parse);
+    Ok(build_reindex_summary(payload))
+}
+
+#[tauri::command]
+fn save_metadata(article_id, payload) -> Result<MutationResponse, String> {
+    let mut override_json = load_override(article_id);
+    apply_payload_into_override(&mut override_json, payload);
+    save_override(article_id, override_json);
+    refresh_article_metadata_thumbnail_and_search_text(article_id);
+    write_index_json();
+    Ok(updated_article_response(article_id))
+}
+
+#[tauri::command]
+fn upload_thumbnail(article_id, data) -> Result<MutationResponse, String> {
+    let image = decode_base64_image(data)?;
+    save_manual_thumbnail(article_id, image);
+    write_manual_thumbnail_override(article_id);
+    refresh_article_thumbnail_and_search_text(article_id);
+    write_index_json();
+    Ok(updated_article_response(article_id))
+}
+
+#[tauri::command]
+fn remove_article(article_id) -> Result<bool, String> {
+    delete_pdf_manual_thumb_auto_thumb_and_override(article_id);
+    remove_article_from_index(article_id);
+    write_index_json();
+    Ok(true)
+}
+
+#[tauri::command]
+fn open_pdf(relpath) -> Result<(), String> {
+    let full_path = root_dir.join(relpath);
+    stamp_last_opened_into_override_and_index(full_path);
+    opener::open(full_path)?;
+    Ok(())
+}
+
+#[tauri::command]
+fn open_file_location(relpath) -> Result<(), String> {
+    let full_path = root_dir.join(relpath);
+    if cfg!(windows) { spawn_explorer_select(full_path)?; }
+    else { opener::open(parent_folder(full_path))?; }
+    Ok(())
+}
+
+#[tauri::command]
+fn open_articles_folder(...) -> Result<(), String> {
+    opener::open(normalize_windows_prefix(articles_dir))?;
+    Ok(())
+}
+
+#[tauri::command]
+fn open_external_url(url) -> Result<(), String> {
+    ensure_http_or_https(url)?;
+    opener::open(url)?;
+    Ok(())
+}
+
+#[tauri::command]
+fn get_thumbnail_url(rel_path) -> Result<String, String> {
+    let bytes = fs::read(root_dir.join(rel_path))?;
+    Ok(make_base64_data_url(bytes))
+}
+
+#[tauri::command]
+fn get_root_dir(...) -> Result<String, String> {
+    Ok(root_dir_as_string())
+}
+
+#[tauri::command]
+fn get_storage_report(...) -> Result<StorageReportResponse, String> {
+    let index = load_index_from_state(...);
+    let folders = scan_immediate_subfolders_recursively(root_dir)?;
+    let metadata = summarize_index_override_backup_and_field_sizes(index, data_dir, overrides_dir, index_path)?;
+    Ok(StorageReportResponse { root_dir, folders, metadata, ... })
+}
+
+#[tauri::command]
+fn import_pdf(filename, data) -> Result<MutationResponse, String> {
+    let pdf_path = write_unique_pdf_to_articles(filename, decode_base64(data)?);
+    let article = process_single_pdf(pdf_path, strategy, fast_parse = true, long_parse = false)?;
+    merge_article_into_index(article);
+    write_index_json();
+    Ok(MutationResponse { ok: true, article })
+}
+
+#[tauri::command]
+async fn import_pdfs_from_paths(paths) -> Result<Vec<MutationResponse>, String> {
+    let copied_paths = copy_paths_into_articles_with_deduping(paths)?;
+    let articles = process_paths_in_parallel_when_safe(copied_paths, strategy)?;
+    merge_articles_into_index(articles);
+    write_index_json();
+    Ok(as_mutation_responses(articles))
+}
+
+#[tauri::command]
+async fn fetch_doi_metadata(doi) -> Result<Metadata, String> {
+    let json = crossref_client().get(format!(".../works/{doi}")).send().await?.json().await?;
+    Ok(extract_title_authors_year_journal_pages_abstract_and_ref_dois(json))
+}
+
+#[tauri::command]
+fn get_article_text_front(article_id) -> Result<String, String> {
+    let pdf_path = article_pdf_path(article_id)?;
+    let text = pdf_extract::extract_text(pdf_path)?;
+    Ok(first_n_chars(text, 10_000))
+}
+
+#[tauri::command]
+fn get_article_text_back(article_id) -> Result<String, String> {
+    let pdf_path = article_pdf_path(article_id)?;
+    let text = pdf_extract::extract_text(pdf_path)?;
+    Ok(last_n_chars(text, 15_000))
+}
+
+#[tauri::command]
+fn create_backup(...) -> Result<bool, String> {
+    rotate_index_backup1_to_backup2_if_present();
+    copy_index_json_to_backup1()?;
+    Ok(true)
+}
+
+#[tauri::command]
+fn get_backups(...) -> Result<BackupsResponse, String> {
+    Ok(read_backup_slots_and_modified_timestamps(data_dir))
+}
+
+#[tauri::command]
+fn restore_backup(backup_name) -> Result<bool, String> {
+    copy_selected_backup_over_index_json(backup_name)?;
+    clear_cached_index_in_memory();
+    Ok(true)
+}
+
+#[tauri::command]
+fn get_crash_log(...) -> String {
+    fs::read_to_string(data_dir.join("crash.log")).unwrap_or_else(|_| "No crash log found.".into())
+}
+```
 
 ### Key Dependencies
 

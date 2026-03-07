@@ -1,7 +1,5 @@
 ### immediate (bug fixes, small features)
 
-
-
 - [ ] 'niche' filters not hiding properly
   - [ ] fix niche chips preventing autofill elsewhere and appearing with strange characters in the niche field
   - [x] just putting in 'experimental' for now
