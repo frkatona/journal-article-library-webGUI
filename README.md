@@ -6,7 +6,7 @@ Windows application for browsing local PDFs, geared towards collections of scien
 
 The PDFs still open in the default viewer, but the browser facilitates searches with visual thumbnail cards with various customizations.  There are also tags/filters with custom colorization and search functions, fields for note-taking, abstract previews, and hotkeys for tedious tasks, like BibTex-to-clipboard.
 
-## front page
+## Front Page
 
 Drag-and-drop PDFs onto the open application window top copy automatically into the `Articles/` folder at the project root and display them as cards in the application.
 
@@ -17,7 +17,7 @@ Drag-and-drop PDFs onto the open application window top copy automatically into 
 
 ---
 
-## metadata editing
+## Metadata Editor
 
 Fully automated parsing from PDFs of journal articles is unreliable for even standard metadata, much less the extraction and sizing of unique/appealing thumbnails.  The metadata editor here attempts to streamline the process of finding, managing, and editing metadata and thumbnail images.
 
@@ -34,7 +34,7 @@ Fully automated parsing from PDFs of journal articles is unreliable for even sta
 
 ---
 
-## abstract preview
+## Abstract Preview
 
  Abstract text added to the metadata modal, whether parsed from PDF or manually pasted, is automatically processed and segmented to a more digestable view here.  This is intended to be paired with the `view abstract preview` hotkey to streamline scanning of articles' tenor across a library.
 
@@ -46,7 +46,7 @@ Fully automated parsing from PDFs of journal articles is unreliable for even sta
 
 ---
 
-## tags and filters
+## Tags and Filters
 
 Similarly, the article tags from the metadata modal can be filtered to view project-, concept-, or technique-specific collections.
 
@@ -59,9 +59,9 @@ Similarly, the article tags from the metadata modal can be filtered to view proj
 
 ---
 
-## shortcuts
+## Shortcuts
 
-Customize various mouse/keyboard hotkeys to, for instance open the article location in the file system or copy BibTeX citation to the clipboard
+Customize various mouse/keyboard hotkeys to, for instance, open the article location in the file system, or copy BibTeX citation to the clipboard.
 
 ![shortcuts](readme-images/shortcuts.png)
 
@@ -79,7 +79,7 @@ Customize various mouse/keyboard hotkeys to, for instance open the article locat
   
 ---
 
-## display and themes
+## Display, Themes, and Color Filters
 
 Various color themes
 
