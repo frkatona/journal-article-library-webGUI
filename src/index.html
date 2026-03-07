@@ -52,10 +52,10 @@
                     </div>
                     <div id="tag-filter-list" class="tag-filter-list"></div>
                     <hr style="border:none;border-top:1px solid var(--line);margin:6px 0;">
-                    <label
+                    <label id="show-niche-row" class="hidden"
                         style="display:flex;align-items:center;gap:8px;padding:4px 8px;cursor:pointer;font-size:0.85rem;">
-                        <input id="hide-niche" type="checkbox" />
-                        <span>Hide niche articles</span>
+                        <input id="show-niche" type="checkbox" />
+                        <span>Show niche</span>
                     </label>
                     <label
                         style="display:flex;align-items:center;gap:8px;padding:4px 8px;cursor:pointer;font-size:0.85rem;">
@@ -163,7 +163,11 @@
                                     <input id="parse-pdfs" type="checkbox" />
                                     <span style="font-size:0.82rem;">Parse PDFs</span>
                                 </label>
-                                <label class="field">
+                                <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                                    <input id="enable-niche" type="checkbox" />
+                                    <span style="font-size:0.82rem;">Enable niche</span>
+                                </label>
+                                <label id="niche-tags-field" class="field hidden">
                                     <span style="font-size:0.82rem; color:var(--muted);">Niche Tags <em
                                             style="font-weight:400;">(hidden by default)</em></span>
                                     <div id="niche-tag-chip-container" class="tag-chip-container" style="min-height:40px;">
@@ -171,6 +175,9 @@
                                             placeholder="Add niche tag..." autocomplete="off" />
                                     </div>
                                 </label>
+                                <button id="storage-report-btn" type="button" class="ghost">Show Storage Report</button>
+                                <pre id="storage-report-content"
+                                    style="display:none; margin:0; padding:8px; background:var(--bg); border:1px solid rgba(245,179,77,0.45); border-radius:6px; font-size:0.72rem; max-height:260px; overflow:auto; white-space:pre-wrap; word-break:break-word; color:var(--text);"></pre>
                                 <button id="restore-backup-btn" type="button" class="ghost" style="color:var(--accent);">Restore
                                     Backup</button>
                             </div>
@@ -338,7 +345,7 @@
                     <img id="modal-thumb" src="" alt="Article thumbnail" />
                     <p class="drop-hint">Drag and drop an image here to replace thumbnail.</p>
                     <div class="thumb-tools">
-                        <button id="thumb-paste" type="button" title="Ctrl+P">Paste from Clipboard</button>
+                        <button id="thumb-paste" type="button" title="paste image">Paste from Clipboard</button>
                         <button id="thumb-reset" type="button" class="ghost hidden">Extract Image from File</button>
                         <hr style="border: none; border-top: 1px dashed var(--line); margin: 4px 0; width: 100%;" />
                         <button id="editor-open-btn" type="button" class="ghost" style="color:var(--accent);">Open
@@ -527,6 +534,15 @@
 
     <!-- Toast Notification -->
     <div id="toast" class="toast hidden"></div>
+    <div id="thumbnail-undo" class="thumbnail-undo hidden" role="status" aria-live="polite">
+        <div class="thumbnail-undo-row">
+            <span id="thumbnail-undo-message">Undo image replacement?</span>
+            <button id="thumbnail-undo-btn" type="button">Undo</button>
+        </div>
+        <div class="thumbnail-undo-track" aria-hidden="true">
+            <div id="thumbnail-undo-progress" class="thumbnail-undo-progress"></div>
+        </div>
+    </div>
 
     <!-- Hotkeys Modal -->
     <div id="hotkeys-modal" class="modal hidden" role="dialog" aria-modal="true">
@@ -575,7 +591,7 @@
                 <div style="border-top:1px solid var(--line); opacity:0.7; margin:0 0 10px;"></div>
                 <a id="version-link" href="https://github.com/frkatona/journal-article-library-webGUI/tree/tauri"
                     target="_blank" rel="noopener noreferrer"
-                    style="font-size: 0.8rem; color: var(--muted); font-weight: 600; cursor: pointer; letter-spacing: 0.03em; text-decoration:none;">v0.8.9</a>
+                    style="font-size: 0.8rem; color: var(--muted); font-weight: 600; cursor: pointer; letter-spacing: 0.03em; text-decoration:none;">v0.9.0</a>
             </div>
         </div>
     </div>

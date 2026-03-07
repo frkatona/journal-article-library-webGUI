@@ -2,36 +2,25 @@
 
 
 
-
 - [ ] 'niche' filters not hiding properly
   - [ ] fix niche chips preventing autofill elsewhere and appearing with strange characters in the niche field
-  - [x] just putting in 'experimental for now'
+  - [x] just putting in 'experimental' for now
+    - [ ] but hide the checkbox in the tag dropdown while it is unchecked in the files menu
 
 - [ ] make referenced dois into columns instead of one row and several columns
 
-- [ ] brightness adjustments (lowering max value across the window, filtering the thumbnails, etc.)
-
-- [ ] how can I have the selected article active in the folder when I select "open in folder" like windows does when using "open file location"
-
-
-
-- [ ] warnings
-  - warning: unused import: `self` --> src\lib.rs:17:23
-  - structure field `DOI` should have a snake case name --> src\lib.rs:103:9
-  - `literature-library` (lib) generated 2 warnings (run `cargo fix --lib -p literature-library` to apply 1 suggestion)
-
-- [ ] demo mode (uses a tmp articles and thumbnails folder and index json to delete on exit)
-   
 ### major version revision features
 
 - [ ] consider ways to synchronize metadata (and papers) between multiple computers
-
-- [ ] how-to-use modal for first time user (hotkeys, colors, editing metadata, pasting images, toggling views) with a "show first-time helper" in the '?' modal
 
 ### minor version revision features
 
 - [ ] 'new custom theme' -> give it a name and let is save to the file system and be selectable in the theme dropdown
   
+- [ ] demo mode (uses a tmp articles and thumbnails folder and index json to delete on exit)
+
+- [ ] how-to-use modal for first time user (hotkeys, colors, editing metadata, pasting images, toggling views) with a "show first-time helper" in the '?' modal
+
 ### flesh out
 
 - [ ] include a resizing/cropping feature to the 'paste thumbnail image' to encourage getting large screenshots and cropping in
@@ -41,8 +30,6 @@
     - scroll makes it bigger or smaller and when it's below a certain pixel size, an enlarged preview window follows it around like a magnifying glass
 
 - [ ] auto-rescale stored image when resolution is unecessarily high 
-
-- [ ] show a prompt to accept or undo the changes for drag-and-drop thumbnails
 
 - [ ] pivot how articles are indexed so that filename changes aren't breaking?
 

@@ -487,12 +487,22 @@ CLI warnings:
 - [x] alternative db search when modifier clicking reference DOIs
 - [x] arrow key hotkeys on the modals (left/right for moving between articles, up/down for moving between abstract/edit metadata)
 - [x] night time filters
-  - (1) warm (R' = R, G' = 0.85G, B' = 0.6B)
+  - (1) warm
   - (2) scalar dimming
   - (3) gamma remapping
   - (4) luminance remap (convert RGB to a luminance/chrominance representation, apply a darkening curve to Y, then rescale RGB proportionately)
   - (5) sigmoid contrast shaping
   - (6) soft-knee compression
+- [x] 'open file location' make selected article the active element in file explorer like Windows 'open file location' does rather than simply opening the containing folder
+- [x] build console warnings
+  - warning: unused import: `self` --> src\lib.rs:17:23
+  - structure field `DOI` should have a snake case name --> src\lib.rs:103:9
+  - `literature-library` (lib) generated 2 warnings (run `cargo fix --lib -p literature-library` to apply 1 suggestion)
+- [x] offer time-bound prompt to undo the changes for drag-and-drop thumbnails
+- [x] experimental 'show size and metadata' button to assess for database implementation
+- [x] move experimental niche system out of visibility until enabled
+
+---
 
 ### think about more first
 

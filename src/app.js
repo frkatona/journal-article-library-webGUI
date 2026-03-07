@@ -11,7 +11,17 @@ const DEFAULT_HOTKEYS = {
     copyBibtex: { ctrl: false, alt: false, shift: true },  // Shift+click
     openLocation: { ctrl: true, alt: false, shift: true },  // Ctrl+Shift+click
 };
+const KEYBOARD_SHORTCUTS_STORAGE_KEY = "article-keyboard-shortcuts";
+const DEFAULT_KEYBOARD_SHORTCUTS = {
+    pasteThumb: ["P"],
+    enter: ["Ctrl+Enter"],
+    arrowToggle: ["ArrowUp", "ArrowDown"],
+    prevArticle: ["ArrowLeft"],
+    nextArticle: ["ArrowRight"],
+};
 
+const ENABLE_NICHE_KEY = "article-enable-niche";
+const SHOW_NICHE_KEY = "article-show-niche";
 const SHOW_REF_DOIS_KEY = "article-show-ref-dois";
 const SHOW_REF_DOIS_PREF_TOUCHED_KEY = "article-show-ref-dois-pref-touched";
 
@@ -25,6 +35,132 @@ function initShowRefDoisPreference() {
         return true;
     }
     return raw !== "false";
+}
+
+function initEnableNichePreference() {
+    return window.localStorage.getItem(ENABLE_NICHE_KEY) === "true";
+}
+
+function initShowNichePreference() {
+    const raw = window.localStorage.getItem(SHOW_NICHE_KEY);
+    if (raw === "true") return true;
+    if (raw === "false") return false;
+
+    const legacyHide = window.localStorage.getItem("article-hide-niche");
+    if (legacyHide === "false") return true;
+    if (legacyHide === "true") return false;
+    return false;
+}
+
+function cloneDefaultKeyboardShortcuts() {
+    return Object.fromEntries(
+        Object.entries(DEFAULT_KEYBOARD_SHORTCUTS).map(([key, bindings]) => [key, [...bindings]]),
+    );
+}
+
+function normalizeShortcutKey(key) {
+    const raw = String(key || "").trim();
+    if (!raw) return "";
+    const lower = raw.toLowerCase();
+    if (lower === "meta") return "Ctrl";
+    if (lower === "control" || lower === "ctrl") return "Ctrl";
+    if (lower === "alt" || lower === "option") return "Alt";
+    if (lower === "shift") return "Shift";
+    if (lower === "esc") return "Escape";
+    if (lower === "spacebar" || lower === "space") return "Space";
+    if (lower === "arrowup" || lower === "arrow up" || lower === "up") return "ArrowUp";
+    if (lower === "arrowdown" || lower === "arrow down" || lower === "down") return "ArrowDown";
+    if (lower === "arrowleft" || lower === "arrow left" || lower === "left") return "ArrowLeft";
+    if (lower === "arrowright" || lower === "arrow right" || lower === "right") return "ArrowRight";
+    return raw.length === 1 ? raw.toUpperCase() : `${raw[0].toUpperCase()}${raw.slice(1)}`;
+}
+
+function normalizeShortcutBinding(binding) {
+    const parts = String(binding || "")
+        .split("+")
+        .map((part) => part.trim())
+        .filter(Boolean);
+    if (parts.length === 0) return "";
+
+    let ctrl = false;
+    let alt = false;
+    let shift = false;
+    let keyPart = "";
+
+    for (const part of parts) {
+        const normalized = normalizeShortcutKey(part);
+        if (!normalized) continue;
+        if (normalized === "Ctrl") ctrl = true;
+        else if (normalized === "Alt") alt = true;
+        else if (normalized === "Shift") shift = true;
+        else keyPart = normalized;
+    }
+
+    if (!keyPart) return "";
+
+    const out = [];
+    if (ctrl) out.push("Ctrl");
+    if (alt) out.push("Alt");
+    if (shift) out.push("Shift");
+    out.push(keyPart);
+    return out.join("+");
+}
+
+function formatShortcutBinding(binding) {
+    return normalizeShortcutBinding(binding)
+        .replace("ArrowUp", "Arrow Up")
+        .replace("ArrowDown", "Arrow Down")
+        .replace("ArrowLeft", "Arrow Left")
+        .replace("ArrowRight", "Arrow Right");
+}
+
+function loadKeyboardShortcuts() {
+    const defaults = cloneDefaultKeyboardShortcuts();
+    try {
+        const raw = JSON.parse(window.localStorage.getItem(KEYBOARD_SHORTCUTS_STORAGE_KEY) || "null");
+        if (!raw || typeof raw !== "object") return defaults;
+
+        for (const key of Object.keys(defaults)) {
+            const value = raw[key];
+            const asList = typeof value === "string" ? [value] : (Array.isArray(value) ? value : []);
+            const normalized = asList.map(normalizeShortcutBinding).filter(Boolean);
+            if (normalized.length > 0) defaults[key] = normalized;
+        }
+    } catch {
+        return defaults;
+    }
+    return defaults;
+}
+
+function saveKeyboardShortcuts() {
+    window.localStorage.setItem(KEYBOARD_SHORTCUTS_STORAGE_KEY, JSON.stringify(state.keyboardShortcuts));
+}
+
+function getKeyboardShortcutBindings(shortcutKey) {
+    return state.keyboardShortcuts?.[shortcutKey] || DEFAULT_KEYBOARD_SHORTCUTS[shortcutKey] || [];
+}
+
+function getKeyboardShortcutDisplay(shortcutKey) {
+    const bindings = getKeyboardShortcutBindings(shortcutKey);
+    return bindings.map(formatShortcutBinding).join(" / ");
+}
+
+function eventToShortcutBinding(evt) {
+    const key = normalizeShortcutKey(evt.key);
+    if (!key || ["Ctrl", "Alt", "Shift"].includes(key)) return "";
+
+    const parts = [];
+    if (evt.ctrlKey || evt.metaKey) parts.push("Ctrl");
+    if (evt.altKey) parts.push("Alt");
+    if (evt.shiftKey) parts.push("Shift");
+    parts.push(key);
+    return parts.join("+");
+}
+
+function matchesKeyboardShortcut(evt, shortcutKey) {
+    const binding = eventToShortcutBinding(evt);
+    if (!binding) return false;
+    return getKeyboardShortcutBindings(shortcutKey).includes(binding);
 }
 
 function getReferenceDois(md) {
@@ -76,8 +212,10 @@ const state = {
     nightFilterStrength: Number.parseInt(window.localStorage.getItem("article-night-filter-strength") || "0", 10),
     tagColors: JSON.parse(window.localStorage.getItem("article-tag-colors") || "{}"),
     hotkeys: JSON.parse(window.localStorage.getItem("article-hotkeys") || "null") || { ...DEFAULT_HOTKEYS },
+    keyboardShortcuts: loadKeyboardShortcuts(),
     nicheTags: JSON.parse(window.localStorage.getItem("article-niche-tags") || "[]"),
-    hideNiche: window.localStorage.getItem("article-hide-niche") !== "false",
+    enableNiche: initEnableNichePreference(),
+    showNiche: initShowNichePreference(),
     showRefDois: initShowRefDoisPreference(),
     acIndex: -1,
     isEscaping: false,
@@ -87,6 +225,7 @@ const state = {
     abstractSectionCount: Number.parseInt(window.localStorage.getItem("article-abstract-sections") || "4", 10),
     debugMode: window.localStorage.getItem("article-debug-mode") === "true",
     modalArrowBusy: false,
+    thumbnailUndo: null,
 };
 
 const dom = {
@@ -127,6 +266,8 @@ const dom = {
     tagFilterCount: document.getElementById("tag-filter-count"),
     tagFilterMenu: document.getElementById("tag-filter-menu"),
     tagFilterList: document.getElementById("tag-filter-list"),
+    showNicheRow: document.getElementById("show-niche-row"),
+    showNicheCheckbox: document.getElementById("show-niche"),
     filterIncomplete: document.getElementById("filter-incomplete"),
     tagFilterAll: document.getElementById("tag-filter-all"),
     tagFilterNone: document.getElementById("tag-filter-none"),
@@ -148,6 +289,8 @@ const dom = {
     emptyReindexBtn: document.getElementById("empty-reindex-btn"),
     emptyFileInput: document.getElementById("empty-file-input"),
     restoreBackupBtn: document.getElementById("restore-backup-btn"),
+    storageReportBtn: document.getElementById("storage-report-btn"),
+    storageReportContent: document.getElementById("storage-report-content"),
     backupModal: document.getElementById("backup-modal"),
     backupClose: document.getElementById("backup-close"),
     backupOptions: document.getElementById("backup-options"),
@@ -190,6 +333,10 @@ const dom = {
     tagColorList: document.getElementById("tag-color-list"),
     tagColorClose: document.getElementById("tag-color-close"),
     toast: document.getElementById("toast"),
+    thumbnailUndo: document.getElementById("thumbnail-undo"),
+    thumbnailUndoMessage: document.getElementById("thumbnail-undo-message"),
+    thumbnailUndoBtn: document.getElementById("thumbnail-undo-btn"),
+    thumbnailUndoProgress: document.getElementById("thumbnail-undo-progress"),
     hotkeysBtn: document.getElementById("hotkeys-btn"),
     hotkeysModal: document.getElementById("hotkeys-modal"),
     hotkeysClose: document.getElementById("hotkeys-close"),
@@ -199,6 +346,7 @@ const dom = {
     showErrorsCheckbox: document.getElementById("show-errors-checkbox"),
     autoRefCompile: document.getElementById("auto-ref-compile"),
     showDupeWarnings: document.getElementById("show-dupe-warnings"),
+    enableNicheCheckbox: document.getElementById("enable-niche"),
     themeSelect: document.getElementById("theme-select"),
     experimentalSection: document.getElementById("experimental-section"),
     experimentalArrow: document.getElementById("experimental-arrow"),
@@ -212,7 +360,7 @@ const dom = {
     hotkeyTipNext: document.getElementById("hotkey-tip-next"),
     crashLogBtn: document.getElementById("crash-log-btn"),
     crashLogContent: document.getElementById("crash-log-content"),
-    hideNicheCheckbox: document.getElementById("hide-niche"),
+    nicheTagsField: document.getElementById("niche-tags-field"),
     nicheTagChipContainer: document.getElementById("niche-tag-chip-container"),
     nicheTagsInput: document.getElementById("niche-tags-input"),
     showRefDoisCheckbox: document.getElementById("show-ref-dois"),
@@ -598,6 +746,78 @@ function prettyDate(isoText) {
     const dt = new Date(isoText);
     if (Number.isNaN(dt.getTime())) return "";
     return dt.toLocaleString();
+}
+
+function formatBytes(bytes) {
+    const value = Number(bytes) || 0;
+    if (value < 1024) return `${value} B`;
+    const units = ["KB", "MB", "GB", "TB"];
+    let size = value;
+    let unitIndex = -1;
+    while (size >= 1024 && unitIndex < units.length - 1) {
+        size /= 1024;
+        unitIndex += 1;
+    }
+    return `${size.toFixed(size >= 100 ? 0 : size >= 10 ? 1 : 2)} ${units[unitIndex]}`;
+}
+
+function formatStorageRow(label, bytes, suffix = "") {
+    const left = String(label || "").padEnd(28, " ");
+    const right = formatBytes(bytes).padStart(10, " ");
+    return `${left} ${right}${suffix ? `  ${suffix}` : ""}`;
+}
+
+function formatStorageReport(report) {
+    if (!report) return "No storage report returned.";
+
+    const lines = [
+        `App folder: ${report.root_dir || "(unknown)"}`,
+        `Total size: ${formatBytes(report.total_bytes)}`,
+        `Root-level files: ${formatBytes(report.root_file_bytes)} across ${(report.root_file_count || 0).toLocaleString()} file(s)`,
+        "",
+        "Subfolders (recursive)",
+    ];
+
+    if (Array.isArray(report.folders) && report.folders.length > 0) {
+        for (const folder of report.folders) {
+            const suffix = `${(folder.file_count || 0).toLocaleString()} files, ${(folder.dir_count || 0).toLocaleString()} dirs`;
+            lines.push(formatStorageRow(folder.name || "(unnamed)", folder.bytes, suffix));
+        }
+    } else {
+        lines.push("No subfolders found.");
+    }
+
+    const metadata = report.metadata || {};
+    lines.push("");
+    lines.push("Stored metadata (JSON on disk)");
+    lines.push(`Articles indexed: ${(metadata.article_count || 0).toLocaleString()}`);
+    lines.push(formatStorageRow("index.json", metadata.index_json_bytes || 0));
+    lines.push(formatStorageRow("override JSON files", metadata.overrides_bytes || 0));
+    lines.push(formatStorageRow("backup JSON files", metadata.backup_bytes || 0));
+
+    lines.push("");
+    lines.push("Stored article payload sections");
+    if (Array.isArray(metadata.section_bytes) && metadata.section_bytes.length > 0) {
+        for (const item of metadata.section_bytes) {
+            const suffix = `${(item.non_empty || 0).toLocaleString()} non-empty`;
+            lines.push(formatStorageRow(item.name || "(unnamed)", item.bytes || 0, suffix));
+        }
+    } else {
+        lines.push("No section data available.");
+    }
+
+    lines.push("");
+    lines.push("Merged metadata fields");
+    if (Array.isArray(metadata.merged_field_bytes) && metadata.merged_field_bytes.length > 0) {
+        for (const item of metadata.merged_field_bytes) {
+            const suffix = `${(item.non_empty || 0).toLocaleString()} non-empty`;
+            lines.push(formatStorageRow(item.name || "(unnamed)", item.bytes || 0, suffix));
+        }
+    } else {
+        lines.push("No merged metadata field data available.");
+    }
+
+    return lines.join("\n");
 }
 
 function clearNode(node) {
@@ -1061,9 +1281,27 @@ function sortArticles(articles) {
     return sorted;
 }
 
+function updateNicheUiVisibility() {
+    const enabled = Boolean(state.enableNiche);
+    if (dom.showNicheRow) {
+        dom.showNicheRow.classList.toggle("hidden", !enabled);
+        dom.showNicheRow.style.display = enabled ? "flex" : "none";
+    }
+    if (dom.nicheTagsField) {
+        dom.nicheTagsField.classList.toggle("hidden", !enabled);
+        dom.nicheTagsField.style.display = enabled ? "" : "none";
+    }
+    if (dom.showNicheCheckbox) {
+        dom.showNicheCheckbox.checked = enabled ? state.showNiche : false;
+    }
+    if (dom.enableNicheCheckbox) {
+        dom.enableNicheCheckbox.checked = enabled;
+    }
+}
+
 function getVisibleSortedArticles() {
     const nicheSet = new Set((state.nicheTags || []).map((t) => t.toLowerCase()));
-    const visible = state.hideNiche && nicheSet.size > 0
+    const visible = state.enableNiche && !state.showNiche && nicheSet.size > 0
         ? state.articles.filter((article) => {
             const tags = (article.metadata?.tags || []).map((t) => t.trim().toLowerCase());
             return !tags.some((t) => nicheSet.has(t));
@@ -1155,6 +1393,9 @@ function openFileLocation(article) {
 
 // Toast notification
 let toastTimer = null;
+let thumbnailUndoHideTimer = null;
+const THUMBNAIL_UNDO_TIMEOUT_MS = 5000;
+
 function showToast(msg) {
     dom.toast.textContent = msg;
     dom.toast.classList.remove("hidden");
@@ -1164,6 +1405,243 @@ function showToast(msg) {
         dom.toast.classList.remove("visible");
         setTimeout(() => dom.toast.classList.add("hidden"), 300);
     }, 2200);
+}
+
+function isManualThumbnail(article) {
+    return Boolean(article?.thumbnail?.path && article?.auto_thumbnail?.path && article.thumbnail.path !== article.auto_thumbnail.path);
+}
+
+function collectThumbnailPaths(article) {
+    return Array.from(new Set([
+        article?.thumbnail?.path,
+        article?.auto_thumbnail?.path,
+    ].filter(Boolean)));
+}
+
+function invalidateThumbnailPaths(paths) {
+    for (const path of paths || []) {
+        if (path) thumbCache.delete(path);
+    }
+}
+
+function captureEditorFormSnapshot(articleId) {
+    if (!articleId || dom.modal.classList.contains("hidden") || state.current?.id !== articleId) {
+        return null;
+    }
+    return {
+        title: dom.title.value,
+        authors: dom.authors.value,
+        year: dom.year.value,
+        journal: dom.journal.value,
+        volume: dom.volume.value,
+        issue: dom.issue.value,
+        pages: dom.pages.value,
+        doi: dom.doi.value,
+        abstract: dom.abstract.value,
+        tags: getTagChips(),
+        notes: dom.notes.value,
+    };
+}
+
+function restoreEditorFormSnapshot(snapshot) {
+    if (!snapshot) return;
+    dom.title.value = snapshot.title;
+    dom.authors.value = snapshot.authors;
+    dom.year.value = snapshot.year;
+    dom.journal.value = snapshot.journal;
+    dom.volume.value = snapshot.volume;
+    dom.issue.value = snapshot.issue;
+    dom.pages.value = snapshot.pages;
+    dom.doi.value = snapshot.doi;
+    dom.abstract.value = snapshot.abstract;
+    setTagChips(snapshot.tags);
+    dom.notes.value = snapshot.notes;
+}
+
+async function captureThumbnailUndoState(article) {
+    if (!article) return null;
+    const previousPaths = collectThumbnailPaths(article);
+    if (previousPaths.length === 0) return null;
+
+    const undoState = {
+        articleId: article.id,
+        title: normalizeWhitespace(article.metadata?.title) || article.pdf_filename,
+        previousMode: isManualThumbnail(article) ? "manual" : "auto",
+        previousPaths,
+        previousData: "",
+    };
+
+    if (undoState.previousMode === "manual") {
+        const currentPath = articleThumbPath(article);
+        const dataUrl = currentPath ? await getThumbDataUrl(currentPath) : "";
+        const base64 = String(dataUrl || "").split(",")[1] || "";
+        if (!base64) return null;
+        undoState.previousData = base64;
+    }
+
+    return undoState;
+}
+
+function stopThumbnailUndoPrompt() {
+    if (state.thumbnailUndo?.rafId) cancelAnimationFrame(state.thumbnailUndo.rafId);
+    clearTimeout(thumbnailUndoHideTimer);
+    state.thumbnailUndo = null;
+    if (!dom.thumbnailUndo) return;
+    dom.thumbnailUndo.classList.remove("visible");
+    dom.thumbnailUndo.classList.add("hidden");
+    dom.thumbnailUndoBtn.disabled = false;
+    dom.thumbnailUndoBtn.textContent = "Undo";
+    dom.thumbnailUndoProgress.style.transform = "scaleX(0)";
+}
+
+function hideThumbnailUndoPrompt() {
+    if (state.thumbnailUndo?.rafId) cancelAnimationFrame(state.thumbnailUndo.rafId);
+    clearTimeout(thumbnailUndoHideTimer);
+    state.thumbnailUndo = null;
+    if (!dom.thumbnailUndo) return;
+    dom.thumbnailUndo.classList.remove("visible");
+    thumbnailUndoHideTimer = setTimeout(() => {
+        if (state.thumbnailUndo) return;
+        dom.thumbnailUndo.classList.add("hidden");
+        dom.thumbnailUndoBtn.disabled = false;
+        dom.thumbnailUndoBtn.textContent = "Undo";
+        dom.thumbnailUndoProgress.style.transform = "scaleX(0)";
+    }, 220);
+}
+
+function updateThumbnailUndoProgress() {
+    if (!state.thumbnailUndo || !dom.thumbnailUndoProgress) return;
+    const progress = Math.max(0, Math.min(1, state.thumbnailUndo.elapsedMs / THUMBNAIL_UNDO_TIMEOUT_MS));
+    dom.thumbnailUndoProgress.style.transform = `scaleX(${progress})`;
+}
+
+function tickThumbnailUndo(now) {
+    const undo = state.thumbnailUndo;
+    if (!undo) return;
+
+    if (!undo.lastTick) undo.lastTick = now;
+    if (!undo.paused) {
+        undo.elapsedMs = Math.min(THUMBNAIL_UNDO_TIMEOUT_MS, undo.elapsedMs + (now - undo.lastTick));
+    }
+    undo.lastTick = now;
+    updateThumbnailUndoProgress();
+
+    if (undo.elapsedMs >= THUMBNAIL_UNDO_TIMEOUT_MS) {
+        hideThumbnailUndoPrompt();
+        return;
+    }
+
+    undo.rafId = requestAnimationFrame(tickThumbnailUndo);
+}
+
+function showThumbnailUndoPrompt(undoState) {
+    if (!undoState || !dom.thumbnailUndo) return;
+    stopThumbnailUndoPrompt();
+
+    state.thumbnailUndo = {
+        ...undoState,
+        elapsedMs: 0,
+        lastTick: 0,
+        paused: false,
+        restoring: false,
+        rafId: 0,
+    };
+
+    dom.thumbnailUndoMessage.textContent = "Undo image replacement?";
+    dom.thumbnailUndoBtn.disabled = false;
+    dom.thumbnailUndoBtn.textContent = "Undo";
+    dom.thumbnailUndoProgress.style.transform = "scaleX(0)";
+    dom.thumbnailUndo.classList.remove("hidden");
+
+    requestAnimationFrame(() => {
+        if (!state.thumbnailUndo) return;
+        dom.thumbnailUndo.classList.add("visible");
+        state.thumbnailUndo.rafId = requestAnimationFrame(tickThumbnailUndo);
+    });
+}
+
+async function reloadArticleAfterThumbnailChange(articleId, formSnapshot = null) {
+    await loadArticles();
+    const updatedArticle = state.articles.find((a) => a.id === articleId) || null;
+
+    if (formSnapshot) {
+        state.current = updatedArticle;
+        if (updatedArticle) {
+            openEditor(updatedArticle);
+            restoreEditorFormSnapshot(formSnapshot);
+        } else {
+            closeEditor();
+        }
+    } else if (state.current?.id === articleId) {
+        state.current = updatedArticle;
+    }
+
+    return updatedArticle;
+}
+
+async function replaceThumbnailImage(article, file) {
+    if (!article) return null;
+
+    const formSnapshot = captureEditorFormSnapshot(article.id);
+    const undoState = await captureThumbnailUndoState(article);
+    const previousPaths = collectThumbnailPaths(article);
+    const base64Data = await fileToBase64(file);
+
+    await invoke("upload_thumbnail", {
+        articleId: article.id,
+        data: base64Data,
+    });
+
+    invalidateThumbnailPaths(previousPaths);
+    const updatedArticle = await reloadArticleAfterThumbnailChange(article.id, formSnapshot);
+
+    if (undoState) showThumbnailUndoPrompt(undoState);
+    return updatedArticle;
+}
+
+async function undoThumbnailReplacement() {
+    const undo = state.thumbnailUndo;
+    if (!undo || undo.restoring) return;
+
+    undo.restoring = true;
+    undo.paused = true;
+    dom.thumbnailUndoBtn.disabled = true;
+    dom.thumbnailUndoBtn.textContent = "Restoring...";
+
+    const formSnapshot = captureEditorFormSnapshot(undo.articleId);
+    const currentArticle = state.articles.find((article) => article.id === undo.articleId) || null;
+
+    try {
+        invalidateThumbnailPaths([
+            ...undo.previousPaths,
+            ...collectThumbnailPaths(currentArticle),
+        ]);
+
+        if (undo.previousMode === "manual") {
+            if (!undo.previousData) throw new Error("Previous thumbnail data is unavailable.");
+            await invoke("upload_thumbnail", {
+                articleId: undo.articleId,
+                data: undo.previousData,
+            });
+        } else {
+            await invoke("save_metadata", {
+                articleId: undo.articleId,
+                payload: { thumbnail_mode: "auto" },
+            });
+        }
+
+        hideThumbnailUndoPrompt();
+        await reloadArticleAfterThumbnailChange(undo.articleId, formSnapshot);
+        setStatus("Previous thumbnail restored.");
+    } catch (err) {
+        const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
+        undo.restoring = false;
+        undo.paused = Boolean(dom.thumbnailUndo?.matches(":hover"));
+        undo.lastTick = performance.now();
+        dom.thumbnailUndoBtn.disabled = false;
+        dom.thumbnailUndoBtn.textContent = "Undo";
+        setStatus(`Undo failed: ${message}`, true);
+    }
 }
 
 // BibTeX generation
@@ -1287,10 +1765,11 @@ const CLICK_ACTIONS = [
     { key: "openLocation", label: "Open File Location" },
 ];
 const KEYBOARD_SHORTCUTS = [
-    { label: "Paste thumbnail", key: "pasteThumb", description: "P" },
-    { label: "Save & close", key: "enter", description: "Ctrl+Enter" },
-    { label: "Toggle abstract/metadata", key: "arrowToggle", description: "Arrow Up/Down (in modal)" },
-    { label: "Prev/next article in modal", key: "arrowNeighbor", description: "Arrow Left/Right (in modal)" },
+    { label: "Paste thumbnail", key: "pasteThumb" },
+    { label: "Save & close", key: "enter" },
+    { label: "Switch modal", key: "arrowToggle" },
+    { label: "Prev article", key: "prevArticle" },
+    { label: "Next article", key: "nextArticle" },
 ];
 const WELLNESS_TIPS = [
     {
@@ -1419,8 +1898,23 @@ function buildHotkeyTable() {
     const kbTable = document.createElement("table");
     kbTable.style.cssText = "width:100%;border-collapse:collapse;font-size:0.85rem;";
 
+    const kbBindingCounts = {};
+    for (const shortcut of KEYBOARD_SHORTCUTS) {
+        for (const binding of getKeyboardShortcutBindings(shortcut.key)) {
+            kbBindingCounts[binding] = (kbBindingCounts[binding] || 0) + 1;
+        }
+    }
+
+    let hasKeyboardDuplicates = false;
+
     for (const shortcut of KEYBOARD_SHORTCUTS) {
         const tr = document.createElement("tr");
+        const isDuplicate = getKeyboardShortcutBindings(shortcut.key).some((binding) => kbBindingCounts[binding] > 1);
+        if (isDuplicate) {
+            hasKeyboardDuplicates = true;
+            tr.style.outline = "2px solid var(--danger)";
+            tr.style.backgroundColor = "rgba(255, 60, 60, 0.1)";
+        }
         const tdL = document.createElement("td");
         tdL.textContent = shortcut.label;
         tdL.style.padding = "5px 0";
@@ -1434,7 +1928,7 @@ function buildHotkeyTable() {
             tdDesc.appendChild(listening);
         } else {
             const kbd = document.createElement("kbd");
-            kbd.textContent = shortcut.description;
+            kbd.textContent = getKeyboardShortcutDisplay(shortcut.key);
             tdDesc.appendChild(kbd);
         }
 
@@ -1459,18 +1953,15 @@ function buildHotkeyTable() {
             const handler = (ke) => {
                 ke.preventDefault();
                 ke.stopPropagation();
-                const parts = [];
-                if (ke.ctrlKey || ke.metaKey) parts.push("Ctrl");
-                if (ke.altKey) parts.push("Alt");
-                if (ke.shiftKey) parts.push("Shift");
-                const k = ke.key;
-                if (k && !['Control', 'Alt', 'Shift', 'Meta'].includes(k)) parts.push(k.toUpperCase());
-                shortcut.description = parts.join("+");
+                const binding = eventToShortcutBinding(ke);
+                if (!binding) return;
+                state.keyboardShortcuts[shortcut.key] = [binding];
+                saveKeyboardShortcuts();
                 _hkListening.cleanup();
                 _hkListening = null;
                 buildHotkeyTable();
             };
-            document.addEventListener("keydown", handler, { once: true, capture: true });
+            document.addEventListener("keydown", handler, { capture: true });
             _hkListening.cleanup = () => document.removeEventListener("keydown", handler, { capture: true });
         });
         tdEdit.appendChild(pencil);
@@ -1481,6 +1972,13 @@ function buildHotkeyTable() {
     }
     container.appendChild(kbTable);
 
+    if (hasKeyboardDuplicates) {
+        const warnRow = document.createElement("div");
+        warnRow.style.cssText = "color:var(--danger);font-size:0.75rem;margin-top:4px;";
+        warnRow.textContent = "Warning: Duplicate keyboard shortcuts detected.";
+        container.appendChild(warnRow);
+    }
+
     const kbResetRow = document.createElement("div");
     kbResetRow.style.cssText = "text-align:right;margin-top:6px;";
     const kbResetBtn = document.createElement("button");
@@ -1489,9 +1987,8 @@ function buildHotkeyTable() {
     kbResetBtn.className = "ghost";
     kbResetBtn.style.cssText = "font-size:0.75rem;padding:2px 8px;color:var(--muted);";
     kbResetBtn.addEventListener("click", () => {
-        // Reset descriptions to original
-        KEYBOARD_SHORTCUTS.find(s => s.key === "pasteThumb").description = "p (in modal / hovered card)";
-        KEYBOARD_SHORTCUTS.find(s => s.key === "enter").description = "Ctrl+Enter (in modal)";
+        state.keyboardShortcuts = cloneDefaultKeyboardShortcuts();
+        saveKeyboardShortcuts();
         buildHotkeyTable();
     });
     kbResetRow.appendChild(kbResetBtn);
@@ -1898,14 +2395,7 @@ function buildCard(article) {
         evt.stopPropagation();
         setStatus(`Updating thumbnail for "${md.title || article.pdf_filename}"...`);
         try {
-            const base64Data = await fileToBase64(file);
-            await invoke("upload_thumbnail", {
-                articleId: article.id,
-                data: base64Data,
-            });
-            const thumbPath = articleThumbPath(article);
-            if (thumbPath) thumbCache.delete(thumbPath);
-            await loadArticles();
+            await replaceThumbnailImage(article, file);
             setStatus("Thumbnail updated.");
         } catch (err) {
             const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
@@ -2465,14 +2955,7 @@ async function readClipboardImageAsFile() {
 
 async function uploadThumbnailForArticle(article, file) {
     if (!article) return;
-    const base64Data = await fileToBase64(file);
-    await invoke("upload_thumbnail", {
-        articleId: article.id,
-        data: base64Data,
-    });
-    const thumbPath = articleThumbPath(article);
-    if (thumbPath) thumbCache.delete(thumbPath);
-    await loadArticles();
+    await replaceThumbnailImage(article, file);
 }
 
 async function pasteClipboardThumbnailToArticle(article) {
@@ -2498,7 +2981,6 @@ async function pasteClipboardThumbnailToArticle(article) {
 
 async function uploadManualThumbnail(file) {
     if (!state.current) return;
-    const currentId = state.current.id;
     if (!file) {
         setStatus("Choose an image first.", true);
         return;
@@ -2508,51 +2990,11 @@ async function uploadManualThumbnail(file) {
         return;
     }
 
-    // Snapshot unsaved form values before reload
-    const formSnapshot = {
-        title: dom.title.value,
-        authors: dom.authors.value,
-        year: dom.year.value,
-        journal: dom.journal.value,
-        volume: dom.volume.value,
-        issue: dom.issue.value,
-        pages: dom.pages.value,
-        doi: dom.doi.value,
-        abstract: dom.abstract.value,
-        tags: getTagChips(),
-        notes: dom.notes.value,
-    };
-
     previewSelectedThumb(file);
     setStatus("Uploading manual thumbnail...");
 
     try {
-        const base64Data = await fileToBase64(file);
-        await invoke("upload_thumbnail", {
-            articleId: currentId,
-            data: base64Data,
-        });
-        // Invalidate thumbnail cache for this article
-        const thumbPath = articleThumbPath(state.current);
-        if (thumbPath) thumbCache.delete(thumbPath);
-
-        await loadArticles();
-        state.current = state.articles.find((a) => a.id === currentId) || null;
-        if (state.current) openEditor(state.current);
-
-        // Restore unsaved form values
-        dom.title.value = formSnapshot.title;
-        dom.authors.value = formSnapshot.authors;
-        dom.year.value = formSnapshot.year;
-        dom.journal.value = formSnapshot.journal;
-        dom.volume.value = formSnapshot.volume;
-        dom.issue.value = formSnapshot.issue;
-        dom.pages.value = formSnapshot.pages;
-        dom.doi.value = formSnapshot.doi;
-        dom.abstract.value = formSnapshot.abstract;
-        setTagChips(formSnapshot.tags);
-        dom.notes.value = formSnapshot.notes;
-
+        await replaceThumbnailImage(state.current, file);
         setStatus("Manual thumbnail saved.");
     } catch (err) {
         const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
@@ -2724,6 +3166,20 @@ function wireEvents() {
     wireSliderToggles(dom.filesMenu);
 
     dom.searchInput.addEventListener("input", debouncedSearch);
+    if (dom.thumbnailUndo) {
+        dom.thumbnailUndo.addEventListener("mouseenter", () => {
+            if (state.thumbnailUndo) state.thumbnailUndo.paused = true;
+        });
+        dom.thumbnailUndo.addEventListener("mouseleave", () => {
+            if (state.thumbnailUndo) {
+                state.thumbnailUndo.paused = false;
+                state.thumbnailUndo.lastTick = performance.now();
+            }
+        });
+    }
+    if (dom.thumbnailUndoBtn) {
+        dom.thumbnailUndoBtn.addEventListener("click", undoThumbnailReplacement);
+    }
 
     const tagMatchRadios = document.querySelectorAll('input[name="tag-match-mode"]');
     const tmAnyLbl = document.getElementById("tm-any-lbl");
@@ -2814,6 +3270,29 @@ function wireEvents() {
         });
     }
 
+    if (dom.storageReportBtn && dom.storageReportContent) {
+        dom.storageReportBtn.addEventListener("click", async () => {
+            const isShown = dom.storageReportContent.style.display !== "none";
+            if (isShown) {
+                dom.storageReportContent.style.display = "none";
+                dom.storageReportBtn.textContent = "Show Storage Report";
+                return;
+            }
+
+            dom.storageReportContent.style.display = "block";
+            dom.storageReportBtn.textContent = "Hide Storage Report";
+            dom.storageReportContent.textContent = "Loading storage report...";
+
+            try {
+                const report = await invoke("get_storage_report");
+                dom.storageReportContent.textContent = formatStorageReport(report);
+            } catch (err) {
+                const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
+                dom.storageReportContent.textContent = `Failed to load storage report: ${message}`;
+            }
+        });
+    }
+
     // Crash log viewer
     if (dom.crashLogBtn && dom.crashLogContent) {
         dom.crashLogBtn.addEventListener("click", async () => {
@@ -2885,15 +3364,25 @@ function wireEvents() {
         dom.nicheTagChipContainer.addEventListener("click", () => dom.nicheTagsInput.focus());
     }
 
-    // Hide niche checkbox
-    if (dom.hideNicheCheckbox) {
-        dom.hideNicheCheckbox.checked = state.hideNiche;
-        dom.hideNicheCheckbox.addEventListener("change", () => {
-            state.hideNiche = dom.hideNicheCheckbox.checked;
-            window.localStorage.setItem("article-hide-niche", state.hideNiche ? "true" : "false");
+    if (dom.enableNicheCheckbox) {
+        dom.enableNicheCheckbox.checked = state.enableNiche;
+        dom.enableNicheCheckbox.addEventListener("change", () => {
+            state.enableNiche = dom.enableNicheCheckbox.checked;
+            window.localStorage.setItem(ENABLE_NICHE_KEY, state.enableNiche ? "true" : "false");
+            updateNicheUiVisibility();
             renderArticles();
         });
     }
+
+    if (dom.showNicheCheckbox) {
+        dom.showNicheCheckbox.checked = state.showNiche;
+        dom.showNicheCheckbox.addEventListener("change", () => {
+            state.showNiche = dom.showNicheCheckbox.checked;
+            window.localStorage.setItem(SHOW_NICHE_KEY, state.showNiche ? "true" : "false");
+            renderArticles();
+        });
+    }
+    updateNicheUiVisibility();
 
     // Paste cleanup for authors field (gated by checkbox)
     dom.authors.addEventListener("paste", (evt) => {
@@ -3695,11 +4184,7 @@ function wireEvents() {
         });
     });
 
-    function handleModalArrowNavigation(evt) {
-        const key = evt.key;
-        if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(key)) return false;
-        if (evt.ctrlKey || evt.metaKey || evt.altKey) return false;
-
+    function handleModalKeyboardNavigation(evt) {
         const metadataOpen = !dom.modal.classList.contains("hidden");
         const abstractOpen = !dom.abstractModal.classList.contains("hidden");
         if (!metadataOpen && !abstractOpen) return false;
@@ -3710,9 +4195,13 @@ function wireEvents() {
         const activeArticle = metadataOpen ? state.current : state.abstractPreviewArticle;
         if (!activeArticle?.id) return false;
 
-        const isToggleKey = key === "ArrowUp" || key === "ArrowDown";
-        const direction = key === "ArrowLeft" ? -1 : 1;
-        const targetArticle = isToggleKey ? activeArticle : getNeighborArticleById(activeArticle.id, direction);
+        const isToggleShortcut = matchesKeyboardShortcut(evt, "arrowToggle");
+        const isPrevShortcut = matchesKeyboardShortcut(evt, "prevArticle");
+        const isNextShortcut = matchesKeyboardShortcut(evt, "nextArticle");
+        if (!isToggleShortcut && !isPrevShortcut && !isNextShortcut) return false;
+
+        const direction = isPrevShortcut ? -1 : 1;
+        const targetArticle = isToggleShortcut ? activeArticle : getNeighborArticleById(activeArticle.id, direction);
         if (!targetArticle?.id) return false;
 
         evt.preventDefault();
@@ -3722,12 +4211,12 @@ function wireEvents() {
 
         (async () => {
             if (metadataOpen) {
-                await saveMetadata({ type: isToggleKey ? "arrow-modal-toggle" : "arrow-article-nav" });
+                await saveMetadata({ type: isToggleShortcut ? "arrow-modal-toggle" : "arrow-article-nav" });
             }
 
             const resolved = resolveArticleById(targetArticle.id) || targetArticle;
 
-            if (isToggleKey) {
+            if (isToggleShortcut) {
                 if (abstractOpen) {
                     closeAbstract();
                     openEditor(resolved);
@@ -3758,7 +4247,7 @@ function wireEvents() {
 
     // Keydown for Modal Escape / Search Focus
     document.addEventListener("keydown", (evt) => {
-        if (handleModalArrowNavigation(evt)) return;
+        if (handleModalKeyboardNavigation(evt)) return;
 
         if (evt.key === "Escape") {
             // Priority: autocomplete -> color editor -> abstract -> duplicate/edit modal -> hotkeys -> backup modal
@@ -3819,14 +4308,14 @@ function wireEvents() {
             dom.searchInput.focus();
         }
 
-        if (evt.key === "Enter" && (evt.ctrlKey || evt.metaKey) && !dom.modal.classList.contains("hidden")) {
+        if (matchesKeyboardShortcut(evt, "enter") && !dom.modal.classList.contains("hidden")) {
             evt.preventDefault();
             saveMetadata(evt).then(() => closeEditor());
         }
         // "p" to paste thumbnail from clipboard:
         // - in metadata modal: applies to current article
         // - outside modal: applies to hovered card/row article
-        if (evt.key.toLowerCase() === "p" && !evt.ctrlKey && !evt.metaKey && !evt.altKey && !evt.repeat) {
+        if (matchesKeyboardShortcut(evt, "pasteThumb") && !evt.repeat) {
             if (evt.target.tagName !== "INPUT" && evt.target.tagName !== "TEXTAREA" && evt.target.tagName !== "SELECT") {
                 if (!dom.modal.classList.contains("hidden")) {
                     evt.preventDefault();

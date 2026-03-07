@@ -11,7 +11,10 @@ use sha1_smol::Sha1;
 use std::collections::HashMap;
 use std::fs;
 use std::panic;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -1896,8 +1899,29 @@ fn open_file_location(
     if !full_path.exists() {
         return Err(format!("File not found: {}", relpath));
     }
-    let parent = full_path.parent().unwrap_or(&full_path);
-    opener::open(parent).map_err(|e| format!("Failed to open location: {}", e))
+
+    #[cfg(target_os = "windows")]
+    {
+        let mut path_str = full_path.to_string_lossy().replace('/', "\\");
+        if path_str.starts_with("\\\\?\\") {
+            path_str = path_str.replacen("\\\\?\\", "", 1);
+        }
+
+        Command::new("explorer.exe")
+            .raw_arg(format!("/select,\"{}\"", path_str))
+            .spawn()
+            .map_err(|e| format!("Failed to open location: {}", e))?;
+        return Ok(());
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let parent = full_path.parent().unwrap_or(&full_path);
+        return opener::open(parent).map_err(|e| format!("Failed to open location: {}", e));
+    }
+
+    #[allow(unreachable_code)]
+    Err("Unsupported platform".into())
 }
 
 #[tauri::command]
@@ -2173,6 +2197,220 @@ fn get_root_dir(state: tauri::State<'_, Mutex<AppState>>) -> Result<String, Stri
     Ok(st.root_dir.to_string_lossy().to_string())
 }
 
+#[tauri::command]
+fn get_storage_report(state: tauri::State<'_, Mutex<AppState>>) -> Result<StorageReportResponse, String> {
+    let (root_dir, data_dir, overrides_dir, index_path, index_payload) = {
+        let mut st = state.lock().map_err(|e| e.to_string())?;
+        let index = load_index(&mut st).clone();
+        (
+            st.root_dir.clone(),
+            st.data_dir.clone(),
+            st.overrides_dir.clone(),
+            st.index_path.clone(),
+            index,
+        )
+    };
+
+    let mut folders = Vec::new();
+    let mut total_bytes = 0_u64;
+    let mut root_file_bytes = 0_u64;
+    let mut root_file_count = 0_usize;
+
+    let entries = fs::read_dir(&root_dir).map_err(|e| format!("Failed to read app folder: {}", e))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        let meta = entry.metadata().map_err(|e| e.to_string())?;
+
+        if meta.is_dir() {
+            let (bytes, file_count, dir_count) = collect_recursive_usage(&path)?;
+            total_bytes += bytes;
+            folders.push(StorageFolderStat {
+                name: entry.file_name().to_string_lossy().to_string(),
+                path: path.to_string_lossy().to_string(),
+                bytes,
+                file_count,
+                dir_count,
+            });
+        } else if meta.is_file() {
+            total_bytes += meta.len();
+            root_file_bytes += meta.len();
+            root_file_count += 1;
+        }
+    }
+
+    folders.sort_by(|a, b| {
+        b.bytes
+            .cmp(&a.bytes)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+
+    let article_count = index_payload.articles.len();
+    let overrides_bytes = collect_recursive_usage(&overrides_dir)?.0;
+    let backup_bytes = file_size_or_zero(&data_dir.join("index.backup1.json"))
+        + file_size_or_zero(&data_dir.join("index.backup2.json"));
+
+    let mut identity_bytes = 0_u64;
+    let mut auto_meta_bytes = 0_u64;
+    let mut merged_meta_bytes = 0_u64;
+    let mut search_text_bytes = 0_u64;
+    let mut search_text_non_empty = 0_usize;
+    let mut thumbnail_ref_bytes = 0_u64;
+    let mut timestamp_bytes = 0_u64;
+
+    let mut title_bytes = 0_u64;
+    let mut title_non_empty = 0_usize;
+    let mut authors_bytes = 0_u64;
+    let mut authors_non_empty = 0_usize;
+    let mut year_bytes = 0_u64;
+    let mut year_non_empty = 0_usize;
+    let mut journal_bytes = 0_u64;
+    let mut journal_non_empty = 0_usize;
+    let mut volume_bytes = 0_u64;
+    let mut volume_non_empty = 0_usize;
+    let mut issue_bytes = 0_u64;
+    let mut issue_non_empty = 0_usize;
+    let mut pages_bytes = 0_u64;
+    let mut pages_non_empty = 0_usize;
+    let mut doi_bytes = 0_u64;
+    let mut doi_non_empty = 0_usize;
+    let mut abstract_bytes = 0_u64;
+    let mut abstract_non_empty = 0_usize;
+    let mut keywords_bytes = 0_u64;
+    let mut keywords_non_empty = 0_usize;
+    let mut tags_bytes = 0_u64;
+    let mut tags_non_empty = 0_usize;
+    let mut notes_bytes = 0_u64;
+    let mut notes_non_empty = 0_usize;
+    let mut ref_dois_bytes = 0_u64;
+    let mut ref_dois_non_empty = 0_usize;
+
+    for article in &index_payload.articles {
+        identity_bytes += json_size(&(
+            &article.id,
+            &article.pdf_filename,
+            &article.pdf_relpath,
+            article.file_size,
+            &article.file_modified,
+        ));
+        auto_meta_bytes += json_size(&article.auto_meta);
+        merged_meta_bytes += json_size(&article.metadata);
+        thumbnail_ref_bytes += json_size(&(&article.auto_thumbnail, &article.thumbnail));
+        timestamp_bytes += json_size(&(&article.date_added, &article.last_opened));
+
+        search_text_bytes += json_size(&article.search_text);
+        if !article.search_text.trim().is_empty() {
+            search_text_non_empty += 1;
+        }
+
+        title_bytes += json_size(&article.metadata.title);
+        if !article.metadata.title.trim().is_empty() {
+            title_non_empty += 1;
+        }
+
+        authors_bytes += json_size(&article.metadata.authors);
+        if !article.metadata.authors.trim().is_empty() {
+            authors_non_empty += 1;
+        }
+
+        year_bytes += json_size(&article.metadata.year);
+        if !article.metadata.year.trim().is_empty() {
+            year_non_empty += 1;
+        }
+
+        journal_bytes += json_size(&article.metadata.journal);
+        if !article.metadata.journal.trim().is_empty() {
+            journal_non_empty += 1;
+        }
+
+        volume_bytes += json_size(&article.metadata.volume);
+        if !article.metadata.volume.trim().is_empty() {
+            volume_non_empty += 1;
+        }
+
+        issue_bytes += json_size(&article.metadata.number);
+        if !article.metadata.number.trim().is_empty() {
+            issue_non_empty += 1;
+        }
+
+        pages_bytes += json_size(&article.metadata.pages);
+        if !article.metadata.pages.trim().is_empty() {
+            pages_non_empty += 1;
+        }
+
+        doi_bytes += json_size(&article.metadata.doi);
+        if !article.metadata.doi.trim().is_empty() {
+            doi_non_empty += 1;
+        }
+
+        abstract_bytes += json_size(&article.metadata.abstract_text);
+        if !article.metadata.abstract_text.trim().is_empty() {
+            abstract_non_empty += 1;
+        }
+
+        keywords_bytes += json_size(&article.metadata.keywords);
+        if !article.metadata.keywords.is_empty() {
+            keywords_non_empty += 1;
+        }
+
+        tags_bytes += json_size(&article.metadata.tags);
+        if !article.metadata.tags.is_empty() {
+            tags_non_empty += 1;
+        }
+
+        notes_bytes += json_size(&article.metadata.notes);
+        if !article.metadata.notes.trim().is_empty() {
+            notes_non_empty += 1;
+        }
+
+        ref_dois_bytes += json_size(&article.metadata.ref_dois);
+        if !article.metadata.ref_dois.is_empty() {
+            ref_dois_non_empty += 1;
+        }
+    }
+
+    let mut section_bytes = Vec::new();
+    push_stat(&mut section_bytes, "article identity + file info", identity_bytes, article_count);
+    push_stat(&mut section_bytes, "auto metadata payload", auto_meta_bytes, article_count);
+    push_stat(&mut section_bytes, "merged metadata payload", merged_meta_bytes, article_count);
+    push_stat(&mut section_bytes, "search text payload", search_text_bytes, search_text_non_empty);
+    push_stat(&mut section_bytes, "thumbnail references", thumbnail_ref_bytes, article_count);
+    push_stat(&mut section_bytes, "timestamps", timestamp_bytes, article_count);
+    section_bytes.sort_by(|a, b| b.bytes.cmp(&a.bytes));
+
+    let mut merged_field_bytes = Vec::new();
+    push_stat(&mut merged_field_bytes, "abstract", abstract_bytes, abstract_non_empty);
+    push_stat(&mut merged_field_bytes, "notes", notes_bytes, notes_non_empty);
+    push_stat(&mut merged_field_bytes, "title", title_bytes, title_non_empty);
+    push_stat(&mut merged_field_bytes, "authors", authors_bytes, authors_non_empty);
+    push_stat(&mut merged_field_bytes, "journal", journal_bytes, journal_non_empty);
+    push_stat(&mut merged_field_bytes, "doi", doi_bytes, doi_non_empty);
+    push_stat(&mut merged_field_bytes, "tags", tags_bytes, tags_non_empty);
+    push_stat(&mut merged_field_bytes, "reference DOIs", ref_dois_bytes, ref_dois_non_empty);
+    push_stat(&mut merged_field_bytes, "keywords", keywords_bytes, keywords_non_empty);
+    push_stat(&mut merged_field_bytes, "year", year_bytes, year_non_empty);
+    push_stat(&mut merged_field_bytes, "volume", volume_bytes, volume_non_empty);
+    push_stat(&mut merged_field_bytes, "issue", issue_bytes, issue_non_empty);
+    push_stat(&mut merged_field_bytes, "pages", pages_bytes, pages_non_empty);
+    merged_field_bytes.sort_by(|a, b| b.bytes.cmp(&a.bytes));
+
+    Ok(StorageReportResponse {
+        root_dir: root_dir.to_string_lossy().to_string(),
+        total_bytes,
+        root_file_bytes,
+        root_file_count,
+        folders,
+        metadata: MetadataStorageReport {
+            article_count,
+            index_json_bytes: file_size_or_zero(&index_path),
+            overrides_bytes,
+            backup_bytes,
+            section_bytes,
+            merged_field_bytes,
+        },
+    })
+}
+
 // ── Backups ─────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize)]
@@ -2184,6 +2422,83 @@ pub struct BackupInfo {
 #[derive(Debug, Serialize)]
 pub struct BackupsResponse {
     pub backups: Vec<BackupInfo>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct StorageFolderStat {
+    pub name: String,
+    pub path: String,
+    pub bytes: u64,
+    pub file_count: usize,
+    pub dir_count: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub struct StorageBreakdownStat {
+    pub name: String,
+    pub bytes: u64,
+    pub non_empty: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MetadataStorageReport {
+    pub article_count: usize,
+    pub index_json_bytes: u64,
+    pub overrides_bytes: u64,
+    pub backup_bytes: u64,
+    pub section_bytes: Vec<StorageBreakdownStat>,
+    pub merged_field_bytes: Vec<StorageBreakdownStat>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct StorageReportResponse {
+    pub root_dir: String,
+    pub total_bytes: u64,
+    pub root_file_bytes: u64,
+    pub root_file_count: usize,
+    pub folders: Vec<StorageFolderStat>,
+    pub metadata: MetadataStorageReport,
+}
+
+fn json_size<T: Serialize>(value: &T) -> u64 {
+    serde_json::to_vec(value)
+        .map(|buf| buf.len() as u64)
+        .unwrap_or(0)
+}
+
+fn file_size_or_zero(path: &Path) -> u64 {
+    fs::metadata(path).map(|meta| meta.len()).unwrap_or(0)
+}
+
+fn collect_recursive_usage(path: &Path) -> Result<(u64, usize, usize), String> {
+    if !path.exists() {
+        return Ok((0, 0, 0));
+    }
+
+    let mut bytes = 0_u64;
+    let mut file_count = 0_usize;
+    let mut dir_count = 0_usize;
+
+    for entry in WalkDir::new(path).min_depth(1) {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let meta = entry.metadata().map_err(|e| e.to_string())?;
+        if meta.is_file() {
+            bytes += meta.len();
+            file_count += 1;
+        } else if meta.is_dir() {
+            dir_count += 1;
+        }
+    }
+
+    Ok((bytes, file_count, dir_count))
+}
+
+fn push_stat(stats: &mut Vec<StorageBreakdownStat>, name: &str, bytes: u64, non_empty: usize) {
+    stats.push(StorageBreakdownStat {
+        name: name.to_string(),
+        bytes,
+        non_empty,
+    });
 }
 
 #[tauri::command]
@@ -2417,6 +2732,7 @@ pub fn run() {
             open_external_url,
             get_thumbnail_url,
             get_root_dir,
+            get_storage_report,
             import_pdf,
             import_pdfs_from_paths,
             fetch_doi_metadata,
