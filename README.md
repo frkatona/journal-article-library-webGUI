@@ -8,7 +8,7 @@ The PDFs still open in the default viewer, but the browser facilitates searches 
 
 ## Front Page
 
-Drag-and-drop PDFs onto the open application window top copy automatically into the `Articles/` folder at the project root and display them as cards in the application.
+Drag-and-drop PDFs onto the open application window to copy into the `Articles/` folder at the project root and display them as cards in the application.
 
 ![front page](readme-images/hero.png)
 
