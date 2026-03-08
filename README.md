@@ -20,7 +20,7 @@ Drag-and-drop PDFs onto the open application window to copy into the `Articles/`
 
 ## Metadata Editor
 
-Fully automated parsing from PDFs of journal articles is unreliable for even standard metadata, much less the extraction and sizing of unique/appealing thumbnails.  The metadata editor here attempts to streamline the process of finding, managing, and editing metadata and thumbnail images.
+Unfortunately, fully-automated parsing from PDFs of bulk collections of journal articles is unreliable for even standard metadata, much less the extraction and sizing of thumbnail images.  While some manual effort is necessary, the metadata editor here attempts to streamline the finding, managing, and editing of metadata and thumbnail images for added PDFs.
 
 ![metadata](readme-images/metadata.png)
 
@@ -28,11 +28,11 @@ Fully automated parsing from PDFs of journal articles is unreliable for even sta
 
   - my experience suggests a reliability of about 9 of 10 'modern' articles and perhaps 3 of 10 'dated' articles
 
-  - requires internet connection
+  - Crossref API requires internet connection
 
-  - abstracts are often excluded from the API extraction, but the artifacts often associated with copying PDF content are addressed through some scripting through both heuristic and NLP solutions (see abstract preview below)
+- abstracts are often excluded from the API extraction, but the artifacts often associated with copying PDF content are addressed through some scripting through both heuristic and NLP solutions (see abstract preview below)
 
-- take a custom thumbnail with Windows snip tool (windows + shift + S) and click "Paste from Clipboard" (*default hotkey `P`*)
+- take a custom thumbnail with Windows snip tool (`Windows + Shift + S`) and click "Paste from Clipboard" (*default hotkey `P`*)
 
 - 'tags' are entered and managed as chips with tab-autocompletion
 
@@ -40,11 +40,11 @@ Fully automated parsing from PDFs of journal articles is unreliable for even sta
 
 ## Abstract Preview
 
- Abstract text added to the metadata modal, whether parsed from PDF or manually pasted, is automatically processed and segmented to a more digestable view here.  This is intended to be paired with the `view abstract preview` hotkey to streamline scanning of articles' tenor across a library.
+Abstract text added to the metadata modal, whether parsed from PDF or manually pasted, is automatically processed and segmented to a more digestable view here.  This is intended to be paired with the `view abstract preview` hotkey to streamline scanning of articles' tenor across a library.
 
 ![example of modal which appears of the abstract when abstract button is selected](readme-images/abstract_modal.png)
 
-- if abstract appears unexpected formatted, try playing with the `abstract partitioning strength` slider in the `Files` menu, as well as the `Clean` button in the metadata modal
+- if abstract is formatted undesirably, try playing with the `abstract partitioning strength` slider in the `Files` menu and the `Clean` button in the metadata modal
 
 - if metadata was 'fetched' in the metadata modal, hyperlinked reference DOIs automatically populate here
 
@@ -61,6 +61,8 @@ Similarly, the article tags from the metadata modal can be filtered to view proj
 - chips components offer tab auto-completion for existing tags
 
 - choose filter mode (show matches with 'any', 'all', or 'none' of the selected tags)
+
+- for searches and filters to be effective, metadata and tag assignment should be meticulous, which can be difficult keep up with.  However, the 'Incomplete metadata only' option in the filter menu is meant to help identify articles which require this attention
 
 ---
 
@@ -94,7 +96,7 @@ Customize various mouse/keyboard hotkeys to, for instance, open the article loca
 
 ## Display, Themes, and Color Filters
 
-Various color themes
+Various color themes and low-light environment filters are available, as well as the option to customize the color of articles based on their tags (e.g., personal projects are tinted teal and collaborations are tinted orange).
 
 ![themes](readme-images/themes.png)
 
@@ -108,7 +110,7 @@ Various color themes
 
   - modal focus (background darkening)
 
-- to mitigate eye strain in low-light environments, also try to add a filter from the `filter modes` options
+- to mitigate eye strain in low-light environments, try adjusting filters and filter strength found in `filter modes`
 
 ---
 
