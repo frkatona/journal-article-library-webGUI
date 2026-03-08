@@ -1066,6 +1066,12 @@ CLI warnings:
 
 - [x] move experimental niche system out of visibility until enabled
 
+push v0.9.0
+
+---
+
+- [x] demo mode (uses a tmp articles and thumbnails folder and index json to delete on reversion)
+
 ---
 
 ### think about more first

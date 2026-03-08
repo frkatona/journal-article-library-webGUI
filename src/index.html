@@ -206,17 +206,16 @@
                         <div class="menu-section-header"
                             style="font-size: 0.75rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; padding: 4px 8px; margin-bottom: 4px;">
                             Display Customization</div>
-                        <label class="field">
+                        <div class="field" id="theme-select-container" style="position:relative;">
                             <span>Theme</span>
-                            <select id="theme-select">
-                                <option value="ocean">Ocean Dark</option>
-                                <option value="midnight">Midnight</option>
-                                <option value="nord">Nord</option>
-                                <option value="monokai">Monokai</option>
-                                <option value="solarized">Solarized Dark</option>
-                                <option value="light">High Contrast Light</option>
-                            </select>
-                        </label>
+                            <div id="theme-select-btn" class="custom-select-btn" role="button" tabindex="0"
+                                aria-expanded="false" aria-controls="theme-select-menu">
+                                <span id="theme-select-value">Ocean Dark</span>
+                                <span aria-hidden="true">▾</span>
+                            </div>
+                            <div id="theme-select-menu" class="custom-select-menu theme-select-menu hidden" role="menu">
+                            </div>
+                        </div>
                         <label class="field">
                             <span>Font</span>
                             <select id="font-family-select">
@@ -499,6 +498,27 @@
             <div style="padding:12px; border-top:1px solid var(--line); display:flex; justify-content:flex-end;">
                 <button id="tag-color-reset-all" type="button" class="secondary"
                     style="font-size:0.85rem; padding:6px 12px;">Reset All Colors</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="theme-editor" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="theme-editor-title">
+        <div class="modal-card theme-editor-card">
+            <div class="modal-header">
+                <h2 id="theme-editor-title">Edit Theme</h2>
+                <button id="theme-editor-close" class="close-btn" type="button">&times;</button>
+            </div>
+            <div class="theme-editor-body">
+                <label class="field">
+                    <span>Theme Name</span>
+                    <input id="theme-editor-name" type="text" maxlength="40" />
+                </label>
+                <p class="meta" style="margin:0;">Edits apply to the selected theme immediately and stay local to this device.</p>
+                <div id="theme-editor-list" class="theme-editor-list"></div>
+            </div>
+            <div class="theme-editor-footer">
+                <span class="meta">Reset restores the default theme name and color values.</span>
+                <button id="theme-editor-reset" type="button" class="secondary">Reset To Default</button>
             </div>
         </div>
     </div>

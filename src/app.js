@@ -13,6 +13,7 @@ const DEFAULT_HOTKEYS = {
 };
 const KEYBOARD_SHORTCUTS_STORAGE_KEY = "article-keyboard-shortcuts";
 const DEMO_MODE_KEY = "article-demo-mode";
+const THEME_PRESET_STORAGE_KEY = "article-theme-presets";
 const DEFAULT_KEYBOARD_SHORTCUTS = {
     pasteThumb: ["P"],
     enter: ["Ctrl+Enter"],
@@ -25,6 +26,146 @@ const ENABLE_NICHE_KEY = "article-enable-niche";
 const SHOW_NICHE_KEY = "article-show-niche";
 const SHOW_REF_DOIS_KEY = "article-show-ref-dois";
 const SHOW_REF_DOIS_PREF_TOUCHED_KEY = "article-show-ref-dois-pref-touched";
+const THEME_KEYS = ["ocean", "midnight", "nord", "monokai", "solarized", "light"];
+const DEFAULT_THEME_PRESETS = {
+    ocean: {
+        name: "Ocean Dark",
+        bg: "#0d1a26",
+        bgSoft: "#162839",
+        panel: "#1a3145",
+        text: "#e6eef7",
+        muted: "#a7bfd5",
+        accent: "#52d0a3",
+        accent2: "#f5b34d",
+        danger: "#e05d5d",
+        line: "#28445e",
+        bodyGradA: "#1a3b56",
+        bodyGradB: "#28445e",
+        bodyGradBg: "#0d1a26",
+        bodyGradEnd: "#0b1620",
+        topbarColor: "#081420",
+        topbarAlphaBase: 0.6,
+        menuColor: "#0d1b28",
+        menuAlphaBase: 0.97,
+    },
+    midnight: {
+        name: "Midnight",
+        bg: "#0a0a14",
+        bgSoft: "#12121f",
+        panel: "#1a1a2e",
+        text: "#e8e8ff",
+        muted: "#9090c0",
+        accent: "#7c6af7",
+        accent2: "#f5a36a",
+        danger: "#e05d7a",
+        line: "#2a2a4a",
+        bodyGradA: "#1a1a3a",
+        bodyGradB: "#2a2a4a",
+        bodyGradBg: "#0a0a14",
+        bodyGradEnd: "#060610",
+        topbarColor: "#081420",
+        topbarAlphaBase: 0.6,
+        menuColor: "#0d1b28",
+        menuAlphaBase: 0.97,
+    },
+    nord: {
+        name: "Nord",
+        bg: "#2e3440",
+        bgSoft: "#3b4252",
+        panel: "#434c5e",
+        text: "#eceff4",
+        muted: "#88c0d0",
+        accent: "#88c0d0",
+        accent2: "#ebcb8b",
+        danger: "#bf616a",
+        line: "#4c566a",
+        bodyGradA: "#3b4252",
+        bodyGradB: "#434c5e",
+        bodyGradBg: "#2e3440",
+        bodyGradEnd: "#242933",
+        topbarColor: "#081420",
+        topbarAlphaBase: 0.6,
+        menuColor: "#0d1b28",
+        menuAlphaBase: 0.97,
+    },
+    monokai: {
+        name: "Monokai",
+        bg: "#272822",
+        bgSoft: "#2f3028",
+        panel: "#3e3d32",
+        text: "#f8f8f2",
+        muted: "#a6a08a",
+        accent: "#a6e22e",
+        accent2: "#e6db74",
+        danger: "#f92672",
+        line: "#49483e",
+        bodyGradA: "#363630",
+        bodyGradB: "#44443c",
+        bodyGradBg: "#272822",
+        bodyGradEnd: "#1e1e1a",
+        topbarColor: "#081420",
+        topbarAlphaBase: 0.6,
+        menuColor: "#0d1b28",
+        menuAlphaBase: 0.97,
+    },
+    solarized: {
+        name: "Solarized Dark",
+        bg: "#002b36",
+        bgSoft: "#073642",
+        panel: "#0d4050",
+        text: "#eee8d5",
+        muted: "#93a1a1",
+        accent: "#2aa198",
+        accent2: "#cb4b16",
+        danger: "#dc322f",
+        line: "#094454",
+        bodyGradA: "#073642",
+        bodyGradB: "#0d4050",
+        bodyGradBg: "#002b36",
+        bodyGradEnd: "#001b24",
+        topbarColor: "#081420",
+        topbarAlphaBase: 0.6,
+        menuColor: "#0d1b28",
+        menuAlphaBase: 0.97,
+    },
+    light: {
+        name: "High Contrast Light",
+        bg: "#edf2f7",
+        bgSoft: "#ffffff",
+        panel: "#ffffff",
+        text: "#102235",
+        muted: "#2f4b66",
+        accent: "#0063a3",
+        accent2: "#9a5f05",
+        danger: "#b4232e",
+        line: "#9cb2c8",
+        bodyGradA: "#dfeaf6",
+        bodyGradB: "#cfdff0",
+        bodyGradBg: "#edf2f7",
+        bodyGradEnd: "#dfeaf4",
+        topbarColor: "#f6faff",
+        topbarAlphaBase: 0.94,
+        menuColor: "#122130",
+        menuAlphaBase: 0.97,
+    },
+};
+const THEME_COLOR_FIELDS = [
+    { key: "bg", label: "Background" },
+    { key: "bgSoft", label: "Soft background" },
+    { key: "panel", label: "Panels" },
+    { key: "text", label: "Primary text" },
+    { key: "muted", label: "Muted text" },
+    { key: "accent", label: "Accent" },
+    { key: "accent2", label: "Accent secondary" },
+    { key: "danger", label: "Danger" },
+    { key: "line", label: "Borders" },
+    { key: "bodyGradA", label: "Gradient start" },
+    { key: "bodyGradB", label: "Gradient middle" },
+    { key: "bodyGradBg", label: "Gradient base" },
+    { key: "bodyGradEnd", label: "Gradient end" },
+    { key: "topbarColor", label: "Top bar" },
+    { key: "menuColor", label: "Dropdown panels" },
+];
 
 function initShowRefDoisPreference() {
     const raw = window.localStorage.getItem(SHOW_REF_DOIS_KEY);
@@ -51,6 +192,61 @@ function initShowNichePreference() {
     if (legacyHide === "false") return true;
     if (legacyHide === "true") return false;
     return false;
+}
+
+function cloneThemePreset(preset) {
+    return { ...preset };
+}
+
+function normalizeThemeHex(value, fallback = "") {
+    const raw = String(value || "").trim();
+    if (/^#[0-9a-fA-F]{6}$/.test(raw)) return raw.toLowerCase();
+    if (/^#[0-9a-fA-F]{3}$/.test(raw)) {
+        const [, r, g, b] = raw;
+        return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
+    }
+    return fallback;
+}
+
+function normalizeThemeAlpha(value, fallback) {
+    const numeric = Number.parseFloat(value);
+    if (!Number.isFinite(numeric)) return fallback;
+    return Math.min(1, Math.max(0, numeric));
+}
+
+function normalizeThemePreset(themeKey, rawPreset) {
+    const defaults = DEFAULT_THEME_PRESETS[themeKey];
+    const preset = rawPreset && typeof rawPreset === "object" ? rawPreset : {};
+    const normalized = {
+        name: normalizeWhitespace(preset.name).slice(0, 40) || defaults.name,
+        topbarAlphaBase: normalizeThemeAlpha(preset.topbarAlphaBase, defaults.topbarAlphaBase),
+        menuAlphaBase: normalizeThemeAlpha(preset.menuAlphaBase, defaults.menuAlphaBase),
+    };
+
+    for (const field of THEME_COLOR_FIELDS) {
+        normalized[field.key] = normalizeThemeHex(preset[field.key], defaults[field.key]);
+    }
+
+    return normalized;
+}
+
+function loadThemePresets() {
+    let raw = null;
+    try {
+        raw = JSON.parse(window.localStorage.getItem(THEME_PRESET_STORAGE_KEY) || "null");
+    } catch {
+        raw = null;
+    }
+
+    const presets = {};
+    for (const themeKey of THEME_KEYS) {
+        presets[themeKey] = normalizeThemePreset(themeKey, raw?.[themeKey]);
+    }
+    return presets;
+}
+
+function saveThemePresets() {
+    window.localStorage.setItem(THEME_PRESET_STORAGE_KEY, JSON.stringify(state.themePresets));
 }
 
 function cloneDefaultKeyboardShortcuts() {
@@ -197,6 +393,8 @@ const state = {
     cardFont: Number.parseInt(window.localStorage.getItem("article-card-font") || "14", 10),
     fontFamily: window.localStorage.getItem("article-font-family") || "segoe",
     theme: window.localStorage.getItem("article-theme") || "ocean",
+    themePresets: loadThemePresets(),
+    themeEditorTheme: null,
     primarySort: window.localStorage.getItem("article-primary-sort") || "year_desc",
     secondarySort: window.localStorage.getItem("article-secondary-sort") || "title_asc",
     displayMenuOpen: false,
@@ -334,6 +532,16 @@ const dom = {
     tagColorEditor: document.getElementById("tag-color-editor"),
     tagColorList: document.getElementById("tag-color-list"),
     tagColorClose: document.getElementById("tag-color-close"),
+    themeSelectContainer: document.getElementById("theme-select-container"),
+    themeSelectBtn: document.getElementById("theme-select-btn"),
+    themeSelectValue: document.getElementById("theme-select-value"),
+    themeSelectMenu: document.getElementById("theme-select-menu"),
+    themeEditor: document.getElementById("theme-editor"),
+    themeEditorTitle: document.getElementById("theme-editor-title"),
+    themeEditorName: document.getElementById("theme-editor-name"),
+    themeEditorList: document.getElementById("theme-editor-list"),
+    themeEditorClose: document.getElementById("theme-editor-close"),
+    themeEditorReset: document.getElementById("theme-editor-reset"),
     toast: document.getElementById("toast"),
     thumbnailUndo: document.getElementById("thumbnail-undo"),
     thumbnailUndoMessage: document.getElementById("thumbnail-undo-message"),
@@ -349,7 +557,6 @@ const dom = {
     autoRefCompile: document.getElementById("auto-ref-compile"),
     showDupeWarnings: document.getElementById("show-dupe-warnings"),
     enableNicheCheckbox: document.getElementById("enable-niche"),
-    themeSelect: document.getElementById("theme-select"),
     experimentalSection: document.getElementById("experimental-section"),
     experimentalArrow: document.getElementById("experimental-arrow"),
     debugModeCheckbox: document.getElementById("debug-mode"),
@@ -641,6 +848,7 @@ function setDisplayMenuOpen(isOpen) {
     state.displayMenuOpen = Boolean(isOpen);
     dom.displayMenu.classList.toggle("hidden", !state.displayMenuOpen);
     dom.displayMenuToggle.setAttribute("aria-expanded", state.displayMenuOpen ? "true" : "false");
+    if (!state.displayMenuOpen) setThemeSelectMenuOpen(false);
     if (isOpen && state.filesMenuOpen) setFilesMenuOpen(false);
 }
 
@@ -1698,12 +1906,138 @@ function getCardTint(article) {
 }
 
 // ---- Theme ----
-const VALID_THEMES = new Set(["ocean", "midnight", "nord", "monokai", "solarized", "light"]);
+const VALID_THEMES = new Set(THEME_KEYS);
+
+function getThemePreset(themeKey) {
+    const resolvedTheme = VALID_THEMES.has(themeKey) ? themeKey : "ocean";
+    return state.themePresets?.[resolvedTheme] || normalizeThemePreset(resolvedTheme, null);
+}
+
+function getThemeEditorTheme() {
+    return VALID_THEMES.has(state.themeEditorTheme) ? state.themeEditorTheme : state.theme;
+}
+
+function hexToRgbChannels(hex) {
+    const normalized = normalizeThemeHex(hex, "#000000");
+    const clean = normalized.slice(1);
+    const r = Number.parseInt(clean.slice(0, 2), 16);
+    const g = Number.parseInt(clean.slice(2, 4), 16);
+    const b = Number.parseInt(clean.slice(4, 6), 16);
+    return `${r}, ${g}, ${b}`;
+}
+
+function applyThemeVariables(themeKey) {
+    const preset = getThemePreset(themeKey);
+    const style = document.documentElement.style;
+
+    style.setProperty("--bg", preset.bg);
+    style.setProperty("--bg-soft", preset.bgSoft);
+    style.setProperty("--panel", preset.panel);
+    style.setProperty("--text", preset.text);
+    style.setProperty("--muted", preset.muted);
+    style.setProperty("--accent", preset.accent);
+    style.setProperty("--accent-2", preset.accent2);
+    style.setProperty("--danger", preset.danger);
+    style.setProperty("--line", preset.line);
+    style.setProperty("--body-grad-a", preset.bodyGradA);
+    style.setProperty("--body-grad-b", preset.bodyGradB);
+    style.setProperty("--body-grad-bg", preset.bodyGradBg);
+    style.setProperty("--body-grad-end", preset.bodyGradEnd);
+    style.setProperty("--topbar-rgb", hexToRgbChannels(preset.topbarColor));
+    style.setProperty("--topbar-alpha-base", String(preset.topbarAlphaBase));
+    style.setProperty("--menu-rgb", hexToRgbChannels(preset.menuColor));
+    style.setProperty("--menu-alpha-base", String(preset.menuAlphaBase));
+}
+
+function setThemeSelectMenuOpen(isOpen) {
+    if (!dom.themeSelectMenu || !dom.themeSelectBtn) return;
+    dom.themeSelectMenu.classList.toggle("hidden", !isOpen);
+    dom.themeSelectBtn.setAttribute("aria-expanded", isOpen ? "true" : "false");
+}
+
+function renderThemeSelectOptions() {
+    if (!dom.themeSelectMenu || !dom.themeSelectValue) return;
+    const selectedTheme = VALID_THEMES.has(state.theme) ? state.theme : "ocean";
+    dom.themeSelectValue.textContent = getThemePreset(selectedTheme).name;
+    dom.themeSelectMenu.innerHTML = THEME_KEYS.map((themeKey) => {
+        const presetName = escapeHtml(getThemePreset(themeKey).name);
+        const activeClass = themeKey === selectedTheme ? " is-active" : "";
+        return `
+            <div class="theme-select-option">
+                <button type="button" class="theme-select-choice${activeClass}" data-theme-choice="${themeKey}">${presetName}</button>
+                <button type="button" class="theme-select-edit" data-theme-edit="${themeKey}" aria-label="Edit ${presetName}" title="Edit ${presetName}">&#9998;</button>
+            </div>
+        `;
+    }).join("");
+}
+
+function updateThemeEditorTitle() {
+    if (!dom.themeEditorTitle) return;
+    dom.themeEditorTitle.textContent = `Edit Theme: ${getThemePreset(getThemeEditorTheme()).name}`;
+}
+
+function renderThemeEditor() {
+    if (!dom.themeEditorList || !dom.themeEditorName) return;
+    const themeKey = getThemeEditorTheme();
+    const preset = getThemePreset(themeKey);
+    updateThemeEditorTitle();
+    dom.themeEditorName.value = preset.name;
+    dom.themeEditorList.innerHTML = THEME_COLOR_FIELDS.map((field) => `
+        <label class="theme-editor-row">
+            <span>${escapeHtml(field.label)}</span>
+            <div class="theme-editor-inputs">
+                <input type="color" data-theme-color-picker="${field.key}" value="${preset[field.key]}"
+                    aria-label="${escapeHtml(field.label)} color" />
+                <input type="text" data-theme-color-text="${field.key}" value="${preset[field.key].toUpperCase()}"
+                    maxlength="7" spellcheck="false" aria-label="${escapeHtml(field.label)} hex value" />
+            </div>
+        </label>
+    `).join("");
+}
+
+function openThemeEditor(themeKey = state.theme) {
+    if (!dom.themeEditor) return;
+    state.themeEditorTheme = VALID_THEMES.has(themeKey) ? themeKey : "ocean";
+    setDisplayMenuOpen(false);
+    setThemeSelectMenuOpen(false);
+    renderThemeEditor();
+    dom.themeEditor.classList.remove("hidden");
+}
+
+function closeThemeEditor() {
+    if (!dom.themeEditor) return;
+    dom.themeEditor.classList.add("hidden");
+    state.themeEditorTheme = null;
+}
+
 function applyTheme(value) {
     const theme = VALID_THEMES.has(value) ? value : "ocean";
     state.theme = theme;
     document.documentElement.dataset.theme = theme;
-    if (dom.themeSelect) dom.themeSelect.value = theme;
+    applyThemeVariables(theme);
+    renderThemeSelectOptions();
+}
+
+function setThemePresetName(themeKey, rawName) {
+    const preset = getThemePreset(themeKey);
+    const normalized = normalizeWhitespace(rawName).slice(0, 40);
+    if (!normalized || preset.name === normalized) return false;
+    preset.name = normalized;
+    saveThemePresets();
+    renderThemeSelectOptions();
+    updateThemeEditorTitle();
+    return true;
+}
+
+function setThemePresetColor(themeKey, colorKey, rawValue) {
+    const preset = getThemePreset(themeKey);
+    const fallback = preset[colorKey] || DEFAULT_THEME_PRESETS[themeKey]?.[colorKey] || "#000000";
+    const normalized = normalizeThemeHex(rawValue, fallback);
+    if (!normalized || preset[colorKey] === normalized) return false;
+    preset[colorKey] = normalized;
+    saveThemePresets();
+    if (state.theme === themeKey) applyTheme(themeKey);
+    return true;
 }
 
 // ---- Tag frequency helpers ----
@@ -3314,11 +3648,119 @@ function wireEvents() {
     }
 
     // Theme selector
-    if (dom.themeSelect) {
-        applyTheme(state.theme);
-        dom.themeSelect.addEventListener("change", () => {
-            applyTheme(dom.themeSelect.value);
+    applyTheme(state.theme);
+
+    if (dom.themeSelectBtn) {
+        dom.themeSelectBtn.addEventListener("click", (evt) => {
+            evt.preventDefault();
+            evt.stopPropagation();
+            setThemeSelectMenuOpen(dom.themeSelectMenu?.classList.contains("hidden"));
+        });
+
+        dom.themeSelectBtn.addEventListener("keydown", (evt) => {
+            if (evt.key !== "Enter" && evt.key !== " ") return;
+            evt.preventDefault();
+            setThemeSelectMenuOpen(dom.themeSelectMenu?.classList.contains("hidden"));
+        });
+    }
+
+    if (dom.themeSelectMenu) {
+        dom.themeSelectMenu.addEventListener("click", (evt) => {
+            evt.preventDefault();
+            evt.stopPropagation();
+            const editBtn = evt.target.closest("[data-theme-edit]");
+            if (editBtn) {
+                openThemeEditor(editBtn.dataset.themeEdit);
+                return;
+            }
+
+            const choiceBtn = evt.target.closest("[data-theme-choice]");
+            if (!choiceBtn) return;
+            const themeKey = choiceBtn.dataset.themeChoice;
+            applyTheme(themeKey);
+            setThemeSelectMenuOpen(false);
+            if (dom.themeEditor && !dom.themeEditor.classList.contains("hidden") && getThemeEditorTheme() === themeKey) {
+                renderThemeEditor();
+            }
             window.localStorage.setItem("article-theme", state.theme);
+        });
+    }
+
+    if (dom.themeEditorClose) {
+        dom.themeEditorClose.addEventListener("click", () => {
+            closeThemeEditor();
+        });
+    }
+
+    if (dom.themeEditorName) {
+        dom.themeEditorName.addEventListener("input", () => {
+            const themeKey = getThemeEditorTheme();
+            if (setThemePresetName(themeKey, dom.themeEditorName.value)) {
+                dom.themeEditorName.value = getThemePreset(themeKey).name;
+            }
+        });
+        dom.themeEditorName.addEventListener("blur", () => {
+            const preset = getThemePreset(getThemeEditorTheme());
+            const normalized = normalizeWhitespace(dom.themeEditorName.value).slice(0, 40);
+            if (!normalized) {
+                dom.themeEditorName.value = preset.name;
+                return;
+            }
+            if (normalized !== dom.themeEditorName.value) {
+                dom.themeEditorName.value = normalized;
+            }
+        });
+    }
+
+    if (dom.themeEditorList) {
+        dom.themeEditorList.addEventListener("input", (evt) => {
+            const themeKey = getThemeEditorTheme();
+            const picker = evt.target.closest("[data-theme-color-picker]");
+            if (picker) {
+                const colorKey = picker.dataset.themeColorPicker;
+                if (!colorKey) return;
+                if (setThemePresetColor(themeKey, colorKey, picker.value)) {
+                    const row = picker.closest(".theme-editor-row");
+                    const textInput = row?.querySelector(`[data-theme-color-text="${colorKey}"]`);
+                    if (textInput) textInput.value = picker.value.toUpperCase();
+                }
+                return;
+            }
+
+            const textInput = evt.target.closest("[data-theme-color-text]");
+            if (!textInput) return;
+            const colorKey = textInput.dataset.themeColorText;
+            if (!colorKey) return;
+            const normalized = normalizeThemeHex(textInput.value, "");
+            if (!normalized) return;
+            if (setThemePresetColor(themeKey, colorKey, normalized)) {
+                const row = textInput.closest(".theme-editor-row");
+                const colorInput = row?.querySelector(`[data-theme-color-picker="${colorKey}"]`);
+                if (colorInput) colorInput.value = normalized;
+            }
+            textInput.value = normalized.toUpperCase();
+        });
+
+        dom.themeEditorList.addEventListener("focusout", (evt) => {
+            const textInput = evt.target.closest("[data-theme-color-text]");
+            if (!textInput) return;
+            const colorKey = textInput.dataset.themeColorText;
+            if (!colorKey) return;
+            textInput.value = getThemePreset(getThemeEditorTheme())[colorKey].toUpperCase();
+        });
+    }
+
+    if (dom.themeEditorReset) {
+        dom.themeEditorReset.addEventListener("click", () => {
+            const themeKey = getThemeEditorTheme();
+            const preset = getThemePreset(themeKey);
+            if (!window.confirm(`Reset "${preset.name}" to its default theme name and colors?`)) return;
+            state.themePresets[themeKey] = cloneThemePreset(DEFAULT_THEME_PRESETS[themeKey]);
+            saveThemePresets();
+            if (state.theme === themeKey) applyTheme(state.theme);
+            else renderThemeSelectOptions();
+            renderThemeEditor();
+            setStatus(`Reset theme "${getThemePreset(themeKey).name}" to defaults.`);
         });
     }
 
@@ -3921,6 +4363,9 @@ function wireEvents() {
         if (!dom.tagFilterContainer.contains(evt.target)) {
             dom.tagFilterMenu.classList.add("hidden");
         }
+        if (dom.themeSelectContainer && !dom.themeSelectContainer.contains(evt.target)) {
+            setThemeSelectMenuOpen(false);
+        }
     });
 
     // Prevent clicks inside the menu from bubbling up to document
@@ -4266,7 +4711,7 @@ function wireEvents() {
     }
 
     // Mousedown on modal backdrops to close
-    [dom.modal, dom.abstractModal, dom.tagColorEditor, dom.hotkeysModal, dom.duplicateModal].forEach((modalEl) => {
+    [dom.modal, dom.abstractModal, dom.tagColorEditor, dom.themeEditor, dom.hotkeysModal, dom.duplicateModal].forEach((modalEl) => {
         if (!modalEl) return;
         modalEl.addEventListener("mousedown", (evt) => {
             if (evt.target === modalEl) {
@@ -4341,13 +4786,17 @@ function wireEvents() {
         if (handleModalKeyboardNavigation(evt)) return;
 
         if (evt.key === "Escape") {
-            // Priority: autocomplete -> color editor -> abstract -> duplicate/edit modal -> hotkeys -> backup modal
+            // Priority: autocomplete -> color editors -> abstract -> duplicate/edit modal -> hotkeys -> backup modal
             if (!dom.tagAutocomplete.classList.contains("hidden")) {
                 dom.tagAutocomplete.classList.add("hidden");
                 return;
             }
             if (!dom.tagColorEditor.classList.contains("hidden")) {
                 dom.tagColorEditor.classList.add("hidden");
+                return;
+            }
+            if (dom.themeEditor && !dom.themeEditor.classList.contains("hidden")) {
+                closeThemeEditor();
                 return;
             }
             if (!dom.abstractModal.classList.contains("hidden")) {
