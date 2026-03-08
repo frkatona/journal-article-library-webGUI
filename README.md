@@ -1072,6 +1072,12 @@ push v0.9.0
 
 - [x] demo mode (uses a tmp articles and thumbnails folder and index json to delete on reversion)
 
+- [x] color theme customization
+
+- more display footprint edits
+  - [x] filter mode -> filter (with checkbox) and unfold the options only when filter is checked
+  - [x] fold tint options when 'tint by tag' is unchecked
+
 ---
 
 ### think about more first

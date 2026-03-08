@@ -1,24 +1,20 @@
 ### immediate (bug fixes, small features)
 
+- evaluate filename FRK PDF Manager not appearing with underscores
+
 - [ ] 'niche' filters not hiding properly
   - [ ] fix niche chips preventing autofill elsewhere and appearing with strange characters in the niche field
   - [x] just putting in 'experimental' for now
     - [ ] but hide the checkbox in the tag dropdown while it is unchecked in the files menu
-
-- more display footprint edits
-  - [ ] filter mode -> filter (with checkbox) and unfold the options only when filter is checked
-  - [ ] fold tint options when 'tint by tag' is unchecked
-    - better name for 'tint by tag?'
 
 - [ ] make referenced dois into columns instead of one row and several columns
 
 ### major version revision features
 
 - [ ] consider ways to synchronize metadata (and papers) between multiple computers
+  - [ ] add an option to use a non-app folder for the articles, thumbnails, and metadata, and then advise the user to choose a cloud-synced or active git folder 
 
 ### minor version revision features
-
-- [ ] 'new custom theme' -> give it a name and let is save to the file system and be selectable in the theme dropdown
 
 - [ ] how-to-use modal for first time user (hotkeys, colors, editing metadata, pasting images, toggling views) with a "show first-time helper" in the '?' modal
 
