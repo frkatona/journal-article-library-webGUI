@@ -26,6 +26,7 @@ const ENABLE_NICHE_KEY = "article-enable-niche";
 const SHOW_NICHE_KEY = "article-show-niche";
 const SHOW_REF_DOIS_KEY = "article-show-ref-dois";
 const SHOW_REF_DOIS_PREF_TOUCHED_KEY = "article-show-ref-dois-pref-touched";
+const NIGHT_FILTER_ENABLED_KEY = "article-night-filter-enabled";
 const THEME_KEYS = ["ocean", "midnight", "nord", "monokai", "solarized", "light"];
 const DEFAULT_THEME_PRESETS = {
     ocean: {
@@ -192,6 +193,15 @@ function initShowNichePreference() {
     if (legacyHide === "false") return true;
     if (legacyHide === "true") return false;
     return false;
+}
+
+function initNightFilterEnabledPreference() {
+    const raw = window.localStorage.getItem(NIGHT_FILTER_ENABLED_KEY);
+    if (raw === "true") return true;
+    if (raw === "false") return false;
+
+    const strength = Number.parseInt(window.localStorage.getItem("article-night-filter-strength") || "0", 10);
+    return Number.isFinite(strength) && strength > 0;
 }
 
 function cloneThemePreset(preset) {
@@ -407,6 +417,7 @@ const state = {
     colorIntensity: Number.parseInt(window.localStorage.getItem("article-color-intensity") || "13", 10),
     modalBackdropDarkness: Number.parseInt(window.localStorage.getItem("article-modal-backdrop-darkness") || "58", 10),
     surfaceOpacity: Number.parseInt(window.localStorage.getItem("article-surface-opacity") || "100", 10),
+    nightFilterEnabled: initNightFilterEnabledPreference(),
     nightFilterMode: window.localStorage.getItem("article-night-filter-mode") || "warm",
     nightFilterStrength: Number.parseInt(window.localStorage.getItem("article-night-filter-strength") || "0", 10),
     tagColors: JSON.parse(window.localStorage.getItem("article-tag-colors") || "{}"),
@@ -449,6 +460,8 @@ const dom = {
     modalBackdropValue: document.getElementById("modal-backdrop-value"),
     surfaceOpacitySlider: document.getElementById("surface-opacity-slider"),
     surfaceOpacityValue: document.getElementById("surface-opacity-value"),
+    nightFilterEnabled: document.getElementById("night-filter-enabled"),
+    nightFilterControls: document.getElementById("night-filter-controls"),
     nightFilterMode: document.getElementById("night-filter-mode"),
     nightFilterStrengthSlider: document.getElementById("night-filter-strength-slider"),
     nightFilterStrengthValue: document.getElementById("night-filter-strength-value"),
@@ -459,6 +472,7 @@ const dom = {
     nightFilterFuncB: document.getElementById("night-filter-func-b"),
     colorIntensitySlider: document.getElementById("color-intensity-slider"),
     colorIntensityValue: document.getElementById("color-intensity-value"),
+    tagTintControls: document.getElementById("tag-tint-controls"),
     fontFamilySelect: document.getElementById("font-family-select"),
     searchInput: document.getElementById("search-input"),
     tagFilterContainer: document.getElementById("tag-filter-container"),
@@ -749,7 +763,7 @@ function applyNightFilter(modeValue, strengthValue) {
     if (dom.nightFilterStrengthSlider) dom.nightFilterStrengthSlider.value = String(strength);
     if (dom.nightFilterStrengthValue) dom.nightFilterStrengthValue.textContent = String(strength);
 
-    if (strength <= 0) {
+    if (!state.nightFilterEnabled || strength <= 0) {
         document.body.style.filter = "";
         setFilterMatrix(dom.nightFilterPreMatrix, IDENTITY_COLOR_MATRIX);
         setFilterMatrix(dom.nightFilterPostMatrix, IDENTITY_COLOR_MATRIX);
@@ -833,6 +847,24 @@ function applyNightFilter(modeValue, strengthValue) {
     if (dom.nightFilterFuncR) dom.nightFilterFuncR.setAttribute("tableValues", buildFilterTableValues(mapR));
     if (dom.nightFilterFuncG) dom.nightFilterFuncG.setAttribute("tableValues", buildFilterTableValues(mapG));
     if (dom.nightFilterFuncB) dom.nightFilterFuncB.setAttribute("tableValues", buildFilterTableValues(mapB));
+}
+
+function updateTagTintControlVisibility() {
+    if (!dom.tagTintControls) return;
+    const show = Boolean(state.tintByTag);
+    dom.tagTintControls.classList.toggle("hidden", !show);
+    dom.tagTintControls.querySelectorAll("input, button, select, textarea").forEach((el) => {
+        el.disabled = !show;
+    });
+}
+
+function updateNightFilterControlVisibility() {
+    if (!dom.nightFilterControls) return;
+    const show = Boolean(state.nightFilterEnabled);
+    dom.nightFilterControls.classList.toggle("hidden", !show);
+    dom.nightFilterControls.querySelectorAll("input, button, select, textarea").forEach((el) => {
+        el.disabled = !show;
+    });
 }
 
 function applyFontFamily(value) {
@@ -3571,6 +3603,8 @@ function wireEvents() {
     applySurfaceOpacity(state.surfaceOpacity);
     applyFontFamily(state.fontFamily);
     applyNightFilter(state.nightFilterMode, state.nightFilterStrength);
+    updateNightFilterControlVisibility();
+    updateTagTintControlVisibility();
     applyAbstractSectionCount(state.abstractSectionCount);
     setDisplayMenuOpen(false);
     setFilesMenuOpen(false);
@@ -4050,6 +4084,7 @@ function wireEvents() {
     dom.tintByTag.addEventListener("change", () => {
         state.tintByTag = dom.tintByTag.checked;
         window.localStorage.setItem("article-tint-by-tag", state.tintByTag ? "true" : "false");
+        updateTagTintControlVisibility();
         renderArticles();
     });
 
@@ -4314,6 +4349,15 @@ function wireEvents() {
         dom.surfaceOpacitySlider.addEventListener("input", () => {
             applySurfaceOpacity(dom.surfaceOpacitySlider.value);
             window.localStorage.setItem("article-surface-opacity", String(state.surfaceOpacity));
+        });
+    }
+    if (dom.nightFilterEnabled) {
+        dom.nightFilterEnabled.checked = state.nightFilterEnabled;
+        dom.nightFilterEnabled.addEventListener("change", () => {
+            state.nightFilterEnabled = dom.nightFilterEnabled.checked;
+            window.localStorage.setItem(NIGHT_FILTER_ENABLED_KEY, state.nightFilterEnabled ? "true" : "false");
+            updateNightFilterControlVisibility();
+            applyNightFilter(state.nightFilterMode, state.nightFilterStrength);
         });
     }
     if (dom.nightFilterMode) {

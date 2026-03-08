@@ -227,6 +227,48 @@
                             </select>
                         </label>
                         <hr style="border:none; border-top:1px solid var(--line); margin:6px 0; opacity:0.6;" />
+                        <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                            <input id="tint-by-tag" type="checkbox" />
+                            <span style="font-size:0.82rem;">Tint by Tag</span>
+                        </label>
+                        <div id="tag-tint-controls" class="display-subcontrols hidden">
+                            <div class="field slider-collapsible" data-slider-field>
+                                <span data-slider-toggle
+                                    style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                                    <span>Color Intensity <strong id="color-intensity-value">13</strong>%</span>
+                                    <span class="slider-caret" aria-hidden="true">&#9656;</span>
+                                </span>
+                                <input id="color-intensity-slider" type="range" min="0" max="100" step="1" value="13" />
+                            </div>
+                            <button id="edit-tag-colors-btn" type="button" class="ghost">Edit Tag Colors</button>
+                        </div>
+                        <hr style="border:none; border-top:1px solid var(--line); margin:6px 0; opacity:0.6;" />
+                        <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                            <input id="night-filter-enabled" type="checkbox" />
+                            <span style="font-size:0.82rem;">Enable Low-light Filter</span>
+                        </label>
+                        <div id="night-filter-controls" class="display-subcontrols hidden">
+                            <label class="field">
+                                <span>Filter Technique</span>
+                                <select id="night-filter-mode">
+                                    <option value="warm">Warm</option>
+                                    <option value="scalar_dimming">Scalar dimming</option>
+                                    <option value="gamma_remap">Gamma re-map</option>
+                                    <option value="luminance_remap">Luminance re-map</option>
+                                    <option value="sigmoid_contrast">Sigmoid contrast shaping</option>
+                                    <option value="soft_knee">Soft-knee compression</option>
+                                </select>
+                            </label>
+                            <div class="field slider-collapsible" data-slider-field>
+                                <span data-slider-toggle
+                                    style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                                    <span>Filter Strength <strong id="night-filter-strength-value">0</strong>%</span>
+                                    <span class="slider-caret" aria-hidden="true">&#9656;</span>
+                                </span>
+                                <input id="night-filter-strength-slider" type="range" min="0" max="100" step="1" value="0" />
+                            </div>
+                        </div>
+                        <hr style="border:none; border-top:1px solid var(--line); margin:6px 0; opacity:0.6;" />
                         <div class="field slider-collapsible" data-slider-field style="margin-top: 4px;">
                             <div data-slider-toggle style="display:flex; justify-content:space-between; align-items:flex-end; gap:8px;">
                                 <span>Card Height <strong id="card-height-value">138</strong>px</span>
@@ -274,41 +316,6 @@
                             </span>
                             <input id="surface-opacity-slider" type="range" min="30" max="100" step="1" value="100" />
                         </div>
-                                                <hr style="border:none; border-top:1px solid var(--line); margin:6px 0; opacity:0.6;" />
-
-                        <label class="field">
-                            <span>Filter Mode</span>
-                            <select id="night-filter-mode">
-                                <option value="warm">Warm</option>
-                                <option value="scalar_dimming">Scalar dimming</option>
-                                <option value="gamma_remap">Gamma re-map</option>
-                                <option value="luminance_remap">Luminance re-map</option>
-                                <option value="sigmoid_contrast">Sigmoid contrast shaping</option>
-                                <option value="soft_knee">Soft-knee compression</option>
-                            </select>
-                        </label>
-                        <div class="field slider-collapsible" data-slider-field>
-                            <span data-slider-toggle
-                                style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-                                <span>Filter Strength <strong id="night-filter-strength-value">0</strong>%</span>
-                                <span class="slider-caret" aria-hidden="true">&#9656;</span>
-                            </span>
-                            <input id="night-filter-strength-slider" type="range" min="0" max="100" step="1" value="0" />
-                        </div>
-                        <hr style="border:none; border-top:1px solid var(--line); margin:6px 0; opacity:0.6;" />
-                        <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
-                            <input id="tint-by-tag" type="checkbox" />
-                            <span style="font-size:0.82rem;">Tint by Tag</span>
-                        </label>
-                        <div class="field slider-collapsible" data-slider-field>
-                            <span data-slider-toggle
-                                style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-                                <span>Color Intensity <strong id="color-intensity-value">13</strong>%</span>
-                                <span class="slider-caret" aria-hidden="true">&#9656;</span>
-                            </span>
-                            <input id="color-intensity-slider" type="range" min="0" max="100" step="1" value="13" />
-                        </div>
-                        <button id="edit-tag-colors-btn" type="button" class="ghost">Edit Tag Colors</button>
                     </div>
                 </div>
 

@@ -345,6 +345,13 @@ main {
   max-width: 210px;
 }
 
+.display-subcontrols {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-left: 18px;
+}
+
 .theme-select-menu {
   width: 100%;
   min-width: 250px;
