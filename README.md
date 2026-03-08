@@ -376,6 +376,8 @@ The Rust backend exposes these commands to the frontend:
 
 | `open_articles_folder` | Open the Articles folder |
 
+| `set_demo_mode` | Switch between the main library and isolated demo storage |
+
 | `open_external_url` | Open an external `http`/`https` URL |
 
 | `get_thumbnail_url` | Load a thumbnail as a base64 data URL |
@@ -529,6 +531,30 @@ fn open_articles_folder(...) -> Result<(), String> {
     opener::open(normalize_windows_prefix(articles_dir))?;
 
     Ok(())
+
+}
+
+#[tauri::command]
+
+fn set_demo_mode(enabled, clear_demo_data) -> Result<DemoModeResponse, String> {
+
+    if enabled {
+
+        point_app_state_at_demo_articles_and_demo_metadata();
+
+    } else {
+
+        if clear_demo_data {
+
+            delete_demo_articles_thumbnails_overrides_and_backups()?;
+
+        }
+
+        point_app_state_back_at_primary_articles_and_primary_metadata();
+
+    }
+
+    Ok(active_mode_summary())
 
 }
 

@@ -23,6 +23,7 @@ use walkdir::WalkDir;
 // ── Constants ───────────────────────────────────────────────────────────────
 const THUMBNAIL_W: u32 = 420;
 const THUMBNAIL_H: u32 = 260;
+const DEMO_MODE_DIRNAME: &str = "demo_mode";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -177,6 +178,13 @@ pub struct MutationResponse {
     pub article: Article,
 }
 
+#[derive(Debug, Serialize)]
+pub struct DemoModeResponse {
+    pub enabled: bool,
+    pub articles_dir: String,
+    pub data_dir: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct MetadataPayload {
     pub title: Option<String>,
@@ -196,8 +204,16 @@ pub struct MetadataPayload {
 }
 
 // ── App State ───────────────────────────────────────────────────────────────
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LibraryMode {
+    Primary,
+    Demo,
+}
+
 pub struct AppState {
     root_dir: PathBuf,
+    demo_root_dir: PathBuf,
+    mode: LibraryMode,
     articles_dir: PathBuf,
     data_dir: PathBuf,
     thumbnails_dir: PathBuf,
@@ -210,23 +226,62 @@ pub struct AppState {
 
 impl AppState {
     fn new(root_dir: PathBuf) -> Self {
-        let articles_dir = root_dir.join("Articles");
-        let data_dir = root_dir.join("library_data");
-        let thumbnails_dir = data_dir.join("thumbnails");
-        let manual_thumbnails_dir = data_dir.join("manual_thumbnails");
-        let overrides_dir = data_dir.join("overrides");
-        let index_path = data_dir.join("index.json");
-        Self {
+        let demo_root_dir = root_dir.join(DEMO_MODE_DIRNAME);
+        let mut state = Self {
             root_dir,
-            articles_dir,
-            data_dir,
-            thumbnails_dir,
-            manual_thumbnails_dir,
-            overrides_dir,
-            index_path,
+            demo_root_dir,
+            mode: LibraryMode::Primary,
+            articles_dir: PathBuf::new(),
+            data_dir: PathBuf::new(),
+            thumbnails_dir: PathBuf::new(),
+            manual_thumbnails_dir: PathBuf::new(),
+            overrides_dir: PathBuf::new(),
+            index_path: PathBuf::new(),
             index: None,
             default_strategy: "hybrid".into(),
+        };
+        state.refresh_active_paths();
+        state
+    }
+
+    fn active_storage_root(&self) -> &Path {
+        match self.mode {
+            LibraryMode::Primary => &self.root_dir,
+            LibraryMode::Demo => &self.demo_root_dir,
         }
+    }
+
+    fn refresh_active_paths(&mut self) {
+        let storage_root = self.active_storage_root().to_path_buf();
+        self.articles_dir = storage_root.join("Articles");
+        self.data_dir = storage_root.join("library_data");
+        self.thumbnails_dir = self.data_dir.join("thumbnails");
+        self.manual_thumbnails_dir = self.data_dir.join("manual_thumbnails");
+        self.overrides_dir = self.data_dir.join("overrides");
+        self.index_path = self.data_dir.join("index.json");
+    }
+
+    fn set_demo_mode(&mut self, enabled: bool) {
+        self.mode = if enabled {
+            LibraryMode::Demo
+        } else {
+            LibraryMode::Primary
+        };
+        self.refresh_active_paths();
+        self.index = None;
+        self.ensure_dirs();
+    }
+
+    fn demo_mode_enabled(&self) -> bool {
+        self.mode == LibraryMode::Demo
+    }
+
+    fn clear_demo_data(&self) -> Result<(), String> {
+        if self.demo_root_dir.exists() {
+            fs::remove_dir_all(&self.demo_root_dir)
+                .map_err(|e| format!("Failed to clear demo data: {}", e))?;
+        }
+        Ok(())
     }
 
     fn ensure_dirs(&self) {
@@ -1938,6 +1993,31 @@ fn open_articles_folder(state: tauri::State<'_, Mutex<AppState>>) -> Result<(), 
 }
 
 #[tauri::command]
+fn set_demo_mode(
+    state: tauri::State<'_, Mutex<AppState>>,
+    enabled: bool,
+    clear_demo_data: Option<bool>,
+) -> Result<DemoModeResponse, String> {
+    let mut st = state.lock().map_err(|e| e.to_string())?;
+
+    if enabled {
+        st.set_demo_mode(true);
+    } else {
+        if clear_demo_data.unwrap_or(false) {
+            st.index = None;
+            st.clear_demo_data()?;
+        }
+        st.set_demo_mode(false);
+    }
+
+    Ok(DemoModeResponse {
+        enabled: st.demo_mode_enabled(),
+        articles_dir: st.articles_dir.to_string_lossy().to_string(),
+        data_dir: st.data_dir.to_string_lossy().to_string(),
+    })
+}
+
+#[tauri::command]
 fn open_external_url(url: String) -> Result<(), String> {
     let target = url.trim();
     if target.is_empty() {
@@ -2729,6 +2809,7 @@ pub fn run() {
             open_pdf,
             open_file_location,
             open_articles_folder,
+            set_demo_mode,
             open_external_url,
             get_thumbnail_url,
             get_root_dir,

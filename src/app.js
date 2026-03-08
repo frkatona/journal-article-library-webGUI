@@ -12,6 +12,7 @@ const DEFAULT_HOTKEYS = {
     openLocation: { ctrl: true, alt: false, shift: true },  // Ctrl+Shift+click
 };
 const KEYBOARD_SHORTCUTS_STORAGE_KEY = "article-keyboard-shortcuts";
+const DEMO_MODE_KEY = "article-demo-mode";
 const DEFAULT_KEYBOARD_SHORTCUTS = {
     pasteThumb: ["P"],
     enter: ["Ctrl+Enter"],
@@ -224,6 +225,7 @@ const state = {
     showErrorsGlobally: window.localStorage.getItem("article-show-errors") !== "false",
     abstractSectionCount: Number.parseInt(window.localStorage.getItem("article-abstract-sections") || "4", 10),
     debugMode: window.localStorage.getItem("article-debug-mode") === "true",
+    demoMode: window.localStorage.getItem(DEMO_MODE_KEY) === "true",
     modalArrowBusy: false,
     thumbnailUndo: null,
 };
@@ -351,6 +353,7 @@ const dom = {
     experimentalSection: document.getElementById("experimental-section"),
     experimentalArrow: document.getElementById("experimental-arrow"),
     debugModeCheckbox: document.getElementById("debug-mode"),
+    demoModeCheckbox: document.getElementById("demo-mode"),
     errorLogList: document.getElementById("error-log-list"),
     errorLogCopy: document.getElementById("error-log-copy"),
     errorLogClear: document.getElementById("error-log-clear"),
@@ -2670,8 +2673,15 @@ async function loadTags() {
     const result = await invoke("get_tags");
     const options = result.tags || [];
 
-    // If the list is empty, build it from scratch
-    if (dom.tagFilterList.children.length === 0) {
+    const optionNames = options.map((tagRow) => tagRow.name);
+    const existingNames = Array.from(dom.tagFilterList.querySelectorAll("input[type='checkbox']"))
+        .map((cb) => cb.value);
+    const needsRebuild = dom.tagFilterList.children.length === 0
+        || existingNames.length !== optionNames.length
+        || existingNames.some((name, index) => name !== optionNames[index]);
+
+    if (needsRebuild) {
+        clearNode(dom.tagFilterList);
         options.forEach((tagRow) => {
             const row = document.createElement("label");
             const cb = document.createElement("input");
@@ -2687,12 +2697,9 @@ async function loadTags() {
                     state.tags = state.tags.filter(t => t !== tagRow.name);
                 }
                 updateTagFilterUI();
-
-                // Keep the menu live but reload articles matching the new filter
                 loadArticles();
             });
 
-            // Prevent label click from closing the dropdown by clicking "outside"
             row.addEventListener("click", (evt) => {
                 evt.stopPropagation();
             });
@@ -2706,8 +2713,6 @@ async function loadTags() {
             dom.tagFilterList.appendChild(row);
         });
     } else {
-        // Otherwise, just update the existing elements to prevent DOM destruction
-        // mapping counts and checked states to avoid closing the menu natively
         const labels = Array.from(dom.tagFilterList.querySelectorAll("label"));
         const optionsMap = new Map();
         options.forEach(o => optionsMap.set(o.name, o.count));
@@ -2736,6 +2741,78 @@ function updateTagFilterUI() {
     }
 }
 
+function persistDemoModePreference(enabled) {
+    state.demoMode = Boolean(enabled);
+    window.localStorage.setItem(DEMO_MODE_KEY, state.demoMode ? "true" : "false");
+    if (dom.demoModeCheckbox) {
+        dom.demoModeCheckbox.checked = state.demoMode;
+    }
+}
+
+async function reloadLibraryForStorageSwitch() {
+    closeEditor();
+    closeAbstract();
+    stopThumbnailUndoPrompt();
+    thumbCache.clear();
+    state.current = null;
+    state.abstractPreviewArticle = null;
+    state.hoveredArticleId = null;
+    state.query = "";
+    state.tags = [];
+    if (dom.searchInput) dom.searchInput.value = "";
+    clearNode(dom.tagFilterList);
+    updateTagFilterUI();
+    await Promise.all([loadTags(), loadArticles()]);
+}
+
+async function setDemoModeEnabled(enabled, { startup = false } = {}) {
+    const nextMode = Boolean(enabled);
+    const previousMode = startup ? false : Boolean(state.demoMode);
+    if (startup && !nextMode) return true;
+    if (!startup && nextMode === previousMode) return true;
+
+    if (!nextMode && !startup) {
+        const confirmed = window.confirm(
+            "Turning off demo mode will permanently delete the demo articles, metadata, thumbnails, and backups created while demo mode was active. Continue?",
+        );
+        if (!confirmed) {
+            if (dom.demoModeCheckbox) dom.demoModeCheckbox.checked = previousMode;
+            return false;
+        }
+    }
+
+    setFilesMenuOpen(false);
+    setStatus(nextMode ? "Enabling demo mode..." : "Exiting demo mode...");
+
+    try {
+        await invoke("set_demo_mode", {
+            enabled: nextMode,
+            clearDemoData: !nextMode,
+        });
+    } catch (err) {
+        persistDemoModePreference(previousMode);
+        if (dom.demoModeCheckbox) dom.demoModeCheckbox.checked = previousMode;
+        const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
+        setStatus(`Failed to switch demo mode: ${message}`, true);
+        return false;
+    }
+
+    persistDemoModePreference(nextMode);
+
+    if (!startup) {
+        try {
+            await reloadLibraryForStorageSwitch();
+        } catch (err) {
+            const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
+            setStatus(`Demo mode switched, but reload failed: ${message}`, true);
+            return false;
+        }
+        showToast(nextMode ? "Demo mode enabled" : "Demo data deleted");
+    }
+
+    return true;
+}
+
 async function loadArticles() {
     setStatus("Loading articles...");
     debugLog(`Loading articles (query="${state.query}", tags=${state.tags.length}, mode=${state.tagFilterMode}).`);
@@ -2757,7 +2834,8 @@ async function loadArticles() {
     if (state.showDupeWarnings) checkDuplicates();
     const stamped = prettyDate(state.generatedAt);
     const suffix = stamped ? ` | indexed ${stamped}` : "";
-    setStatus(`${state.total} article(s)${suffix}`);
+    const prefix = state.demoMode ? "Demo mode | " : "";
+    setStatus(`${prefix}${state.total} article(s)${suffix}`);
     debugLog(`Loaded ${state.total} article(s); generated_at=${state.generatedAt || "n/a"}.`);
 }
 
@@ -3267,6 +3345,19 @@ function wireEvents() {
             window.localStorage.setItem("article-debug-mode", state.debugMode ? "true" : "false");
             debugLog(`Debug mode ${state.debugMode ? "enabled" : "disabled"}.`);
             if (state.debugMode) setStatus("Debug mode enabled.");
+        });
+    }
+
+    if (dom.demoModeCheckbox) {
+        dom.demoModeCheckbox.checked = state.demoMode;
+        dom.demoModeCheckbox.addEventListener("change", async () => {
+            const wantsDemoMode = dom.demoModeCheckbox.checked;
+            dom.demoModeCheckbox.disabled = true;
+            try {
+                await setDemoModeEnabled(wantsDemoMode);
+            } finally {
+                dom.demoModeCheckbox.disabled = false;
+            }
         });
     }
 
@@ -4414,6 +4505,7 @@ window.addEventListener("unhandledrejection", (e) => {
 async function init() {
     wireEvents();
     try {
+        await setDemoModeEnabled(state.demoMode, { startup: true });
         await Promise.all([loadTags(), loadArticles()]);
     } catch (err) {
         const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
