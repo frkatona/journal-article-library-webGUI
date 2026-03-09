@@ -36,6 +36,8 @@ Unfortunately, fully-automated parsing from PDFs of bulk collections of journal 
 
 - 'tags' are entered and managed as chips with tab-autocompletion
 
+- a pool of suggested tags are provided with assitance from the NLP tokenizer
+
 ---
 
 ## Abstract Preview
