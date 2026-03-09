@@ -1,5 +1,9 @@
 ### immediate (bug fixes, small features)
 
+- [ ] edit the NLP tag suggestions so that existing tags are visibly distinct from new tags
+  - maybe right-click replaces it with the next guess
+  - does the NLP convey any kind of confidence that can be conveyed visually?  Does that weigh on the order?
+
 - [ ] place "tag color intensity" slider under the button like the similar options
   
 - address why the filename not writing with underscores
@@ -11,12 +15,17 @@
 
 - [ ] make referenced dois into columns instead of one row and several columns
 
-### major version revision features
+### major revision features
 
-- [ ] json -> database
+- syncing papers, preferences, thumbnails, and metadata across devices
+  - add an option to use a non-app folder for the articles, thumbnails, and metadata, and then advise the user to choose a cloud-synced or git-initalized folder? 
+    - resolving conflicts in obsidian's sync system sucks with its git solution...probably avoid that unless I can think of a way to make conflicts virtually impossible
 
-- [ ] consider ways to synchronize metadata (and papers) between multiple computers
-  - add an option to use a non-app folder for the articles, thumbnails, and metadata, and then advise the user to choose a cloud-synced or active git folder? 
+- json -> database
+  - add some startup assessment to the existing project size metrics?
+  - ask someone with 1000 PDFs to test (Ben?  Kristen?)
+
+- [ ] custom PDF reader
 
 ### minor version revision features
 
@@ -25,7 +34,11 @@
 - [ ] find specific reasons why PDF parsing is so hard
   - [ ] can the NLP model assist?
 
+- [ ] add very small first-page or journal render thumbnail image to the abstract view
+
 ### flesh out
+
+- [ ] native PDF reader
 
 - [ ] include a resizing/cropping feature to the 'paste thumbnail image' to encourage getting large screenshots and cropping in
   - allow dragging the thumbnail image around and scrolling in and out in the preview to

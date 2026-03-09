@@ -1397,9 +1397,39 @@ button.secondary {
 }
 
 .tag-autocomplete .ac-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   padding: 5px 10px;
   cursor: pointer;
   font-size: 0.85rem;
+}
+
+.tag-autocomplete .ac-label {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.tag-autocomplete .ac-kind {
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.tag-autocomplete .ac-item.new-tag {
+  color: var(--accent2);
+  border-left: 2px solid var(--accent2);
+}
+
+.tag-autocomplete .ac-item.new-tag .ac-kind {
+  color: var(--accent2);
+}
+
+.tag-autocomplete .ac-item.existing-tag {
+  border-left: 2px solid transparent;
 }
 
 .tag-autocomplete .ac-item:hover,

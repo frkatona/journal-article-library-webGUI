@@ -1757,38 +1757,72 @@ function fuzzyMatch(tag, query) {
 
 function updateTagAutocomplete(query) {
     clearNode(dom.tagAutocomplete);
-    if (!query.trim()) {
+    const normalizedQuery = normalizeWhitespace(query);
+    if (!normalizedQuery) {
         dom.tagAutocomplete.classList.add("hidden");
         state.acIndex = -1;
         return;
     }
-    const currentTags = new Set(getTagChips().map((t) => t.toLowerCase()));
-    const allTags = getAllKnownTags().filter((t) => !currentTags.has(t.toLowerCase()));
+    const currentTags = new Set(getTagChips().map(normalizeTagKey));
+    const allTags = getAllKnownTags().filter((t) => !currentTags.has(normalizeTagKey(t)));
     const matches = allTags
-        .map((t) => fuzzyMatch(t, query))
+        .map((t) => fuzzyMatch(t, normalizedQuery))
         .filter((m) => m.match)
         .sort((a, b) => b.score - a.score);
-    if (matches.length === 0) {
+    const queryKey = normalizeTagKey(normalizedQuery);
+    const exactKnownMatch = allTags.some((tag) => normalizeTagKey(tag) === queryKey);
+    const canCreateNew = !currentTags.has(queryKey) && !exactKnownMatch;
+    if (matches.length === 0 && !canCreateNew) {
         dom.tagAutocomplete.classList.add("hidden");
         state.acIndex = -1;
         return;
     }
     state.acIndex = 0;
-    const q = query.toLowerCase();
-    for (let i = 0; i < matches.length && i < 8; i++) {
+    const q = normalizedQuery.toLowerCase();
+
+    if (canCreateNew) {
         const item = document.createElement("div");
-        item.className = "ac-item" + (i === 0 ? " active" : "");
+        item.className = "ac-item new-tag active";
+        item.dataset.tag = normalizedQuery;
+        const label = document.createElement("span");
+        label.className = "ac-label";
+        label.textContent = normalizedQuery;
+        const badge = document.createElement("span");
+        badge.className = "ac-kind";
+        badge.textContent = "new";
+        item.appendChild(label);
+        item.appendChild(badge);
+        item.addEventListener("mousedown", (evt) => {
+            evt.preventDefault(); // keep focus on input
+            addTagChip(normalizedQuery);
+            dom.tagInput.value = "";
+            dom.tagAutocomplete.classList.add("hidden");
+        });
+        dom.tagAutocomplete.appendChild(item);
+    }
+
+    const maxExistingItems = canCreateNew ? 7 : 8;
+    for (let i = 0; i < matches.length && i < maxExistingItems; i++) {
+        const item = document.createElement("div");
+        item.className = `ac-item existing-tag${!canCreateNew && i === 0 ? " active" : ""}`;
         // Highlight matching portion
         const tag = matches[i].tag;
         const idx = tag.toLowerCase().indexOf(q);
+        const label = document.createElement("span");
+        label.className = "ac-label";
         if (idx >= 0) {
-            item.innerHTML =
+            label.innerHTML =
                 escapeHtml(tag.slice(0, idx)) +
                 `<span class="ac-match">${escapeHtml(tag.slice(idx, idx + q.length))}</span>` +
                 escapeHtml(tag.slice(idx + q.length));
         } else {
-            item.textContent = tag;
+            label.textContent = tag;
         }
+        const badge = document.createElement("span");
+        badge.className = "ac-kind";
+        badge.textContent = "known";
+        item.appendChild(label);
+        item.appendChild(badge);
         item.dataset.tag = tag;
         item.addEventListener("mousedown", (evt) => {
             evt.preventDefault(); // keep focus on input

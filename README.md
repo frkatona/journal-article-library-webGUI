@@ -30,13 +30,13 @@ Unfortunately, fully-automated parsing from PDFs of bulk collections of journal 
 
   - Crossref API requires internet connection
 
-- abstracts are often excluded from the API extraction, but the artifacts often associated with copying PDF content are addressed through some scripting through both heuristic and NLP solutions (see abstract preview below)
+- abstracts are often excluded from the API extraction, but the artifacts often associated with copying PDF content are addressed through some scripting through both heuristic and intl-library segmentation solutions (see abstract preview below)
 
 - take a custom thumbnail with Windows snip tool (`Windows + Shift + S`) and click "Paste from Clipboard" (*default hotkey `P`*)
 
 - 'tags' are entered and managed as chips with tab-autocompletion
 
-- a pool of suggested tags are provided with assitance from the NLP tokenizer
+- a pool of suggested tags are provided with assitance from the segmented abstract tokens
 
 ---
 
@@ -275,6 +275,26 @@ Current pipeline:
    - The number of sections follows the `Abstract partitioning strength` setting (default `4`).
 
 This system is designed to reduce common PDF copy-paste noise while keeping abstract structure readable in both metadata and preview views.
+
+### example functions: 
+```js
+function cleanAuthors(raw) {
+    let s = raw;
+    // Remove unicode superscript digits and letters (⁰¹²³⁴⁵⁶⁷⁸⁹ᵃᵇᶜᵈᵉ...)
+    s = s.replace(/[\u2070-\u209F\u00B2\u00B3\u00B9\u1D43-\u1D6A\u2071\u207F]/g, "");
+    // Remove asterisks, daggers, double daggers, section signs
+    s = s.replace(/[*†‡§¶]/g, "");
+    // Remove standalone numeric superscripts (digits sitting alone between words — e.g. "Smith1,2 Jones")
+    s = s.replace(/(?<=\w)\s*\d+(?:\s*[,;]\s*\d+)*(?=\s*[,;&]|\s+[A-Z]|\s*$)/g, "");
+    // Remove stray standalone single digits not part of years or words
+    s = s.replace(/(?<=,\s*)\d+\s*(?=,|$)/g, "");
+    // Remove trailing numbers after names
+    s = s.replace(/\b(\d+)\b(?!\s*\d{3})/g, (match, num) => {
+        // Keep 4-digit years, remove everything else
+        return num.length === 4 ? match : "";
+```
+
+
 
 ### Reindexing
 
@@ -1079,6 +1099,9 @@ push v0.9.0
 - more display footprint edits
   - [x] filter mode -> filter (with checkbox) and unfold the options only when filter is checked
   - [x] fold tint options when 'tint by tag' is unchecked
+
+push v0.9.1
+
 
 ---
 
