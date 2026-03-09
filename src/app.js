@@ -1592,8 +1592,10 @@ function renderTagSuggestions(tags, { loading = false } = {}) {
         const chip = document.createElement("button");
         chip.type = "button";
         chip.className = "tag-suggestion-chip";
+        chip.dataset.skipAutosave = "true";
         chip.textContent = tag;
-        chip.addEventListener("click", () => {
+        chip.addEventListener("mousedown", (evt) => {
+            evt.preventDefault();
             addTagChip(tag);
             dom.tagInput.focus();
         });
@@ -5322,7 +5324,8 @@ function wireEvents() {
             const nextFocused = evt.relatedTarget;
             if (nextFocused instanceof HTMLElement &&
                 ((nextFocused.getAttribute("type") || "").toLowerCase() === "submit" ||
-                    nextFocused.dataset.skipAutosave === "true")) {
+                    nextFocused.dataset.skipAutosave === "true" ||
+                    nextFocused.closest("[data-skip-autosave='true']"))) {
                 return;
             }
             saveMetadata(evt);
