@@ -1,5 +1,7 @@
 ### immediate (bug fixes, small features)
 
+- [ ] place "tag color intensity" slider under the button like the similar options
+  
 - evaluate filename FRK PDF Manager not appearing with underscores
 
 - [ ] 'niche' filters not hiding properly
@@ -17,6 +19,9 @@
 ### minor version revision features
 
 - [ ] how-to-use modal for first time user (hotkeys, colors, editing metadata, pasting images, toggling views) with a "show first-time helper" in the '?' modal
+
+- [ ] find specific reasons why PDF parsing is so hard
+  - [ ] can the NLP model assist?
 
 ### flesh out
 

@@ -28,6 +28,16 @@ const SHOW_REF_DOIS_KEY = "article-show-ref-dois";
 const SHOW_REF_DOIS_PREF_TOUCHED_KEY = "article-show-ref-dois-pref-touched";
 const NIGHT_FILTER_ENABLED_KEY = "article-night-filter-enabled";
 const THEME_KEYS = ["ocean", "midnight", "nord", "monokai", "solarized", "light"];
+const TAG_SUGGESTION_BATCH_SIZE = 500;
+const TAG_SUGGESTION_MAX_ARTICLES = 5000;
+const TAG_SUGGESTION_LIMIT = 6;
+const TAG_SUGGESTION_STOPWORDS = new Set([
+    "a", "an", "and", "are", "as", "at", "be", "between", "by", "for", "from", "in", "into", "is",
+    "it", "its", "of", "on", "or", "that", "the", "their", "these", "this", "to", "via", "was", "were",
+    "with", "within", "using", "use", "used",
+]);
+const tagSuggestionVectorCache = new Map();
+let tagSuggestionCorpusPromise = null;
 const DEFAULT_THEME_PRESETS = {
     ocean: {
         name: "Ocean Dark",
@@ -405,6 +415,7 @@ const state = {
     theme: window.localStorage.getItem("article-theme") || "ocean",
     themePresets: loadThemePresets(),
     themeEditorTheme: null,
+    allKnownTags: [],
     primarySort: window.localStorage.getItem("article-primary-sort") || "year_desc",
     secondarySort: window.localStorage.getItem("article-secondary-sort") || "title_asc",
     displayMenuOpen: false,
@@ -435,6 +446,9 @@ const state = {
     abstractSectionCount: Number.parseInt(window.localStorage.getItem("article-abstract-sections") || "4", 10),
     debugMode: window.localStorage.getItem("article-debug-mode") === "true",
     demoMode: window.localStorage.getItem(DEMO_MODE_KEY) === "true",
+    tagSuggestionArticles: [],
+    tagSuggestionCorpusMode: null,
+    tagSuggestionCorpusLoaded: false,
     modalArrowBusy: false,
     thumbnailUndo: null,
 };
@@ -527,6 +541,8 @@ const dom = {
     tagChipContainer: document.getElementById("tag-chip-container"),
     tagInput: document.getElementById("f-tag-input"),
     tagAutocomplete: document.getElementById("tag-autocomplete"),
+    tagSuggestions: document.getElementById("tag-suggestions"),
+    tagSuggestionsList: document.getElementById("tag-suggestions-list"),
     notes: document.getElementById("f-notes"),
     autoHideTopbar: document.getElementById("auto-hide-topbar"),
     abstractModal: document.getElementById("abstract-modal"),
@@ -1326,6 +1342,10 @@ function formatAbstractForDisplay(rawText, sectionCount) {
 // ---- Tag chip system ----
 function getAllKnownTags() {
     const set = new Set();
+    for (const knownTag of (state.allKnownTags || [])) {
+        const t = normalizeWhitespace(knownTag);
+        if (t) set.add(t);
+    }
     for (const article of state.articles) {
         for (const tag of (article.metadata?.tags || [])) {
             const t = tag.trim();
@@ -1340,6 +1360,350 @@ function getAllKnownTags() {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
 }
 
+function normalizeTagKey(tag) {
+    return normalizeWhitespace(tag).toLowerCase();
+}
+
+function tokenizeTagSuggestionText(text) {
+    const tokens = String(text || "")
+        .normalize("NFKC")
+        .toLowerCase()
+        .match(/[\p{L}\p{N}]+/gu) || [];
+
+    return tokens.filter((token) => {
+        if (!token) return false;
+        if (TAG_SUGGESTION_STOPWORDS.has(token)) return false;
+        return token.length >= 2 || /\d/.test(token);
+    });
+}
+
+function addWeightedTagSuggestionTokens(vector, text, weight = 1) {
+    if (!text || weight <= 0) return;
+    for (const token of tokenizeTagSuggestionText(text)) {
+        vector.set(token, (vector.get(token) || 0) + weight);
+    }
+}
+
+function computeTagSuggestionNorm(vector) {
+    let sum = 0;
+    for (const value of vector.values()) {
+        sum += value * value;
+    }
+    return Math.sqrt(sum);
+}
+
+function buildDraftTagSuggestionData() {
+    const vector = new Map();
+    const selectedTags = getTagChips();
+    const parts = [
+        dom.title.value,
+        dom.authors.value,
+        dom.journal.value,
+        dom.doi.value,
+        dom.abstract.value,
+        dom.notes.value,
+        selectedTags.join(" "),
+    ];
+
+    addWeightedTagSuggestionTokens(vector, dom.title.value, 5);
+    addWeightedTagSuggestionTokens(vector, dom.authors.value, 2);
+    addWeightedTagSuggestionTokens(vector, dom.journal.value, 2.5);
+    addWeightedTagSuggestionTokens(vector, dom.doi.value, 1.5);
+    addWeightedTagSuggestionTokens(vector, dom.abstract.value, 3);
+    addWeightedTagSuggestionTokens(vector, dom.notes.value, 1.5);
+    addWeightedTagSuggestionTokens(vector, selectedTags.join(" "), 5);
+
+    return {
+        vector,
+        norm: computeTagSuggestionNorm(vector),
+        tokenSet: new Set(vector.keys()),
+        normalizedText: normalizeWhitespace(parts.join(" ").toLowerCase()),
+        currentTagKeys: new Set(selectedTags.map(normalizeTagKey)),
+    };
+}
+
+function buildArticleTagSuggestionSourceText(article) {
+    if (article?.search_text) return article.search_text;
+    const md = article?.metadata || {};
+    return [
+        article?.pdf_filename,
+        article?.pdf_relpath,
+        md.title,
+        md.authors,
+        md.year,
+        md.journal,
+        md.doi,
+        md.abstract,
+        md.abstract_text,
+        Array.isArray(md.keywords) ? md.keywords.join(" ") : "",
+        Array.isArray(md.tags) ? md.tags.join(" ") : "",
+        md.notes,
+    ].filter(Boolean).join(" ");
+}
+
+function getArticleTagSuggestionData(article) {
+    const articleId = article?.id || article?.pdf_relpath || article?.pdf_filename || "";
+    const sourceText = buildArticleTagSuggestionSourceText(article);
+    const tags = Array.from(new Set((article?.metadata?.tags || []).map((tag) => normalizeWhitespace(tag)).filter(Boolean)));
+    const signature = `${sourceText}\u001f${tags.join("\u001f")}`;
+    const cached = tagSuggestionVectorCache.get(articleId);
+    if (cached && cached.signature === signature) return cached;
+
+    const vector = new Map();
+    addWeightedTagSuggestionTokens(vector, sourceText, 1);
+
+    const data = {
+        signature,
+        tags,
+        tagKeys: new Set(tags.map(normalizeTagKey)),
+        vector,
+        norm: computeTagSuggestionNorm(vector),
+    };
+    tagSuggestionVectorCache.set(articleId, data);
+    return data;
+}
+
+function computeTagSuggestionSimilarity(leftVector, leftNorm, rightVector, rightNorm) {
+    if (!leftNorm || !rightNorm) return 0;
+    const [smaller, larger] = leftVector.size <= rightVector.size
+        ? [leftVector, rightVector]
+        : [rightVector, leftVector];
+    let dot = 0;
+    for (const [token, value] of smaller.entries()) {
+        const otherValue = larger.get(token);
+        if (otherValue) dot += value * otherValue;
+    }
+    return dot / (leftNorm * rightNorm);
+}
+
+function computeTagLexicalBoost(tag, draftData) {
+    const tokens = tokenizeTagSuggestionText(tag);
+    if (tokens.length === 0) return 0;
+
+    let overlap = 0;
+    for (const token of tokens) {
+        if (draftData.tokenSet.has(token)) overlap += 1;
+    }
+
+    let score = 0;
+    if (overlap === tokens.length) {
+        score += 0.95 + (Math.min(tokens.length, 4) * 0.08);
+    } else if (overlap > 0) {
+        score += 0.22 * (overlap / tokens.length);
+    }
+
+    const normalizedTag = normalizeWhitespace(tag).toLowerCase();
+    if (normalizedTag.length >= 4 && draftData.normalizedText.includes(normalizedTag)) {
+        score += 0.45;
+    }
+    return score;
+}
+
+function getTagSuggestionCorpus() {
+    if (state.tagSuggestionCorpusMode === (state.demoMode ? "demo" : "primary")) {
+        return state.tagSuggestionArticles;
+    }
+    return state.articles;
+}
+
+function computeTagSuggestions() {
+    if (!state.current) return [];
+    const draftData = buildDraftTagSuggestionData();
+    if (draftData.norm === 0 && draftData.currentTagKeys.size === 0) return [];
+
+    const scores = new Map();
+    const corpus = getTagSuggestionCorpus() || [];
+    const rankedArticles = [];
+
+    for (const article of corpus) {
+        if (!article || article.id === state.current.id) continue;
+        const articleData = getArticleTagSuggestionData(article);
+        if (articleData.tags.length === 0 || articleData.norm === 0) continue;
+
+        let similarity = computeTagSuggestionSimilarity(
+            draftData.vector,
+            draftData.norm,
+            articleData.vector,
+            articleData.norm,
+        );
+
+        if (draftData.currentTagKeys.size > 0) {
+            let overlap = 0;
+            for (const tagKey of articleData.tagKeys) {
+                if (draftData.currentTagKeys.has(tagKey)) overlap += 1;
+            }
+            if (overlap > 0) similarity += 0.28 * overlap;
+        }
+
+        if (similarity <= 0.05) continue;
+        rankedArticles.push({ similarity, articleData });
+    }
+
+    rankedArticles.sort((a, b) => b.similarity - a.similarity);
+    for (const { similarity, articleData } of rankedArticles.slice(0, 40)) {
+        const perTagScore = similarity / Math.max(articleData.tags.length, 1);
+        for (const tag of articleData.tags) {
+            const tagKey = normalizeTagKey(tag);
+            if (draftData.currentTagKeys.has(tagKey)) continue;
+            scores.set(tag, (scores.get(tag) || 0) + perTagScore);
+        }
+    }
+
+    for (const tag of getAllKnownTags()) {
+        const tagKey = normalizeTagKey(tag);
+        if (draftData.currentTagKeys.has(tagKey)) continue;
+        const lexicalBoost = computeTagLexicalBoost(tag, draftData);
+        if (lexicalBoost > 0) {
+            scores.set(tag, (scores.get(tag) || 0) + lexicalBoost);
+        }
+    }
+
+    return Array.from(scores.entries())
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .slice(0, TAG_SUGGESTION_LIMIT)
+        .map(([tag]) => tag);
+}
+
+function hideTagSuggestions() {
+    if (!dom.tagSuggestions || !dom.tagSuggestionsList) return;
+    clearNode(dom.tagSuggestionsList);
+    dom.tagSuggestions.classList.add("hidden");
+}
+
+function renderTagSuggestions(tags, { loading = false } = {}) {
+    if (!dom.tagSuggestions || !dom.tagSuggestionsList) return;
+    clearNode(dom.tagSuggestionsList);
+
+    if (loading) {
+        const placeholder = document.createElement("span");
+        placeholder.className = "tag-suggestion-chip loading";
+        placeholder.textContent = "Analyzing library...";
+        dom.tagSuggestionsList.appendChild(placeholder);
+        dom.tagSuggestions.classList.remove("hidden");
+        return;
+    }
+
+    if (!tags || tags.length === 0) {
+        dom.tagSuggestions.classList.add("hidden");
+        return;
+    }
+
+    for (const tag of tags) {
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "tag-suggestion-chip";
+        chip.textContent = tag;
+        chip.addEventListener("click", () => {
+            addTagChip(tag);
+            dom.tagInput.focus();
+        });
+        dom.tagSuggestionsList.appendChild(chip);
+    }
+    dom.tagSuggestions.classList.remove("hidden");
+}
+
+function invalidateTagSuggestionCorpus() {
+    state.tagSuggestionArticles = [];
+    state.tagSuggestionCorpusMode = null;
+    state.tagSuggestionCorpusLoaded = false;
+    tagSuggestionCorpusPromise = null;
+    tagSuggestionVectorCache.clear();
+}
+
+async function ensureTagSuggestionCorpus() {
+    const modeKey = state.demoMode ? "demo" : "primary";
+    if (state.tagSuggestionCorpusMode === modeKey && state.tagSuggestionCorpusLoaded) {
+        return state.tagSuggestionArticles;
+    }
+    if (tagSuggestionCorpusPromise) return tagSuggestionCorpusPromise;
+
+    tagSuggestionCorpusPromise = (async () => {
+        const collected = [];
+        let offset = 0;
+        let total = Infinity;
+
+        while (offset < total && collected.length < TAG_SUGGESTION_MAX_ARTICLES) {
+            const response = await invoke("get_articles", {
+                query: null,
+                tags: null,
+                matchMode: "all",
+                filterIncomplete: false,
+                limit: Math.min(TAG_SUGGESTION_BATCH_SIZE, TAG_SUGGESTION_MAX_ARTICLES - collected.length),
+                offset,
+            });
+            const batch = response?.articles || [];
+            total = Number(response?.total) || batch.length;
+            if (batch.length === 0) break;
+            collected.push(...batch);
+            offset += batch.length;
+            if (batch.length < TAG_SUGGESTION_BATCH_SIZE) break;
+        }
+
+        state.tagSuggestionArticles = collected;
+        state.tagSuggestionCorpusMode = modeKey;
+        state.tagSuggestionCorpusLoaded = true;
+        return collected;
+    })();
+
+    try {
+        return await tagSuggestionCorpusPromise;
+    } finally {
+        tagSuggestionCorpusPromise = null;
+    }
+}
+
+function upsertTagSuggestionCorpusArticle(article) {
+    if (!article?.id) return;
+    tagSuggestionVectorCache.delete(article.id);
+    const corpusMode = state.demoMode ? "demo" : "primary";
+    if (state.tagSuggestionCorpusMode !== corpusMode) return;
+    const existingIndex = state.tagSuggestionArticles.findIndex((entry) => entry.id === article.id);
+    if (existingIndex >= 0) {
+        state.tagSuggestionArticles[existingIndex] = article;
+    } else if (state.tagSuggestionArticles.length > 0) {
+        state.tagSuggestionArticles.push(article);
+    }
+}
+
+function removeTagSuggestionCorpusArticle(articleId) {
+    if (!articleId) return;
+    tagSuggestionVectorCache.delete(articleId);
+    if (state.tagSuggestionArticles.length === 0) return;
+    state.tagSuggestionArticles = state.tagSuggestionArticles.filter((article) => article.id !== articleId);
+}
+
+function refreshTagSuggestions({ allowCorpusLoad = true } = {}) {
+    if (!state.current || dom.modal.classList.contains("hidden")) {
+        hideTagSuggestions();
+        return;
+    }
+
+    const suggestions = computeTagSuggestions();
+    renderTagSuggestions(suggestions);
+
+    const modeKey = state.demoMode ? "demo" : "primary";
+    if (allowCorpusLoad && state.tagSuggestionCorpusMode !== modeKey) {
+        renderTagSuggestions(suggestions, { loading: suggestions.length === 0 });
+        ensureTagSuggestionCorpus()
+            .then(() => {
+                if (state.current && !dom.modal.classList.contains("hidden")) {
+                    refreshTagSuggestions({ allowCorpusLoad: false });
+                }
+            })
+            .catch((err) => {
+                const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
+                debugLog(`Tag suggestion corpus load failed: ${message}`);
+                if (state.current && !dom.modal.classList.contains("hidden")) {
+                    refreshTagSuggestions({ allowCorpusLoad: false });
+                }
+            });
+    }
+}
+
+const debouncedTagSuggestionRefresh = debounce(() => {
+    refreshTagSuggestions();
+}, 180);
+
 function addTagChip(tag) {
     const t = tag.trim();
     if (!t) return;
@@ -1353,16 +1717,21 @@ function addTagChip(tag) {
     const x = document.createElement("span");
     x.className = "chip-x";
     x.textContent = "x";
-    x.addEventListener("click", () => chip.remove());
+    x.addEventListener("click", () => {
+        chip.remove();
+        debouncedTagSuggestionRefresh();
+    });
     chip.appendChild(x);
     // Insert before the input
     dom.tagChipContainer.insertBefore(chip, dom.tagInput);
+    debouncedTagSuggestionRefresh();
 }
 
 function setTagChips(tags) {
     // Remove existing chips
     dom.tagChipContainer.querySelectorAll(".tag-chip").forEach((c) => c.remove());
     for (const tag of tags) addTagChip(tag);
+    refreshTagSuggestions({ allowCorpusLoad: false });
 }
 
 function getTagChips() {
@@ -3038,6 +3407,7 @@ function renderArticles() {
 async function loadTags() {
     const result = await invoke("get_tags");
     const options = result.tags || [];
+    state.allKnownTags = options.map((tagRow) => tagRow.name);
 
     const optionNames = options.map((tagRow) => tagRow.name);
     const existingNames = Array.from(dom.tagFilterList.querySelectorAll("input[type='checkbox']"))
@@ -3120,6 +3490,7 @@ async function reloadLibraryForStorageSwitch() {
     closeAbstract();
     stopThumbnailUndoPrompt();
     thumbCache.clear();
+    invalidateTagSuggestionCorpus();
     state.current = null;
     state.abstractPreviewArticle = null;
     state.hoveredArticleId = null;
@@ -3194,6 +3565,11 @@ async function loadArticles() {
     state.total = res.total || 0;
     state.generatedAt = res.generated_at || "";
     state.strategy = res.thumbnail_strategy || state.strategy;
+    if (!state.query && state.tags.length === 0 && !state.filterIncomplete && state.total <= state.articles.length) {
+        state.tagSuggestionArticles = state.articles.slice();
+        state.tagSuggestionCorpusMode = state.demoMode ? "demo" : "primary";
+        state.tagSuggestionCorpusLoaded = true;
+    }
     if (dom.strategySelect) dom.strategySelect.value = state.strategy;
 
     renderArticles();
@@ -3232,6 +3608,7 @@ function openEditor(article) {
         });
     }
     dom.modal.classList.remove("hidden");
+    refreshTagSuggestions();
 }
 
 function closeEditor() {
@@ -3239,6 +3616,7 @@ function closeEditor() {
     dom.modal.classList.add("hidden");
     if (dom.thumbFile) dom.thumbFile.value = "";
     dom.modalThumbWrap.classList.remove("drag-active");
+    hideTagSuggestions();
 }
 
 async function saveMetadata(evt) {
@@ -3288,9 +3666,11 @@ async function saveMetadata(evt) {
         if (state.current?.id === currentId && !dom.modal.classList.contains("hidden")) {
             state.current = savedArticle;
         }
+        upsertTagSuggestionCorpusArticle(savedArticle);
         renderArticles();
 
         await loadTags();
+        refreshTagSuggestions({ allowCorpusLoad: false });
         setStatus("Metadata saved.");
     } catch (err) {
         const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
@@ -3478,6 +3858,7 @@ async function doReindex() {
     try {
         await invoke("reindex", { strategy, fast });
         thumbCache.clear();
+        invalidateTagSuggestionCorpus();
         await Promise.all([loadTags(), loadArticles()]);
         setStatus("Reindex complete.");
         debugLog("Reindex completed successfully.");
@@ -3555,6 +3936,7 @@ async function checkDuplicates() {
                     await invoke("remove_article", { articleId: article.id });
                     row.remove();
                     state.articles = state.articles.filter(a => a.id !== article.id);
+                    removeTagSuggestionCorpusArticle(article.id);
                     renderArticles();
                     if (groupEl.querySelectorAll("button").length <= 1) {
                         groupEl.remove();
@@ -3987,6 +4369,7 @@ function wireEvents() {
             }
             dom.abstract.value = cleaned;
             showToast("Abstract cleaned");
+            debouncedTagSuggestionRefresh();
             if (state.current && !dom.modal.classList.contains("hidden")) {
                 await saveMetadata({ type: "clean-abstract-click" });
             }
@@ -3996,6 +4379,7 @@ function wireEvents() {
     // Tag input: autocomplete + chip creation
     dom.tagInput.addEventListener("input", () => {
         updateTagAutocomplete(dom.tagInput.value);
+        debouncedTagSuggestionRefresh();
     });
     dom.tagInput.addEventListener("keydown", (evt) => {
         const items = dom.tagAutocomplete.querySelectorAll(".ac-item");
@@ -4037,7 +4421,10 @@ function wireEvents() {
         if (evt.key === "Backspace" && dom.tagInput.value === "") {
             // Remove last chip
             const chips = dom.tagChipContainer.querySelectorAll(".tag-chip");
-            if (chips.length > 0) chips[chips.length - 1].remove();
+            if (chips.length > 0) {
+                chips[chips.length - 1].remove();
+                debouncedTagSuggestionRefresh();
+            }
             return;
         }
         if (evt.key === ",") {
@@ -4054,6 +4441,9 @@ function wireEvents() {
     });
     // Click on chip container focuses the input
     dom.tagChipContainer.addEventListener("click", () => dom.tagInput.focus());
+    [dom.title, dom.authors, dom.journal, dom.doi, dom.abstract, dom.notes].forEach((field) => {
+        field.addEventListener("input", debouncedTagSuggestionRefresh);
+    });
 
     // Ctrl+scroll to resize cards
     document.addEventListener("wheel", (evt) => {
@@ -4457,9 +4847,12 @@ function wireEvents() {
         }
         setStatus("Removing article...");
         try {
+            const currentArticle = state.current;
+            const removedId = state.current.id;
             await invoke("remove_article", { articleId: state.current.id });
             closeEditor();
-            const thumbPath = articleThumbPath(state.current);
+            removeTagSuggestionCorpusArticle(removedId);
+            const thumbPath = articleThumbPath(currentArticle);
             if (thumbPath) thumbCache.delete(thumbPath);
             await Promise.all([loadTags(), loadArticles()]);
             setStatus("Article removed.");
@@ -4546,6 +4939,7 @@ function wireEvents() {
             if (meta.pages) dom.pages.value = meta.pages;
             if (meta.abstract) dom.abstract.value = meta.abstract;
             if (meta.doi) dom.doi.value = meta.doi;
+            debouncedTagSuggestionRefresh();
             // Store ref DOIs on the current article's metadata in memory
             if (state.current) {
                 const fetchedRefDois = getReferenceDois(meta);
@@ -4605,6 +4999,7 @@ function wireEvents() {
                 }
             }
             dom.emptyFileInput.value = "";
+            invalidateTagSuggestionCorpus();
             await loadTags();
             await loadArticles();
             setStatus(`Imported ${pdfs.length} PDF(s).`);
@@ -4650,6 +5045,7 @@ function wireEvents() {
             try {
                 // Batch processing is handled concurrently on the Rust side
                 const importedList = await invoke("import_pdfs_from_paths", { paths: pdfPaths });
+                invalidateTagSuggestionCorpus();
                 await loadTags();
                 await loadArticles();
                 setStatus(`Imported ${pdfPaths.length} PDF(s).`);
@@ -4732,6 +5128,7 @@ function wireEvents() {
         }
         if (imported > 0) {
             thumbCache.clear();
+            invalidateTagSuggestionCorpus();
             await Promise.all([loadTags(), loadArticles()]);
             setStatus(`Imported ${imported} PDF(s).`);
             if (pdfs.length === 1 && lastImportedArticle) {

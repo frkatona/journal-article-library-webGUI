@@ -1412,6 +1412,53 @@ button.secondary {
   color: var(--accent);
 }
 
+.tag-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: -2px;
+}
+
+.tag-suggestions.hidden {
+  display: none;
+}
+
+.tag-suggestions-label {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.tag-suggestions-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tag-suggestion-chip {
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  background: color-mix(in srgb, var(--panel) 72%, var(--accent) 28%);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+.tag-suggestion-chip:hover,
+.tag-suggestion-chip:focus-visible {
+  border-color: var(--accent);
+  background: var(--panel);
+  background: color-mix(in srgb, var(--panel) 56%, var(--accent) 44%);
+  transform: translateY(-1px);
+}
+
+.tag-suggestion-chip.loading {
+  cursor: default;
+  opacity: 0.82;
+}
+
 /* Starry Night Animation */
 @keyframes panStars {
   0% {
