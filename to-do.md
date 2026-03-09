@@ -2,7 +2,7 @@
 
 - [ ] place "tag color intensity" slider under the button like the similar options
   
-- evaluate filename FRK PDF Manager not appearing with underscores
+- address why the filename not writing with underscores
 
 - [ ] 'niche' filters not hiding properly
   - [ ] fix niche chips preventing autofill elsewhere and appearing with strange characters in the niche field
@@ -13,8 +13,10 @@
 
 ### major version revision features
 
+- [ ] json -> database
+
 - [ ] consider ways to synchronize metadata (and papers) between multiple computers
-  - [ ] add an option to use a non-app folder for the articles, thumbnails, and metadata, and then advise the user to choose a cloud-synced or active git folder 
+  - add an option to use a non-app folder for the articles, thumbnails, and metadata, and then advise the user to choose a cloud-synced or active git folder? 
 
 ### minor version revision features
 

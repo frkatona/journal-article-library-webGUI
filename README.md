@@ -256,7 +256,7 @@ Current pipeline:
 
    - Removes soft hyphens and invisible joiner/zero-width characters.
 
-   - Replaces common PDF ligatures (`ff`, `fi`, `fl`, `ffi`, `ffl`, `ft`, `st`) when copied as single glyphs.
+   - Replaces common PDF ligatures (`ff`, `fi`, `fl`, `ffi`, `ffl`, `ft`, `st`) when copied as single glyphs ([stackexchange link](https://tex.stackexchange.com/questions/33476/why-cant-fi-be-separated-when-being-copied-from-a-compiled-pdf#:~:text=Ligature%20Copying%20Issue:%20TeX%20combines%20characters%20like,PDF%20reader's%20ability%20to%20interpret%20glyph%20components.))
 
    - Repairs many hyphenated line-wraps (for example, `inter-\nnational` -> `international`).
 
