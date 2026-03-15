@@ -1,61 +1,14 @@
-### immediate (bug fixes, small features)
-
-- [ ] edit the NLP tag suggestions so that existing tags are visibly distinct from new tags
-  - maybe right-click replaces it with the next guess
-  - does the NLP convey any kind of confidence that can be conveyed visually?  Does that weigh on the order?
-
-- [ ] place "tag color intensity" slider under the button like the similar options
-  
-- address why the filename not writing with underscores
-
-- [ ] 'niche' filters not hiding properly
-  - [ ] fix niche chips preventing autofill elsewhere and appearing with strange characters in the niche field
-  - [x] just putting in 'experimental' for now
-    - [ ] but hide the checkbox in the tag dropdown while it is unchecked in the files menu
-
-- [ ] make referenced dois into columns instead of one row and several columns
-
-### major revision features
-
-- syncing papers, preferences, thumbnails, and metadata across devices
-  - add an option to use a non-app folder for the articles, thumbnails, and metadata, and then advise the user to choose a cloud-synced or git-initalized folder? 
-    - resolving conflicts in obsidian's sync system sucks with its git solution...probably avoid that unless I can think of a way to make conflicts virtually impossible
-
-- json -> database
-  - add some startup assessment to the existing project size metrics?
-  - ask someone with 1000 PDFs to test (Ben?  Kristen?)
-
-- [ ] custom PDF reader
-
-### minor version revision features
-
-- [ ] how-to-use modal for first time user (hotkeys, colors, editing metadata, pasting images, toggling views) with a "show first-time helper" in the '?' modal
-
-- [ ] find specific reasons why PDF parsing is so hard
-  - [ ] can the NLP model assist?
-
-- [ ] add very small first-page or journal render thumbnail image to the abstract view
-
-### flesh out
-
-- [ ] native PDF reader
-
-- [ ] include a resizing/cropping feature to the 'paste thumbnail image' to encourage getting large screenshots and cropping in
-  - allow dragging the thumbnail image around and scrolling in and out in the preview to
-  - maybe basic image editing, like masking 
-  - dedicated screenshot button that maintains an ideal aspect ratio for the thumbnail?
-    - scroll makes it bigger or smaller and when it's below a certain pixel size, an enlarged preview window follows it around like a magnifying glass
-
-- [ ] auto-rescale stored image when resolution is unecessarily high 
-
-- [ ] pivot how articles are indexed so that filename changes aren't breaking?
-
-### questions
-
-- when should I be considering a database approach?  really ~1000 articles?  
-  - is there a helpful metric to keep an eye on, like time to open the app, or time to render the full library that I can log in the debug? 
-  - is there a good tool for development and visualization of the database implementation?
-
-- try to better understand the snake/camel case relationship between the front and back end here
-
-- is 'warn duplicate DOIs' defaulted on on in the file settings?
+- [ ] give a gentle visual indicator in the metadata window when there are unsaved changes
+- tags
+	- [ ] 'experimental' files menu option to remove all of a given tag
+	- [ ] 'experimental' files menu option to rename all of a given tag (e.g., 'MURI' --> 'MURI project')
+	- [ ] change tag coloration to be more outline-focused.  add a slider for how far the inside color gradient should reach across the card 
+	- [ ] have the tag filter update when a tag is updated in metadata
+- [ ] give 'remove article' button in metadata danger text
+- [ ] add a gentle highlight on the article most recently selected by any means (opened in PDF, metadata modal, or abstract modal)
+- [ ] generate a 'brainstorm.md' file with ideas for these potentially problematic ideas
+  - [ ] begin considering possibilities for syncing between devices
+    - button to attempt sync with a github repo?  what are merge conflict pain points and how can they be managed or predicted before a merge is attempted?
+  - [ ] button to rename the PDFs based on the formatted metadata
+  - [ ] 'all, some, none' tag filter types - allow use of each (separate columns in the dropdown?  separate dropdowns?)
+  - [ ] assign 'types' of tags as an alternative to 'niche' tags ('format', like textbook, manual, etc.?), and having a 'project' (MURI, etc.)?

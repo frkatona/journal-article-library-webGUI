@@ -1164,3 +1164,6 @@ node update-version.js <version>
 ```
 
 (e.g., node update-version.js 0.8.5)
+
+
+check out why modal doesn't appear in some themes/filters

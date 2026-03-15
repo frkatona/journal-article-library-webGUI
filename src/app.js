@@ -737,6 +737,21 @@ const NIGHT_FILTER_MODES = new Set([
 const IDENTITY_COLOR_MATRIX = "1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0";
 const LUMA_PRE_MATRIX = "0.2126 0.7152 0.0722 0 0  -0.1063 -0.3576 0.4639 0 0.5  0.3937 -0.3576 -0.0361 0 0.5  0 0 0 1 0";
 const LUMA_POST_MATRIX = "1 0 2 0 -1  1 -0.2019 -0.5945 0 0.3982  1 2 0 0 -1  0 0 0 1 0";
+const NIGHT_FILTER_TARGET_SELECTOR = [
+    "#topbar",
+    "main",
+    "#drop-overlay",
+    ".toast",
+    ".thumbnail-undo",
+    "#error-banner",
+    "#edit-modal .modal-card",
+    "#abstract-modal .modal-card",
+    "#tag-color-editor .modal-card",
+    "#theme-editor .modal-card",
+    "#duplicate-modal .modal-card",
+    "#hotkeys-modal .modal-card",
+    "#backup-modal .modal-content",
+].join(", ");
 
 function clampUnit(value) {
     return Math.max(0, Math.min(1, value));
@@ -767,6 +782,13 @@ function setFilterMatrix(el, values) {
     if (el) el.setAttribute("values", values);
 }
 
+function setNightFilterTargetFilter(filterValue) {
+    document.body.style.filter = "";
+    document.querySelectorAll(NIGHT_FILTER_TARGET_SELECTOR).forEach((el) => {
+        el.style.filter = filterValue;
+    });
+}
+
 function applyNightFilter(modeValue, strengthValue) {
     const mode = normalizeNightFilterMode(modeValue);
     const strength = clampNightFilterStrength(strengthValue);
@@ -780,7 +802,7 @@ function applyNightFilter(modeValue, strengthValue) {
     if (dom.nightFilterStrengthValue) dom.nightFilterStrengthValue.textContent = String(strength);
 
     if (!state.nightFilterEnabled || strength <= 0) {
-        document.body.style.filter = "";
+        setNightFilterTargetFilter("");
         setFilterMatrix(dom.nightFilterPreMatrix, IDENTITY_COLOR_MATRIX);
         setFilterMatrix(dom.nightFilterPostMatrix, IDENTITY_COLOR_MATRIX);
         if (dom.nightFilterFuncR) dom.nightFilterFuncR.setAttribute("tableValues", "0 1");
@@ -789,7 +811,7 @@ function applyNightFilter(modeValue, strengthValue) {
         return;
     }
 
-    document.body.style.filter = "url(#night-display-filter)";
+    setNightFilterTargetFilter("url(#night-display-filter)");
 
     let mapR = (x) => x;
     let mapG = (x) => x;
