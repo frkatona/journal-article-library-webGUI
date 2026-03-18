@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use reqwest;
 use std::time::Duration;
 use sha1_smol::Sha1;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::panic;
 #[cfg(target_os = "windows")]
@@ -179,6 +179,12 @@ pub struct MutationResponse {
 }
 
 #[derive(Debug, Serialize)]
+pub struct TagMutationResponse {
+    pub ok: bool,
+    pub updated_count: usize,
+}
+
+#[derive(Debug, Serialize)]
 pub struct DemoModeResponse {
     pub enabled: bool,
     pub articles_dir: String,
@@ -302,6 +308,33 @@ fn normalize_text(value: &str) -> String {
 fn normalize_spaces(value: &str) -> String {
     let re = Regex::new(r"\s+").unwrap();
     re.replace_all(value.trim(), " ").to_string()
+}
+
+fn normalize_tag_value(value: &str) -> String {
+    normalize_spaces(value)
+}
+
+fn normalize_tag_key(value: &str) -> String {
+    normalize_tag_value(value).to_lowercase()
+}
+
+fn dedupe_tag_values(tags: Vec<String>) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut result = Vec::new();
+
+    for tag in tags {
+        let clean = normalize_tag_value(&tag);
+        if clean.is_empty() {
+            continue;
+        }
+
+        let key = clean.to_lowercase();
+        if seen.insert(key) {
+            result.push(clean);
+        }
+    }
+
+    result
 }
 
 fn safe_slug(text: &str, max_len: usize) -> String {
@@ -1518,10 +1551,9 @@ fn save_metadata(
         );
     }
     if let Some(tags) = &payload.tags {
-        let arr: Vec<serde_json::Value> = tags
-            .iter()
-            .map(|t| serde_json::Value::String(t.trim().to_string()))
-            .filter(|v| !v.as_str().unwrap_or_default().is_empty())
+        let arr: Vec<serde_json::Value> = dedupe_tag_values(tags.clone())
+            .into_iter()
+            .map(serde_json::Value::String)
             .collect();
         obj.insert("tags".into(), serde_json::Value::Array(arr));
     }
@@ -1562,6 +1594,138 @@ fn save_metadata(
     Ok(MutationResponse {
         ok: true,
         article: updated,
+    })
+}
+
+#[tauri::command]
+fn rename_tag_everywhere(
+    state: tauri::State<'_, Mutex<AppState>>,
+    from_tag: String,
+    to_tag: String,
+) -> Result<TagMutationResponse, String> {
+    let from_key = normalize_tag_key(&from_tag);
+    if from_key.is_empty() {
+        return Err("Source tag cannot be blank".into());
+    }
+
+    let target_tag = normalize_tag_value(&to_tag);
+    if target_tag.is_empty() {
+        return Err("Replacement tag cannot be blank".into());
+    }
+
+    let mut st = state.lock().map_err(|e| e.to_string())?;
+    let _index = load_index(&mut st);
+    let overrides_dir = st.overrides_dir.clone();
+    let index_path = st.index_path.clone();
+    let index = st.index.as_mut().ok_or("no index loaded")?;
+
+    let mut updated_count = 0usize;
+    for article in index.articles.iter_mut() {
+        let current_tags = article.metadata.tags.clone();
+        if !current_tags.iter().any(|tag| normalize_tag_key(tag) == from_key) {
+            continue;
+        }
+
+        let next_tags = dedupe_tag_values(
+            current_tags
+                .into_iter()
+                .map(|tag| {
+                    if normalize_tag_key(&tag) == from_key {
+                        target_tag.clone()
+                    } else {
+                        normalize_tag_value(&tag)
+                    }
+                })
+                .collect(),
+        );
+
+        let mut over = load_override(&overrides_dir, &article.id);
+        let obj = over.as_object_mut().ok_or("corrupt override")?;
+        obj.insert(
+            "tags".into(),
+            serde_json::Value::Array(
+                next_tags
+                    .iter()
+                    .cloned()
+                    .map(serde_json::Value::String)
+                    .collect(),
+            ),
+        );
+        save_override(&overrides_dir, &article.id, &over);
+
+        article.metadata = merge_metadata(&article.auto_meta, &over);
+        article.search_text = build_search_text(article);
+        updated_count += 1;
+    }
+
+    if updated_count > 0 {
+        let json = serde_json::to_string_pretty(index).unwrap_or_default();
+        let _ = fs::write(&index_path, json);
+    }
+
+    Ok(TagMutationResponse {
+        ok: true,
+        updated_count,
+    })
+}
+
+#[tauri::command]
+fn remove_tag_everywhere(
+    state: tauri::State<'_, Mutex<AppState>>,
+    tag_name: String,
+) -> Result<TagMutationResponse, String> {
+    let tag_key = normalize_tag_key(&tag_name);
+    if tag_key.is_empty() {
+        return Err("Tag cannot be blank".into());
+    }
+
+    let mut st = state.lock().map_err(|e| e.to_string())?;
+    let _index = load_index(&mut st);
+    let overrides_dir = st.overrides_dir.clone();
+    let index_path = st.index_path.clone();
+    let index = st.index.as_mut().ok_or("no index loaded")?;
+
+    let mut updated_count = 0usize;
+    for article in index.articles.iter_mut() {
+        let current_tags = article.metadata.tags.clone();
+        if !current_tags.iter().any(|tag| normalize_tag_key(tag) == tag_key) {
+            continue;
+        }
+
+        let next_tags = dedupe_tag_values(
+            current_tags
+                .into_iter()
+                .filter(|tag| normalize_tag_key(tag) != tag_key)
+                .collect(),
+        );
+
+        let mut over = load_override(&overrides_dir, &article.id);
+        let obj = over.as_object_mut().ok_or("corrupt override")?;
+        obj.insert(
+            "tags".into(),
+            serde_json::Value::Array(
+                next_tags
+                    .iter()
+                    .cloned()
+                    .map(serde_json::Value::String)
+                    .collect(),
+            ),
+        );
+        save_override(&overrides_dir, &article.id, &over);
+
+        article.metadata = merge_metadata(&article.auto_meta, &over);
+        article.search_text = build_search_text(article);
+        updated_count += 1;
+    }
+
+    if updated_count > 0 {
+        let json = serde_json::to_string_pretty(index).unwrap_or_default();
+        let _ = fs::write(&index_path, json);
+    }
+
+    Ok(TagMutationResponse {
+        ok: true,
+        updated_count,
     })
 }
 
@@ -2804,6 +2968,8 @@ pub fn run() {
             get_tags,
             reindex,
             save_metadata,
+            rename_tag_everywhere,
+            remove_tag_everywhere,
             upload_thumbnail,
             remove_article,
             open_pdf,

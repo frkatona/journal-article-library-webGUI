@@ -119,10 +119,7 @@
                             style="font-size: 0.75rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; padding: 4px 8px; margin-bottom: 4px;">
                             File Management</div>
                         <button id="open-articles-btn" type="button" class="ghost">Open Articles Folder</button>
-                        <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
-                            <input id="show-errors-checkbox" type="checkbox" checked />
-                            <span style="font-size:0.82rem;">Show errors globally</span>
-                        </label>
+
                         <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
                             <input id="show-ref-dois" type="checkbox" />
                             <span style="font-size:0.82rem;">Show reference DOIs in abstract</span>
@@ -144,6 +141,10 @@
                             <div
                                 style="display: flex; flex-direction: column; gap: 8px; padding: 6px 4px 2px 12px; border-left: 2px solid rgba(245,179,77,0.3);">
                                 <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                                    <input id="show-errors-checkbox" type="checkbox" checked />
+                                    <span style="font-size:0.82rem;">Show errors globally</span>
+                                </label>
+                                <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
                                     <input id="auto-ref-compile" type="checkbox" />
                                     <span style="font-size:0.82rem;">Auto references compilation</span>
                                 </label>
@@ -160,14 +161,14 @@
                                     <span style="font-size:0.82rem;">Demo mode</span>
                                 </label>
                                 <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
-                                    <input id="long-parse" type="checkbox" />
-                                    <span style="font-size:0.82rem;">Long Parse (&gt;2s PDF timeout)</span>
-                                </label>
-                                <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
                                     <input id="parse-pdfs" type="checkbox" />
                                     <span style="font-size:0.82rem;">Parse PDFs</span>
                                 </label>
                                 <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                                    <input id="long-parse" type="checkbox" />
+                                    <span style="font-size:0.82rem;">Long Parse (&gt;2s PDF timeout)</span>
+                                </label>
+                                    <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
                                     <input id="enable-niche" type="checkbox" />
                                     <span style="font-size:0.82rem;">Enable niche</span>
                                 </label>
@@ -179,6 +180,8 @@
                                             placeholder="Add niche tag..." autocomplete="off" />
                                     </div>
                                 </label>
+                                <button id="rename-tag-btn" type="button" class="ghost">Rename Tag...</button>
+                                <button id="remove-tag-btn" type="button" class="ghost" style="color:var(--accent-2);">Remove Tag...</button>
                                 <button id="storage-report-btn" type="button" class="ghost">Show Storage Report</button>
                                 <pre id="storage-report-content"
                                     style="display:none; margin:0; padding:8px; background:var(--bg); border:1px solid rgba(245,179,77,0.45); border-radius:6px; font-size:0.72rem; max-height:260px; overflow:auto; white-space:pre-wrap; word-break:break-word; color:var(--text);"></pre>
@@ -239,6 +242,14 @@
                                     <span class="slider-caret" aria-hidden="true">&#9656;</span>
                                 </span>
                                 <input id="color-intensity-slider" type="range" min="0" max="100" step="1" value="13" />
+                            </div>
+                            <div class="field slider-collapsible" data-slider-field>
+                                <span data-slider-toggle
+                                    style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                                    <span>Gradient Reach <strong id="tag-gradient-reach-value">26</strong>%</span>
+                                    <span class="slider-caret" aria-hidden="true">&#9656;</span>
+                                </span>
+                                <input id="tag-gradient-reach-slider" type="range" min="6" max="80" step="1" value="26" />
                             </div>
                             <button id="edit-tag-colors-btn" type="button" class="ghost">Edit Tag Colors</button>
                         </div>
@@ -347,7 +358,10 @@
     <div id="edit-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
         <div class="modal-card">
             <div class="modal-header">
-                <h2 id="modal-title">Edit Article</h2>
+                <div class="modal-header-title">
+                    <h2 id="modal-title">Edit Article</h2>
+                    <span id="metadata-dirty-indicator" class="metadata-dirty-indicator" aria-live="polite">Saved</span>
+                </div>
                 <button id="modal-close" type="button" title="Escape">Close</button>
             </div>
             <div class="modal-layout">
@@ -434,8 +448,10 @@
                         <textarea id="f-notes" name="notes" rows="4"></textarea>
                     </label>
                     <div class="modal-actions">
-                        <button id="meta-remove" type="button" class="danger" style="margin-right: auto;">Remove
-                            Article</button>
+                        <div class="modal-remove-wrap">
+                            <button id="meta-remove" type="button" class="danger">Remove Article</button>
+                            <!--<span class="modal-danger-note">Permanently deletes the PDF file and stored metadata.</span>-->
+                        </div>
                         <button id="meta-save" type="submit">Save Metadata</button>
                     </div>
                 </form>
@@ -626,7 +642,7 @@
                 <div style="border-top:1px solid var(--line); opacity:0.7; margin:0 0 10px;"></div>
                 <a id="version-link" href="https://github.com/frkatona/journal-article-library-webGUI/tree/tauri"
                     target="_blank" rel="noopener noreferrer"
-                    style="font-size: 0.8rem; color: var(--muted); font-weight: 600; cursor: pointer; letter-spacing: 0.03em; text-decoration:none;">v0.9.2</a>
+                    style="font-size: 0.8rem; color: var(--muted); font-weight: 600; cursor: pointer; letter-spacing: 0.03em; text-decoration:none;">v0.9.3</a>
             </div>
         </div>
     </div>

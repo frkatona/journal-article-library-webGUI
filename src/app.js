@@ -405,6 +405,7 @@ const state = {
     total: 0,
     generatedAt: "",
     current: null,
+    recentArticleId: null,
     hoveredArticleId: null,
     viewMode: window.localStorage.getItem("article-view-mode") || "preview",
     cardHeight: Number.parseInt(window.localStorage.getItem("article-card-height") || "138", 10),
@@ -426,6 +427,7 @@ const state = {
     autoRefCompile: window.localStorage.getItem("article-auto-ref") === "true",
     showDupeWarnings: window.localStorage.getItem("article-dupe-warnings") !== "false",
     colorIntensity: Number.parseInt(window.localStorage.getItem("article-color-intensity") || "13", 10),
+    tagGradientReach: Number.parseInt(window.localStorage.getItem("article-tag-gradient-reach") || "26", 10),
     modalBackdropDarkness: Number.parseInt(window.localStorage.getItem("article-modal-backdrop-darkness") || "58", 10),
     surfaceOpacity: Number.parseInt(window.localStorage.getItem("article-surface-opacity") || "100", 10),
     nightFilterEnabled: initNightFilterEnabledPreference(),
@@ -451,6 +453,9 @@ const state = {
     tagSuggestionCorpusLoaded: false,
     modalArrowBusy: false,
     thumbnailUndo: null,
+    metadataDirty: false,
+    metadataSaving: false,
+    metadataBaselineKey: "",
 };
 
 const dom = {
@@ -486,6 +491,8 @@ const dom = {
     nightFilterFuncB: document.getElementById("night-filter-func-b"),
     colorIntensitySlider: document.getElementById("color-intensity-slider"),
     colorIntensityValue: document.getElementById("color-intensity-value"),
+    tagGradientReachSlider: document.getElementById("tag-gradient-reach-slider"),
+    tagGradientReachValue: document.getElementById("tag-gradient-reach-value"),
     tagTintControls: document.getElementById("tag-tint-controls"),
     fontFamilySelect: document.getElementById("font-family-select"),
     searchInput: document.getElementById("search-input"),
@@ -504,10 +511,13 @@ const dom = {
     parsePdfs: document.getElementById("parse-pdfs"),
     reindexBtn: document.getElementById("reindex-btn"),
     openArticlesBtn: document.getElementById("open-articles-btn"),
+    renameTagBtn: document.getElementById("rename-tag-btn"),
+    removeTagBtn: document.getElementById("remove-tag-btn"),
     statusLine: document.getElementById("status-line"),
     grid: document.getElementById("grid"),
     modal: document.getElementById("edit-modal"),
     modalClose: document.getElementById("modal-close"),
+    metadataDirtyIndicator: document.getElementById("metadata-dirty-indicator"),
     modalThumbWrap: document.getElementById("modal-thumb-wrap"),
     modalThumb: document.getElementById("modal-thumb"),
     editorOpenBtn: document.getElementById("editor-open-btn"),
@@ -723,6 +733,19 @@ function applySurfaceOpacity(value) {
     document.documentElement.style.setProperty("--surface-opacity-factor", (opacityPercent / 100).toFixed(2));
     if (dom.surfaceOpacitySlider) dom.surfaceOpacitySlider.value = String(opacityPercent);
     if (dom.surfaceOpacityValue) dom.surfaceOpacityValue.textContent = String(opacityPercent);
+}
+
+function clampTagGradientReach(value) {
+    const n = Number.parseInt(String(value), 10);
+    if (Number.isNaN(n)) return 26;
+    return Math.max(6, Math.min(80, n));
+}
+
+function applyTagGradientReach(value) {
+    const reach = clampTagGradientReach(value);
+    state.tagGradientReach = reach;
+    if (dom.tagGradientReachSlider) dom.tagGradientReachSlider.value = String(reach);
+    if (dom.tagGradientReachValue) dom.tagGradientReachValue.textContent = String(reach);
 }
 
 const NIGHT_FILTER_MODES = new Set([
@@ -1111,6 +1134,134 @@ function normalizeWhitespace(text) {
     return (text || "").replace(/\s+/g, " ").trim();
 }
 
+function dedupeTagsCaseInsensitive(tags) {
+    const seen = new Set();
+    const result = [];
+    for (const tag of tags || []) {
+        const clean = normalizeWhitespace(tag);
+        if (!clean) continue;
+        const key = normalizeTagKey(clean);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        result.push(clean);
+    }
+    return result;
+}
+
+function buildArticleMetadataSnapshot(article) {
+    const md = article?.metadata || {};
+    return {
+        title: normalizeWhitespace(md.title),
+        authors: normalizeWhitespace(md.authors),
+        year: normalizeWhitespace(md.year),
+        journal: normalizeWhitespace(md.journal),
+        volume: normalizeWhitespace(md.volume),
+        number: normalizeWhitespace(md.number),
+        pages: normalizeWhitespace(md.pages),
+        doi: normalizeWhitespace(md.doi),
+        abstract: typeof md.abstract === "string"
+            ? md.abstract.replace(/\r\n/g, "\n")
+            : normalizeWhitespace(md.abstract_text).replace(/\r\n/g, "\n"),
+        tags: dedupeTagsCaseInsensitive(md.tags || []),
+        notes: typeof md.notes === "string" ? md.notes.replace(/\r\n/g, "\n") : "",
+        ref_dois: getReferenceDois(md),
+    };
+}
+
+function buildEditorMetadataSnapshot() {
+    return {
+        title: dom.title.value.trim(),
+        authors: dom.authors.value.trim(),
+        year: dom.year.value.trim(),
+        journal: dom.journal.value.trim(),
+        volume: dom.volume.value.trim(),
+        number: dom.issue.value.trim(),
+        pages: dom.pages.value.trim(),
+        doi: dom.doi.value.trim(),
+        abstract: dom.abstract.value.replace(/\r\n/g, "\n"),
+        tags: dedupeTagsCaseInsensitive(getTagChips()),
+        notes: dom.notes.value.replace(/\r\n/g, "\n"),
+        ref_dois: getReferenceDois(state.current?.metadata),
+    };
+}
+
+function buildMetadataSnapshotKey(snapshot) {
+    return JSON.stringify({
+        title: snapshot.title || "",
+        authors: snapshot.authors || "",
+        year: snapshot.year || "",
+        journal: snapshot.journal || "",
+        volume: snapshot.volume || "",
+        number: snapshot.number || "",
+        pages: snapshot.pages || "",
+        doi: snapshot.doi || "",
+        abstract: snapshot.abstract || "",
+        tags: dedupeTagsCaseInsensitive(snapshot.tags || []),
+        notes: snapshot.notes || "",
+    });
+}
+
+function updateMetadataDirtyIndicator() {
+    if (!dom.metadataDirtyIndicator) return;
+    dom.metadataDirtyIndicator.classList.remove("is-dirty", "is-saving");
+
+    if (state.metadataSaving) {
+        dom.metadataDirtyIndicator.textContent = "Saving...";
+        dom.metadataDirtyIndicator.classList.add("is-saving");
+        return;
+    }
+
+    if (state.metadataDirty) {
+        dom.metadataDirtyIndicator.textContent = "Unsaved changes";
+        dom.metadataDirtyIndicator.classList.add("is-dirty");
+        return;
+    }
+
+    dom.metadataDirtyIndicator.textContent = "Saved";
+}
+
+function clearMetadataChangeTracking() {
+    state.metadataDirty = false;
+    state.metadataSaving = false;
+    state.metadataBaselineKey = "";
+    updateMetadataDirtyIndicator();
+}
+
+function setMetadataBaselineFromArticle(article) {
+    state.metadataBaselineKey = buildMetadataSnapshotKey(buildArticleMetadataSnapshot(article));
+    state.metadataDirty = false;
+    state.metadataSaving = false;
+    updateMetadataDirtyIndicator();
+}
+
+function refreshMetadataDirtyState() {
+    if (!state.current || dom.modal.classList.contains("hidden")) {
+        state.metadataDirty = false;
+        updateMetadataDirtyIndicator();
+        return;
+    }
+    state.metadataDirty = buildMetadataSnapshotKey(buildEditorMetadataSnapshot()) !== state.metadataBaselineKey;
+    updateMetadataDirtyIndicator();
+}
+
+function setMetadataSavingState(isSaving) {
+    state.metadataSaving = Boolean(isSaving);
+    updateMetadataDirtyIndicator();
+}
+
+function syncRecentArticleHighlight() {
+    document.querySelectorAll("[data-article-id]").forEach((node) => {
+        node.classList.toggle("recently-selected", node.dataset.articleId === state.recentArticleId);
+    });
+}
+
+function markArticleSelected(articleOrId) {
+    const articleId = typeof articleOrId === "string" ? articleOrId : articleOrId?.id;
+    if (!articleId) return;
+    state.recentArticleId = articleId;
+    syncRecentArticleHighlight();
+}
+
 // Clean pasted author text from PDF copy
 function cleanAuthors(raw) {
     let s = raw;
@@ -1384,6 +1535,57 @@ function getAllKnownTags() {
 
 function normalizeTagKey(tag) {
     return normalizeWhitespace(tag).toLowerCase();
+}
+
+function resolveKnownTagName(rawTag) {
+    const key = normalizeTagKey(rawTag);
+    if (!key) return "";
+    return getAllKnownTags().find((tag) => normalizeTagKey(tag) === key) || "";
+}
+
+function pruneSelectedTagsToKnown() {
+    const known = getAllKnownTags();
+    const nextTags = [];
+    let changed = false;
+
+    for (const tag of state.tags) {
+        const resolved = resolveKnownTagName(tag);
+        if (!resolved) {
+            changed = true;
+            continue;
+        }
+        if (nextTags.some((existing) => normalizeTagKey(existing) === normalizeTagKey(resolved))) {
+            changed = true;
+            continue;
+        }
+        if (resolved !== tag) changed = true;
+        nextTags.push(resolved);
+    }
+
+    if (changed) state.tags = nextTags;
+    return changed;
+}
+
+function reconcileSelectedTagsAfterMetadataChange(previousTags, nextTags) {
+    const before = dedupeTagsCaseInsensitive(previousTags || []);
+    const after = dedupeTagsCaseInsensitive(nextTags || []);
+    const removed = before.filter((tag) => !after.some((candidate) => normalizeTagKey(candidate) === normalizeTagKey(tag)));
+    const added = after.filter((tag) => !before.some((candidate) => normalizeTagKey(candidate) === normalizeTagKey(tag)));
+
+    if (removed.length === 1 && added.length === 1) {
+        const removedKey = normalizeTagKey(removed[0]);
+        const selectedIndex = state.tags.findIndex((tag) => normalizeTagKey(tag) === removedKey);
+        if (selectedIndex >= 0) {
+            const targetTag = added[0];
+            if (state.tags.some((tag, index) => index !== selectedIndex && normalizeTagKey(tag) === normalizeTagKey(targetTag))) {
+                state.tags = state.tags.filter((_, index) => index !== selectedIndex);
+            } else {
+                state.tags[selectedIndex] = targetTag;
+            }
+        }
+    }
+
+    return pruneSelectedTagsToKnown();
 }
 
 function tokenizeTagSuggestionText(text) {
@@ -1728,7 +1930,7 @@ const debouncedTagSuggestionRefresh = debounce(() => {
     refreshTagSuggestions();
 }, 180);
 
-function addTagChip(tag) {
+function addTagChip(tag, { silent = false } = {}) {
     const t = tag.trim();
     if (!t) return;
     // Don't dupe
@@ -1744,18 +1946,21 @@ function addTagChip(tag) {
     x.addEventListener("click", () => {
         chip.remove();
         debouncedTagSuggestionRefresh();
+        refreshMetadataDirtyState();
     });
     chip.appendChild(x);
     // Insert before the input
     dom.tagChipContainer.insertBefore(chip, dom.tagInput);
     debouncedTagSuggestionRefresh();
+    if (!silent) refreshMetadataDirtyState();
 }
 
-function setTagChips(tags) {
+function setTagChips(tags, { silent = false } = {}) {
     // Remove existing chips
     dom.tagChipContainer.querySelectorAll(".tag-chip").forEach((c) => c.remove());
-    for (const tag of tags) addTagChip(tag);
+    for (const tag of tags) addTagChip(tag, { silent: true });
     refreshTagSuggestions({ allowCorpusLoad: false });
+    if (!silent) refreshMetadataDirtyState();
 }
 
 function getTagChips() {
@@ -2045,6 +2250,7 @@ function primaryMeta(md) {
 }
 
 async function openPdf(article) {
+    markArticleSelected(article);
     try {
         await invoke("open_pdf", { relpath: article.pdf_relpath });
     } catch (err) {
@@ -2357,10 +2563,18 @@ function getCardTint(article) {
     const tag = getDominantTag(article);
     if (!tag) return null;
     const [h, s, l] = hexToHsl(state.tagColors[tag]);
-    const alpha = state.colorIntensity / 100;
+    const alpha = Math.max(0, Math.min(state.colorIntensity / 100, 1));
+    const reach = clampTagGradientReach(state.tagGradientReach);
+    const edgeAlpha = Math.min(0.16 + (alpha * 0.6), 0.74);
+    const fillAlpha = Math.max(alpha * 0.42, 0.03);
+    const softAlpha = Math.max(alpha * 0.18, 0.015);
     return {
-        bg: `hsla(${Math.round(h)}, ${Math.round(s)}%, ${Math.round(l)}%, ${alpha})`,
+        bg: `hsla(${Math.round(h)}, ${Math.round(s)}%, ${Math.round(l)}%, ${fillAlpha})`,
+        softBg: `hsla(${Math.round(h)}, ${Math.round(s)}%, ${Math.round(l)}%, ${softAlpha})`,
+        edge: `hsla(${Math.round(h)}, ${Math.round(s)}%, ${Math.round(Math.min(l + 4, 88))}%, ${edgeAlpha})`,
         border: `hsla(${Math.round(h)}, ${Math.round(s)}%, ${Math.round(Math.min(l + 10, 90))}%, 0.75)`,
+        shadow: `hsla(${Math.round(h)}, ${Math.round(s)}%, ${Math.round(Math.min(l + 12, 92))}%, 0.16)`,
+        reach,
     };
 }
 
@@ -2529,6 +2743,83 @@ function getDominantTag(article) {
 
 function saveTagColors() {
     window.localStorage.setItem("article-tag-colors", JSON.stringify(state.tagColors));
+}
+
+async function renameTagEverywhere() {
+    const sourceInput = window.prompt("Rename which tag?", state.tags[0] || "");
+    if (sourceInput === null) return;
+
+    const sourceTag = resolveKnownTagName(sourceInput);
+    if (!sourceTag) {
+        setStatus(`Tag not found: ${normalizeWhitespace(sourceInput) || "(blank)"}`, true);
+        return;
+    }
+
+    const nextInput = window.prompt(`Rename "${sourceTag}" to:`, sourceTag);
+    if (nextInput === null) return;
+
+    const targetTag = normalizeWhitespace(nextInput);
+    if (!targetTag) {
+        setStatus("Replacement tag cannot be blank.", true);
+        return;
+    }
+    if (normalizeTagKey(sourceTag) === normalizeTagKey(targetTag) && sourceTag === targetTag) {
+        setStatus("Tag name is unchanged.");
+        return;
+    }
+    if (!window.confirm(`Rename "${sourceTag}" to "${targetTag}" across the library?`)) {
+        return;
+    }
+
+    setStatus(`Renaming "${sourceTag}"...`);
+    try {
+        const result = await invoke("rename_tag_everywhere", { fromTag: sourceTag, toTag: targetTag });
+        state.tags = state.tags.map((tag) => normalizeTagKey(tag) === normalizeTagKey(sourceTag) ? targetTag : tag);
+        pruneSelectedTagsToKnown();
+        updateTagFilterUI();
+        invalidateTagSuggestionCorpus();
+        await Promise.all([loadTags(), loadArticles()]);
+        setFilesMenuOpen(false);
+        const updatedCount = Number(result?.updated_count) || 0;
+        setStatus(updatedCount > 0
+            ? `Renamed "${sourceTag}" to "${targetTag}" in ${updatedCount} article(s).`
+            : `No articles were using "${sourceTag}".`);
+    } catch (err) {
+        const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
+        setStatus(`Tag rename failed: ${message}`, true);
+    }
+}
+
+async function removeTagEverywhere() {
+    const sourceInput = window.prompt("Remove which tag from every article?", state.tags[0] || "");
+    if (sourceInput === null) return;
+
+    const tagName = resolveKnownTagName(sourceInput);
+    if (!tagName) {
+        setStatus(`Tag not found: ${normalizeWhitespace(sourceInput) || "(blank)"}`, true);
+        return;
+    }
+    if (!window.confirm(`Remove "${tagName}" from every article that uses it?`)) {
+        return;
+    }
+
+    setStatus(`Removing "${tagName}"...`);
+    try {
+        const result = await invoke("remove_tag_everywhere", { tagName });
+        state.tags = state.tags.filter((tag) => normalizeTagKey(tag) !== normalizeTagKey(tagName));
+        pruneSelectedTagsToKnown();
+        updateTagFilterUI();
+        invalidateTagSuggestionCorpus();
+        await Promise.all([loadTags(), loadArticles()]);
+        setFilesMenuOpen(false);
+        const updatedCount = Number(result?.updated_count) || 0;
+        setStatus(updatedCount > 0
+            ? `Removed "${tagName}" from ${updatedCount} article(s).`
+            : `No articles were using "${tagName}".`);
+    } catch (err) {
+        const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
+        setStatus(`Tag removal failed: ${message}`, true);
+    }
 }
 
 // ---- Hotkey resolution ----
@@ -2987,6 +3278,7 @@ function createAbstractReferenceColumns(refItems, startOrdinal = 1, muted = fals
 
 function openAbstract(article) {
     const md = article.metadata || {};
+    markArticleSelected(article);
     state.abstractPreviewArticle = article;
     dom.abstractTitle.textContent = md.title || article.pdf_filename || "Abstract";
     const yearText = normalizeWhitespace(md.year);
@@ -3128,6 +3420,7 @@ function buildCard(article) {
     const card = document.createElement("article");
     card.className = "card";
     card.dataset.articleId = article.id;
+    if (article.id === state.recentArticleId) card.classList.add("recently-selected");
     if (state.highlightIncomplete && hasEmptyMetadata(article)) {
         card.classList.add("card-incomplete");
     }
@@ -3157,7 +3450,8 @@ function buildCard(article) {
     const tint = getCardTint(article);
     if (tint) {
         card.style.borderColor = tint.border;
-        card.style.background = `linear-gradient(135deg, ${tint.bg}, transparent 70%)`;
+        card.style.background = `linear-gradient(135deg, ${tint.edge} 0%, ${tint.bg} ${tint.reach}%, ${tint.softBg} ${Math.min(tint.reach + 18, 78)}%, transparent ${Math.min(tint.reach + 34, 94)}%)`;
+        card.style.boxShadow = `inset 0 0 0 1px ${tint.edge}, 0 10px 28px rgba(0, 0, 0, 0.3), 0 0 0 1px ${tint.shadow}`;
     }
 
     // Image drag-and-drop onto card for thumbnail replacement
@@ -3312,6 +3606,7 @@ function buildDetailsTable(articles) {
         const row = document.createElement("tr");
         row.className = "details-row";
         row.dataset.articleId = article.id;
+        if (article.id === state.recentArticleId) row.classList.add("recently-selected");
         if (state.highlightIncomplete && hasEmptyMetadata(article)) {
             row.classList.add("card-incomplete");
         }
@@ -3319,7 +3614,7 @@ function buildDetailsTable(articles) {
         row.tabIndex = 0;
         const tint = getCardTint(article);
         if (tint) {
-            row.style.backgroundColor = tint.bg;
+            row.style.background = `linear-gradient(90deg, ${tint.edge} 0%, ${tint.bg} ${Math.max(12, Math.round(tint.reach * 0.75))}%, transparent ${Math.min(tint.reach + 22, 92)}%)`;
             row.style.borderLeft = `3px solid ${tint.border}`;
         }
 
@@ -3457,15 +3752,18 @@ function renderArticles() {
     }
     if (state.viewMode === "details") {
         dom.grid.appendChild(buildDetailsTable(sortedArticles));
+        syncRecentArticleHighlight();
         return;
     }
     sortedArticles.forEach((article) => dom.grid.appendChild(buildCard(article)));
+    syncRecentArticleHighlight();
 }
 
 async function loadTags() {
     const result = await invoke("get_tags");
     const options = result.tags || [];
     state.allKnownTags = options.map((tagRow) => tagRow.name);
+    pruneSelectedTagsToKnown();
 
     const optionNames = options.map((tagRow) => tagRow.name);
     const existingNames = Array.from(dom.tagFilterList.querySelectorAll("input[type='checkbox']"))
@@ -3550,6 +3848,7 @@ async function reloadLibraryForStorageSwitch() {
     thumbCache.clear();
     invalidateTagSuggestionCorpus();
     state.current = null;
+    state.recentArticleId = null;
     state.abstractPreviewArticle = null;
     state.hoveredArticleId = null;
     state.query = "";
@@ -3640,6 +3939,7 @@ async function loadArticles() {
 }
 
 function openEditor(article) {
+    markArticleSelected(article);
     state.current = article;
     debugLog(`Opened metadata editor for article ${article.id}.`);
     const md = article.metadata || {};
@@ -3653,7 +3953,7 @@ function openEditor(article) {
     dom.doi.value = md.doi || "";
     dom.abstract.value = md.abstract || "";
     // Render tag chips
-    setTagChips(md.tags || []);
+    setTagChips(md.tags || [], { silent: true });
     dom.tagInput.value = "";
     dom.tagAutocomplete.classList.add("hidden");
     dom.notes.value = md.notes || "";
@@ -3666,6 +3966,7 @@ function openEditor(article) {
         });
     }
     dom.modal.classList.remove("hidden");
+    setMetadataBaselineFromArticle(article);
     refreshTagSuggestions();
 }
 
@@ -3675,34 +3976,41 @@ function closeEditor() {
     if (dom.thumbFile) dom.thumbFile.value = "";
     dom.modalThumbWrap.classList.remove("drag-active");
     hideTagSuggestions();
+    clearMetadataChangeTracking();
 }
 
 async function saveMetadata(evt) {
     if (evt && typeof evt.preventDefault === "function") evt.preventDefault();
     if (!state.current) return;
     const currentId = state.current.id;
-    const abstractValue = dom.abstract.value.replace(/\r\n/g, "\n");
-    const notesValue = dom.notes.value.replace(/\r\n/g, "\n");
     const trigger = evt?.type || "manual";
-    const refDois = getReferenceDois(state.current?.metadata);
+    const previousTags = dedupeTagsCaseInsensitive(state.current.metadata?.tags || []);
+    const snapshot = buildEditorMetadataSnapshot();
+    const snapshotKey = buildMetadataSnapshotKey(snapshot);
+    if (snapshotKey === state.metadataBaselineKey) {
+        state.metadataDirty = false;
+        updateMetadataDirtyIndicator();
+        return;
+    }
 
     const payload = {
-        title: dom.title.value.trim(),
-        authors: dom.authors.value.trim(),
-        year: dom.year.value.trim(),
-        journal: dom.journal.value.trim(),
-        volume: dom.volume.value.trim(),
-        number: dom.issue.value.trim(),
-        pages: dom.pages.value.trim(),
-        doi: dom.doi.value.trim(),
-        abstract: abstractValue,
-        tags: getTagChips(),
-        notes: notesValue,
-        ref_dois: refDois,
+        title: snapshot.title,
+        authors: snapshot.authors,
+        year: snapshot.year,
+        journal: snapshot.journal,
+        volume: snapshot.volume,
+        number: snapshot.number,
+        pages: snapshot.pages,
+        doi: snapshot.doi,
+        abstract: snapshot.abstract,
+        tags: snapshot.tags,
+        notes: snapshot.notes,
+        ref_dois: snapshot.ref_dois,
     };
 
     setStatus("Saving metadata...");
-    debugLog(`Saving metadata for article ${currentId} (trigger=${trigger}, ref_dois=${refDois.length}).`);
+    setMetadataSavingState(true);
+    debugLog(`Saving metadata for article ${currentId} (trigger=${trigger}, ref_dois=${snapshot.ref_dois.length}).`);
     try {
         const result = await invoke("save_metadata", {
             articleId: currentId,
@@ -3725,14 +4033,26 @@ async function saveMetadata(evt) {
             state.current = savedArticle;
         }
         upsertTagSuggestionCorpusArticle(savedArticle);
-        renderArticles();
-
+        const filterSelectionChanged = reconcileSelectedTagsAfterMetadataChange(previousTags, savedArticle.metadata?.tags || []);
         await loadTags();
+        if (state.query || state.tags.length > 0 || state.filterIncomplete || filterSelectionChanged) {
+            await loadArticles();
+        } else {
+            renderArticles();
+        }
+        if (state.current?.id === currentId && !dom.modal.classList.contains("hidden")) {
+            state.current = resolveArticleById(currentId) || savedArticle;
+            setMetadataBaselineFromArticle(state.current);
+        } else {
+            setMetadataBaselineFromArticle(savedArticle);
+        }
         refreshTagSuggestions({ allowCorpusLoad: false });
         setStatus("Metadata saved.");
     } catch (err) {
+        setMetadataSavingState(false);
         const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
         setStatus(`Save failed: ${message}`, true);
+        refreshMetadataDirtyState();
     }
 }
 
@@ -4045,6 +4365,13 @@ function wireEvents() {
     applyNightFilter(state.nightFilterMode, state.nightFilterStrength);
     updateNightFilterControlVisibility();
     updateTagTintControlVisibility();
+    if (dom.colorIntensitySlider) {
+        dom.colorIntensitySlider.value = String(state.colorIntensity);
+    }
+    if (dom.colorIntensityValue) {
+        dom.colorIntensityValue.textContent = String(state.colorIntensity);
+    }
+    applyTagGradientReach(state.tagGradientReach);
     applyAbstractSectionCount(state.abstractSectionCount);
     setDisplayMenuOpen(false);
     setFilesMenuOpen(false);
@@ -4052,6 +4379,16 @@ function wireEvents() {
     wireSliderToggles(dom.filesMenu);
 
     dom.searchInput.addEventListener("input", debouncedSearch);
+    if (dom.form) {
+        dom.form.addEventListener("input", (evt) => {
+            if (evt.target === dom.tagInput || evt.target === dom.pasteCleanup) return;
+            refreshMetadataDirtyState();
+        });
+        dom.form.addEventListener("change", (evt) => {
+            if (evt.target === dom.pasteCleanup) return;
+            refreshMetadataDirtyState();
+        });
+    }
     if (dom.thumbnailUndo) {
         dom.thumbnailUndo.addEventListener("mouseenter", () => {
             if (state.thumbnailUndo) state.thumbnailUndo.paused = true;
@@ -4482,6 +4819,7 @@ function wireEvents() {
             if (chips.length > 0) {
                 chips[chips.length - 1].remove();
                 debouncedTagSuggestionRefresh();
+                refreshMetadataDirtyState();
             }
             return;
         }
@@ -4873,6 +5211,13 @@ function wireEvents() {
             renderArticles();
         });
     }
+    if (dom.tagGradientReachSlider) {
+        dom.tagGradientReachSlider.addEventListener("input", () => {
+            applyTagGradientReach(dom.tagGradientReachSlider.value);
+            window.localStorage.setItem("article-tag-gradient-reach", String(state.tagGradientReach));
+            renderArticles();
+        });
+    }
     if (dom.fontFamilySelect) {
         dom.fontFamilySelect.addEventListener("change", () => {
             applyFontFamily(dom.fontFamilySelect.value);
@@ -4886,6 +5231,12 @@ function wireEvents() {
                 setStatus(`Failed to open folder: ${err}`, true);
             });
         });
+    }
+    if (dom.renameTagBtn) {
+        dom.renameTagBtn.addEventListener("click", renameTagEverywhere);
+    }
+    if (dom.removeTagBtn) {
+        dom.removeTagBtn.addEventListener("click", removeTagEverywhere);
     }
     dom.modalClose.addEventListener("click", closeEditor);
     if (dom.abstractTitle) {
@@ -5006,6 +5357,7 @@ function wireEvents() {
             }
 
             debugLog(`Crossref metadata fetched for DOI ${doiStr}.`);
+            refreshMetadataDirtyState();
             setStatus("Metadata successfully fetched from Crossref.");
         } catch (err) {
             const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");

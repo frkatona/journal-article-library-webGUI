@@ -11,3 +11,6 @@ library_data/
 Thumbs.db
 .DS_Store
 node_modules
+
+# test collection of journal articles
+Articles/
