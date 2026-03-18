@@ -119,10 +119,6 @@
                             style="font-size: 0.75rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; padding: 4px 8px; margin-bottom: 4px;">
                             File Management</div>
                         <button id="open-articles-btn" type="button" class="ghost">Open Articles Folder</button>
-                        <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
-                            <input id="open-pdfs-in-app" type="checkbox" />
-                            <span style="font-size:0.82rem;">Open PDFs in application</span>
-                        </label>
 
                         <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
                             <input id="show-ref-dois" type="checkbox" />
@@ -494,6 +490,8 @@
                     <span id="pdf-viewer-meta" class="meta"></span>
                 </div>
                 <div class="pdf-viewer-header-actions">
+                    <button id="pdf-open-metadata" type="button" class="ghost">Edit Metadata</button>
+                    <button id="pdf-open-abstract" type="button" class="ghost">Preview Abstract</button>
                     <button id="pdf-open-external" type="button" class="ghost">Open Externally</button>
                     <button id="pdf-viewer-close" type="button">Close</button>
                 </div>

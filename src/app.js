@@ -5,7 +5,8 @@ const { invoke } = window.__TAURI__.core;
 const thumbCache = new Map();
 
 const DEFAULT_HOTKEYS = {
-    openPdf: { ctrl: false, alt: false, shift: false },  // plain click
+    openPdfExternal: { ctrl: false, alt: false, shift: false },  // plain click
+    openPdfInternal: { ctrl: false, alt: true, shift: true },  // Alt+Shift+click
     editMetadata: { ctrl: true, alt: false, shift: false },  // Ctrl+click
     openAbstract: { ctrl: false, alt: true, shift: false },  // Alt+click
     copyBibtex: { ctrl: false, alt: false, shift: true },  // Shift+click
@@ -27,7 +28,6 @@ const SHOW_NICHE_KEY = "article-show-niche";
 const SHOW_REF_DOIS_KEY = "article-show-ref-dois";
 const SHOW_REF_DOIS_PREF_TOUCHED_KEY = "article-show-ref-dois-pref-touched";
 const NIGHT_FILTER_ENABLED_KEY = "article-night-filter-enabled";
-const OPEN_PDFS_IN_APP_KEY = "article-open-pdfs-in-app";
 const PDF_VIEWER_STATE_KEY = "article-pdf-viewer-state-v1";
 const ENABLE_PDF_TEXT_SELECTION = false;
 const THEME_KEYS = ["ocean", "midnight", "nord", "monokai", "solarized", "light"];
@@ -352,6 +352,41 @@ function loadKeyboardShortcuts() {
     return defaults;
 }
 
+function normalizeMouseHotkeyBinding(binding) {
+    if (!binding || typeof binding !== "object") return null;
+    return {
+        ctrl: Boolean(binding.ctrl),
+        alt: Boolean(binding.alt),
+        shift: Boolean(binding.shift),
+    };
+}
+
+function cloneDefaultHotkeys() {
+    return Object.fromEntries(
+        Object.entries(DEFAULT_HOTKEYS).map(([key, binding]) => [key, { ...binding }]),
+    );
+}
+
+function loadHotkeys() {
+    const defaults = cloneDefaultHotkeys();
+    try {
+        const raw = JSON.parse(window.localStorage.getItem("article-hotkeys") || "null");
+        if (!raw || typeof raw !== "object") return defaults;
+
+        const legacyOpenPdf = normalizeMouseHotkeyBinding(raw.openPdf);
+        for (const key of Object.keys(defaults)) {
+            const normalized = normalizeMouseHotkeyBinding(raw[key]);
+            if (normalized) defaults[key] = normalized;
+        }
+        if (legacyOpenPdf && !normalizeMouseHotkeyBinding(raw.openPdfExternal)) {
+            defaults.openPdfExternal = legacyOpenPdf;
+        }
+        return defaults;
+    } catch {
+        return defaults;
+    }
+}
+
 function saveKeyboardShortcuts() {
     window.localStorage.setItem(KEYBOARD_SHORTCUTS_STORAGE_KEY, JSON.stringify(state.keyboardShortcuts));
 }
@@ -428,7 +463,6 @@ const state = {
     tintByTag: window.localStorage.getItem("article-tint-by-tag") === "true",
     filterIncomplete: window.localStorage.getItem("article-filter-incomplete") === "true",
     autoRefCompile: window.localStorage.getItem("article-auto-ref") === "true",
-    openPdfsInApp: window.localStorage.getItem(OPEN_PDFS_IN_APP_KEY) === "true",
     showDupeWarnings: window.localStorage.getItem("article-dupe-warnings") !== "false",
     colorIntensity: Number.parseInt(window.localStorage.getItem("article-color-intensity") || "13", 10),
     tagGradientReach: Number.parseInt(window.localStorage.getItem("article-tag-gradient-reach") || "26", 10),
@@ -438,7 +472,7 @@ const state = {
     nightFilterMode: window.localStorage.getItem("article-night-filter-mode") || "warm",
     nightFilterStrength: Number.parseInt(window.localStorage.getItem("article-night-filter-strength") || "0", 10),
     tagColors: JSON.parse(window.localStorage.getItem("article-tag-colors") || "{}"),
-    hotkeys: JSON.parse(window.localStorage.getItem("article-hotkeys") || "null") || { ...DEFAULT_HOTKEYS },
+    hotkeys: loadHotkeys(),
     keyboardShortcuts: loadKeyboardShortcuts(),
     nicheTags: JSON.parse(window.localStorage.getItem("article-niche-tags") || "[]"),
     enableNiche: initEnableNichePreference(),
@@ -515,7 +549,6 @@ const dom = {
     parsePdfs: document.getElementById("parse-pdfs"),
     reindexBtn: document.getElementById("reindex-btn"),
     openArticlesBtn: document.getElementById("open-articles-btn"),
-    openPdfsInApp: document.getElementById("open-pdfs-in-app"),
     renameTagBtn: document.getElementById("rename-tag-btn"),
     removeTagBtn: document.getElementById("remove-tag-btn"),
     statusLine: document.getElementById("status-line"),
@@ -566,6 +599,8 @@ const dom = {
     pdfViewerTitle: document.getElementById("pdf-viewer-title"),
     pdfViewerMeta: document.getElementById("pdf-viewer-meta"),
     pdfViewerClose: document.getElementById("pdf-viewer-close"),
+    pdfOpenMetadata: document.getElementById("pdf-open-metadata"),
+    pdfOpenAbstract: document.getElementById("pdf-open-abstract"),
     pdfOpenExternal: document.getElementById("pdf-open-external"),
     pdfPrevPage: document.getElementById("pdf-prev-page"),
     pdfPageNumber: document.getElementById("pdf-page-number"),
@@ -2881,13 +2916,34 @@ function nudgePdfZoom(direction) {
     setPdfCustomZoom(currentScale * multiplier);
 }
 
-function handlePdfViewerWheelZoom(evt) {
-    if (!evt.ctrlKey || !isPdfViewerOpen() || !pdfViewer.doc) return;
+function normalizeWheelDeltaToPixels(delta, deltaMode, pageSize) {
+    if (!Number.isFinite(delta)) return 0;
+    if (deltaMode === 1) return delta * 16;
+    if (deltaMode === 2) return delta * Math.max(240, pageSize || 0);
+    return delta;
+}
+
+function handlePdfViewerGlobalWheel(evt) {
+    if (!isPdfViewerOpen()) return;
     evt.preventDefault();
     evt.stopPropagation();
-    const currentScale = clampPdfZoomScale(pdfViewer.zoomScale);
-    const multiplier = Math.exp((-evt.deltaY || 0) * 0.0015);
-    setPdfCustomZoom(currentScale * multiplier);
+    const wrap = dom.pdfCanvasWrap;
+    if (!wrap || wrap.classList.contains("hidden")) return;
+
+    if (evt.ctrlKey) {
+        if (!pdfViewer.doc) return;
+        const currentScale = clampPdfZoomScale(pdfViewer.zoomScale);
+        const multiplier = Math.exp((-evt.deltaY || 0) * 0.0015);
+        setPdfCustomZoom(currentScale * multiplier);
+        return;
+    }
+
+    const deltaX = normalizeWheelDeltaToPixels(evt.deltaX, evt.deltaMode, wrap.clientWidth || window.innerWidth || 0);
+    const deltaY = normalizeWheelDeltaToPixels(evt.deltaY, evt.deltaMode, wrap.clientHeight || window.innerHeight || 0);
+    if (!deltaX && !deltaY) return;
+
+    wrap.scrollLeft += deltaX;
+    wrap.scrollTop += deltaY;
 }
 
 function normalizePdfSearchQuery(value) {
@@ -3062,12 +3118,12 @@ async function openPdfExternal(article) {
     }
 }
 
-async function openPdf(article, options = {}) {
+async function openPdf(article) {
+    await openPdfExternal(article);
+}
+
+async function openPdfInternal(article) {
     if (!article?.id) return;
-    if (!options.forceEmbedded && !state.openPdfsInApp) {
-        await openPdfExternal(article);
-        return;
-    }
     markArticleSelected(article);
     pdfViewer.loadRequestId += 1;
     pdfViewer.renderRequestId += 1;
@@ -3127,6 +3183,26 @@ async function openPdf(article, options = {}) {
         setPdfViewerStatus(`Failed to open PDF: ${message}`, true);
         setStatus(`Failed to open embedded PDF viewer: ${message}`, true);
     }
+}
+
+function getResolvedPdfViewerArticle() {
+    const articleId = pdfViewer.article?.id;
+    if (!articleId) return null;
+    return resolveArticleById(articleId) || pdfViewer.article;
+}
+
+function openPdfViewerMetadata() {
+    const article = getResolvedPdfViewerArticle();
+    if (!article) return;
+    closePdfViewer();
+    openEditor(article);
+}
+
+function openPdfViewerAbstract() {
+    const article = getResolvedPdfViewerArticle();
+    if (!article) return;
+    closePdfViewer();
+    openAbstract(article);
 }
 
 function closePdfViewer() {
@@ -3734,13 +3810,15 @@ function resolveClickAction(evt, article) {
         return true;
     }
     if (modMatch(evt, hk.openLocation)) { evt.preventDefault(); evt.stopPropagation(); openFileLocation(article); return true; }
-    if (modMatch(evt, hk.openPdf)) { evt.preventDefault(); evt.stopPropagation(); openPdf(article); return true; }
+    if (modMatch(evt, hk.openPdfInternal)) { evt.preventDefault(); evt.stopPropagation(); openPdfInternal(article); return true; }
+    if (modMatch(evt, hk.openPdfExternal)) { evt.preventDefault(); evt.stopPropagation(); openPdfExternal(article); return true; }
     // No binding matched — fall through (e.g., right-click menus)
     return false;
 }
 
 const CLICK_ACTIONS = [
-    { key: "openPdf", label: "Open PDF" },
+    { key: "openPdfExternal", label: "Open PDF Externally" },
+    { key: "openPdfInternal", label: "Open PDF Internally" },
     { key: "editMetadata", label: "Edit Metadata" },
     { key: "openAbstract", label: "Preview Abstract" },
     { key: "copyBibtex", label: "Copy BibTeX" },
@@ -3862,7 +3940,7 @@ function buildHotkeyTable() {
     resetBtn.textContent = "Reset Defaults";
     resetBtn.className = "ghost";
     resetBtn.style.cssText = "font-size:0.75rem;padding:2px 8px;color:var(--muted);";
-    resetBtn.addEventListener("click", () => { state.hotkeys = { ...DEFAULT_HOTKEYS }; saveHotkeys(); buildHotkeyTable(); });
+    resetBtn.addEventListener("click", () => { state.hotkeys = cloneDefaultHotkeys(); saveHotkeys(); buildHotkeyTable(); });
     resetRow.appendChild(resetBtn);
     container.appendChild(resetRow);
 
@@ -4976,14 +5054,22 @@ async function copyRawToClipboard(text) {
     }
 }
 
-function isMetadataEditableField(element) {
+function isEditableFieldWithin(container, element) {
     if (!(element instanceof HTMLElement)) return false;
-    if (!dom.form || !dom.form.contains(element)) return false;
+    if (!container || !container.contains(element)) return false;
     if (element.matches("textarea, select")) return true;
     if (!element.matches("input")) return element.isContentEditable;
 
     const inputType = (element.getAttribute("type") || "text").toLowerCase();
     return !["button", "submit", "reset", "checkbox", "radio", "file", "hidden"].includes(inputType);
+}
+
+function isMetadataEditableField(element) {
+    return isEditableFieldWithin(dom.form, element);
+}
+
+function isPdfViewerEditableField(element) {
+    return isEditableFieldWithin(dom.pdfViewerModal, element);
 }
 
 async function persistReferenceDois(articleId, refDois) {
@@ -6128,13 +6214,6 @@ function wireEvents() {
             });
         });
     }
-    if (dom.openPdfsInApp) {
-        dom.openPdfsInApp.checked = state.openPdfsInApp;
-        dom.openPdfsInApp.addEventListener("change", () => {
-            state.openPdfsInApp = dom.openPdfsInApp.checked;
-            window.localStorage.setItem(OPEN_PDFS_IN_APP_KEY, state.openPdfsInApp ? "true" : "false");
-        });
-    }
     if (dom.renameTagBtn) {
         dom.renameTagBtn.addEventListener("click", renameTagEverywhere);
     }
@@ -6148,14 +6227,21 @@ function wireEvents() {
     if (dom.abstractTitle) {
         dom.abstractTitle.addEventListener("click", () => {
             if (state.abstractPreviewArticle) {
-                openPdf(state.abstractPreviewArticle);
+                openPdfExternal(state.abstractPreviewArticle);
             }
         });
     }
+    if (dom.pdfOpenMetadata) {
+        dom.pdfOpenMetadata.addEventListener("click", openPdfViewerMetadata);
+    }
+    if (dom.pdfOpenAbstract) {
+        dom.pdfOpenAbstract.addEventListener("click", openPdfViewerAbstract);
+    }
     if (dom.pdfOpenExternal) {
         dom.pdfOpenExternal.addEventListener("click", () => {
-            if (pdfViewer.article) {
-                openPdfExternal(pdfViewer.article);
+            const article = getResolvedPdfViewerArticle();
+            if (article) {
+                openPdfExternal(article);
             }
         });
     }
@@ -6233,11 +6319,8 @@ function wireEvents() {
     }
     if (dom.pdfCanvasWrap) {
         dom.pdfCanvasWrap.addEventListener("scroll", debouncedPdfViewerScroll, { passive: true });
-        dom.pdfCanvasWrap.addEventListener("wheel", handlePdfViewerWheelZoom, { passive: false });
     }
-    if (dom.pdfViewerModal) {
-        dom.pdfViewerModal.addEventListener("wheel", handlePdfViewerWheelZoom, { passive: false });
-    }
+    document.addEventListener("wheel", handlePdfViewerGlobalWheel, { passive: false, capture: true });
     window.addEventListener("resize", debouncedPdfViewerResize);
     dom.form.addEventListener("submit", saveMetadata);
     dom.metaRemove.addEventListener("click", async () => {
@@ -6292,7 +6375,7 @@ function wireEvents() {
 
     if (dom.editorOpenBtn) {
         dom.editorOpenBtn.addEventListener("click", () => {
-            if (state.current) openPdf(state.current);
+            if (state.current) openPdfExternal(state.current);
         });
     }
     if (dom.editorLocateBtn) {
@@ -6569,17 +6652,21 @@ function wireEvents() {
     });
 
     function handleModalKeyboardNavigation(evt) {
+        const pdfViewerOpen = isPdfViewerOpen();
         const metadataOpen = !dom.modal.classList.contains("hidden");
         const abstractOpen = !dom.abstractModal.classList.contains("hidden");
-        if (!metadataOpen && !abstractOpen) return false;
+        if (!pdfViewerOpen && !metadataOpen && !abstractOpen) return false;
 
         // Preserve normal caret/navigation behavior while actively editing metadata fields.
         if (metadataOpen && isMetadataEditableField(evt.target)) return false;
+        if (pdfViewerOpen && isPdfViewerEditableField(evt.target)) return false;
 
-        const activeArticle = metadataOpen ? state.current : state.abstractPreviewArticle;
+        const activeArticle = pdfViewerOpen
+            ? getResolvedPdfViewerArticle()
+            : (metadataOpen ? state.current : state.abstractPreviewArticle);
         if (!activeArticle?.id) return false;
 
-        const isToggleShortcut = matchesKeyboardShortcut(evt, "arrowToggle");
+        const isToggleShortcut = !pdfViewerOpen && matchesKeyboardShortcut(evt, "arrowToggle");
         const isPrevShortcut = matchesKeyboardShortcut(evt, "prevArticle");
         const isNextShortcut = matchesKeyboardShortcut(evt, "nextArticle");
         if (!isToggleShortcut && !isPrevShortcut && !isNextShortcut) return false;
@@ -6594,11 +6681,16 @@ function wireEvents() {
         state.modalArrowBusy = true;
 
         (async () => {
+            const resolved = resolveArticleById(targetArticle.id) || targetArticle;
+
+            if (pdfViewerOpen) {
+                await openPdfInternal(resolved);
+                return;
+            }
+
             if (metadataOpen) {
                 await saveMetadata({ type: isToggleShortcut ? "arrow-modal-toggle" : "arrow-article-nav" });
             }
-
-            const resolved = resolveArticleById(targetArticle.id) || targetArticle;
 
             if (isToggleShortcut) {
                 if (abstractOpen) {
