@@ -1823,6 +1823,49 @@ fn remove_article(
 }
 
 #[tauri::command]
+fn get_pdf_data(
+    state: tauri::State<'_, Mutex<AppState>>,
+    article_id: String,
+) -> Result<String, String> {
+    let (pdf_path, data_dir) = {
+        let mut st = state.lock().map_err(|e| e.to_string())?;
+        let index = load_index(&mut st);
+        let article = index
+            .articles
+            .iter()
+            .find(|a| a.id == article_id)
+            .ok_or_else(|| "Article not found".to_string())?;
+        let pdf_path = st.root_dir.join(&article.pdf_relpath);
+        let data_dir = st.data_dir.clone();
+
+        let now = Utc::now().to_rfc3339();
+        let overrides_dir = st.overrides_dir.clone();
+        let index_path = st.index_path.clone();
+        if let Some(live_index) = st.index.as_mut() {
+            if let Some(current_article) = live_index.articles.iter_mut().find(|a| a.id == article_id) {
+                current_article.last_opened = now.clone();
+                let mut over = load_override(&overrides_dir, &current_article.id);
+                if let Some(obj) = over.as_object_mut() {
+                    obj.insert("last_opened".into(), serde_json::Value::String(now));
+                }
+                save_override(&overrides_dir, &current_article.id, &over);
+            }
+            let json = serde_json::to_string_pretty(live_index).unwrap_or_default();
+            let _ = fs::write(&index_path, json);
+        }
+
+        (pdf_path, data_dir)
+    };
+
+    let bytes = fs::read(&pdf_path).map_err(|e| {
+        let msg = format!("Failed to read PDF '{}': {}", pdf_path.display(), e);
+        write_crash_log(&data_dir, &msg);
+        msg
+    })?;
+    Ok(B64.encode(bytes))
+}
+
+#[tauri::command]
 fn open_pdf(state: tauri::State<'_, Mutex<AppState>>, relpath: String) -> Result<(), String> {
     let mut st = state.lock().map_err(|e| e.to_string())?;
     let full_path = st.root_dir.join(&relpath);
@@ -2972,6 +3015,7 @@ pub fn run() {
             remove_tag_everywhere,
             upload_thumbnail,
             remove_article,
+            get_pdf_data,
             open_pdf,
             open_file_location,
             open_articles_folder,

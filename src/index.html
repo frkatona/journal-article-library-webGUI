@@ -482,6 +482,56 @@
         </div>
     </div>
 
+    <div id="pdf-viewer-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="pdf-viewer-title">
+        <div class="modal-card pdf-viewer-modal-card">
+            <div class="modal-header pdf-viewer-header">
+                <div class="modal-header-title">
+                    <h2 id="pdf-viewer-title">Reader</h2>
+                    <span id="pdf-viewer-meta" class="meta"></span>
+                </div>
+                <div class="pdf-viewer-header-actions">
+                    <button id="pdf-open-external" type="button" class="ghost">Open Externally</button>
+                    <button id="pdf-viewer-close" type="button">Close</button>
+                </div>
+            </div>
+            <div class="pdf-viewer-toolbar">
+                <div class="pdf-toolbar-group">
+                    <button id="pdf-prev-page" type="button" class="ghost">Prev</button>
+                    <label class="pdf-page-input-wrap">
+                        <span>Page</span>
+                        <input id="pdf-page-number" type="number" min="1" value="1" />
+                    </label>
+                    <span id="pdf-page-count" class="meta">/ 0</span>
+                    <button id="pdf-next-page" type="button" class="ghost">Next</button>
+                </div>
+                <div class="pdf-toolbar-group">
+                    <button id="pdf-zoom-out" type="button" class="ghost">-</button>
+                    <span id="pdf-zoom-value" class="meta pdf-zoom-value">100%</span>
+                    <button id="pdf-zoom-in" type="button" class="ghost">+</button>
+                    <button id="pdf-fit-width" type="button" class="ghost">Fit Width</button>
+                    <button id="pdf-fit-page" type="button" class="ghost">Fit Page</button>
+                </div>
+                <div class="pdf-toolbar-group pdf-search-group">
+                    <input id="pdf-search-input" type="search" placeholder="Search document..." />
+                    <button id="pdf-search-prev" type="button" class="ghost">Prev Match</button>
+                    <button id="pdf-search-next" type="button" class="ghost">Next Match</button>
+                    <span id="pdf-search-status" class="meta">Search all pages</span>
+                </div>
+            </div>
+            <div class="pdf-viewer-body">
+                <aside class="pdf-page-list-panel">
+                    <div id="pdf-page-list" class="pdf-page-list"></div>
+                </aside>
+                <section class="pdf-stage">
+                    <div id="pdf-viewer-status" class="meta pdf-viewer-status">Open an article to view it here.</div>
+                    <div id="pdf-canvas-wrap" class="pdf-canvas-wrap">
+                        <canvas id="pdf-canvas"></canvas>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </div>
+
     <div id="drop-overlay" class="hidden">
         <div class="drop-message">Drop PDF files here to import</div>
     </div>
