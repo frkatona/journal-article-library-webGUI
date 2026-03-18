@@ -1008,7 +1008,7 @@ main {
 
 .pdf-viewer-modal-card {
   width: min(1280px, 100%);
-  height: min(94vh, 1080px);
+  height: max(420px, calc(100vh - 28px));
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -1166,10 +1166,8 @@ main {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
   padding: 18px;
+  position: relative;
 }
 
 #pdf-canvas {
@@ -1178,6 +1176,99 @@ main {
   background: #fff;
   border-radius: 12px;
   box-shadow: 0 24px 48px rgba(0, 0, 0, 0.34);
+}
+
+.pdf-page-shell {
+  position: relative;
+  margin: 0 auto 18px;
+}
+
+.pdf-page-shell:last-child {
+  margin-bottom: 0;
+}
+
+.pdf-page-shell.is-error {
+  border: 1px dashed rgba(224, 93, 93, 0.4);
+  border-radius: 12px;
+  background: rgba(224, 93, 93, 0.08);
+}
+
+.pdf-page-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.34);
+}
+
+.pdf-text-layer {
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  z-index: 2;
+  opacity: 1;
+  line-height: 1;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  cursor: text;
+}
+
+.pdf-text-layer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+
+.pdf-text-layer > :not(.markedContent),
+.pdf-text-layer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
+.pdf-text-layer .markedContent {
+  display: contents;
+}
+
+.pdf-text-layer .endOfContent {
+  display: block;
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: 0;
+  cursor: default;
+  user-select: none;
+}
+
+.pdf-text-layer ::selection {
+  background: color-mix(in srgb, var(--accent), transparent 72%);
+}
+
+.pdf-text-layer ::-moz-selection {
+  background: color-mix(in srgb, var(--accent), transparent 72%);
+}
+
+.pdf-page-label {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: rgba(8, 20, 32, 0.72);
+  color: #eef7ff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  z-index: 3;
 }
 
 @media (max-width: 980px) {
@@ -1224,6 +1315,10 @@ main {
 
   .pdf-canvas-wrap {
     padding: 12px;
+  }
+
+  .pdf-page-shell {
+    margin-bottom: 14px;
   }
 }
 
