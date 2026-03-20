@@ -181,6 +181,10 @@
                                     <span style="font-size:0.82rem;">Downscale large capture images</span>
                                 </label>
                                 <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                                    <input id="enable-pdf-starry-background" type="checkbox" />
+                                    <span style="font-size:0.82rem;">Enable PDF starry background</span>
+                                </label>
+                                <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
                                     <input id="enable-niche" type="checkbox" />
                                     <span style="font-size:0.82rem;">Enable niche</span>
                                 </label>
@@ -511,6 +515,10 @@
                     <button id="pdf-open-external" type="button" class="ghost">Open Externally</button>
                 </div>
             </div>
+            <div class="pdf-viewer-fold-boundary">
+                <button id="pdf-toggle-header-fold" type="button" class="pdf-viewer-fold-toggle" aria-label="Hide reader controls"
+                    title="Hide reader controls" aria-expanded="true">&#9650;</button>
+            </div>
             <div class="pdf-viewer-toolbar">
                 <div class="pdf-toolbar-group">
                     <button id="pdf-prev-page" type="button" class="ghost">Prev</button>
@@ -525,13 +533,13 @@
                     <button id="pdf-zoom-out" type="button" class="ghost">-</button>
                     <span id="pdf-zoom-value" class="meta pdf-zoom-value">100%</span>
                     <button id="pdf-zoom-in" type="button" class="ghost">+</button>
-                    <button id="pdf-fit-width" type="button" class="ghost">Fit Width</button>
-                    <button id="pdf-fit-page" type="button" class="ghost">Fit Page</button>
                 </div>
                 <div class="pdf-toolbar-group pdf-search-group">
                     <input id="pdf-search-input" type="search" placeholder="Search document..." />
-                    <button id="pdf-search-prev" type="button" class="ghost">Prev Match</button>
-                    <button id="pdf-search-next" type="button" class="ghost">Next Match</button>
+                    <button id="pdf-search-prev" type="button" class="ghost pdf-toolbar-icon-btn" aria-label="Previous search match"
+                        title="Previous search match">&#8249;</button>
+                    <button id="pdf-search-next" type="button" class="ghost pdf-toolbar-icon-btn" aria-label="Next search match"
+                        title="Next search match">&#8250;</button>
                     <span id="pdf-search-status" class="meta">Search all pages</span>
                 </div>
             </div>
@@ -591,7 +599,7 @@
                 <aside class="pdf-page-list-panel">
                     <div id="pdf-page-list" class="pdf-page-list"></div>
                 </aside>
-                <section class="pdf-stage">
+                <section id="pdf-stage" class="pdf-stage">
                     <div id="pdf-viewer-status" class="meta pdf-viewer-status">Open an article to view it here.</div>
                     <div id="pdf-canvas-wrap" class="pdf-canvas-wrap">
                         <canvas id="pdf-canvas"></canvas>
@@ -626,11 +634,14 @@
 
     <script src="app.js" defer></script>
     <!-- Global Error Banner -->
-    <div id="error-banner"
-        style="position: fixed; bottom: 0; left: 0; right: 0; background: var(--danger, #dc3545); color: white; padding: 12px 20px; z-index: 99999; display: none; justify-content: space-between; align-items: center; box-shadow: 0 -2px 10px rgba(0,0,0,0.2);">
-        <span id="error-banner-text" style="font-family: monospace; font-size: 0.85rem; word-break: break-word;"></span>
-        <button id="error-banner-close" type="button"
-            style="background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer; padding: 0; line-height: 1;">&times;</button>
+    <div id="error-banner" class="error-banner hidden" role="alert" aria-live="assertive">
+        <div class="error-banner-row">
+            <span id="error-banner-text" class="error-banner-text"></span>
+            <button id="error-banner-close" type="button" class="error-banner-close">&times;</button>
+        </div>
+        <div class="error-banner-track" aria-hidden="true">
+            <div id="error-banner-progress" class="error-banner-progress"></div>
+        </div>
     </div>
 
     <!-- Tag Color Editor Panel -->
@@ -704,6 +715,16 @@
 
     <!-- Toast Notification -->
     <div id="toast" class="toast hidden"></div>
+    <div id="pdf-copy-preview" class="pdf-copy-preview hidden" role="status" aria-live="polite">
+        <div class="pdf-copy-preview-header">
+            <span>Copied PDF text</span>
+            <button id="pdf-copy-preview-close" type="button" class="pdf-copy-preview-close">&times;</button>
+        </div>
+        <div id="pdf-copy-preview-text" class="pdf-copy-preview-text"></div>
+        <div class="pdf-copy-preview-track" aria-hidden="true">
+            <div id="pdf-copy-preview-progress" class="pdf-copy-preview-progress"></div>
+        </div>
+    </div>
     <div id="thumbnail-undo" class="thumbnail-undo hidden" role="status" aria-live="polite">
         <div class="thumbnail-undo-row">
             <span id="thumbnail-undo-message">Undo image replacement?</span>
