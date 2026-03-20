@@ -14,11 +14,5 @@
   - [ ] assign 'types' of tags as an alternative to 'niche' tags ('format', like textbook, manual, etc.?), and having a 'project' (MURI, etc.)?
 
 
-- aspect ratio screenshotter / image processor
-- text highlighting (tough to get abstract now)
-  - why is this so hard in the reader compared to acrobat?  Is excluding this why the reader feels sharp?
 
-- many clicks around the filter dropdown accidentally trigger "select all"
 
-- a way to export DOIs for a certain tag and then a way to compare two sets of DOIs from two people to separate them into "shared" "only person 1" "only person 2"
-  - option to import those DOIs along with the tags they were assigned in the owner's collection
