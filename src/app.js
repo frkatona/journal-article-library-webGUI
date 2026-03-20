@@ -28,8 +28,16 @@ const SHOW_NICHE_KEY = "article-show-niche";
 const SHOW_REF_DOIS_KEY = "article-show-ref-dois";
 const SHOW_REF_DOIS_PREF_TOUCHED_KEY = "article-show-ref-dois-pref-touched";
 const NIGHT_FILTER_ENABLED_KEY = "article-night-filter-enabled";
+const PDF_COPY_TOOL_ENABLED_KEY = "article-pdf-copy-tool-enabled";
+const PDF_THUMBNAIL_CAPTURE_ENABLED_KEY = "article-pdf-thumbnail-capture-enabled";
+const PDF_CAPTURE_DOWNSCALE_ENABLED_KEY = "article-pdf-capture-downscale-enabled";
 const PDF_VIEWER_STATE_KEY = "article-pdf-viewer-state-v1";
 const ENABLE_PDF_TEXT_SELECTION = false;
+const PDF_CAPTURE_PRESET_KEYS = new Set(["thumbnail", "square", "tall", "free"]);
+const PDF_CAPTURE_THUMBNAIL_W = 420;
+const PDF_CAPTURE_THUMBNAIL_H = 260;
+const PDF_CAPTURE_MAX_DIMENSION = 2400;
+const PDF_CAPTURE_MAX_PIXELS = 6_000_000;
 const THEME_KEYS = ["ocean", "midnight", "nord", "monokai", "solarized", "light"];
 const TAG_SUGGESTION_BATCH_SIZE = 500;
 const TAG_SUGGESTION_MAX_ARTICLES = 5000;
@@ -471,6 +479,9 @@ const state = {
     nightFilterEnabled: initNightFilterEnabledPreference(),
     nightFilterMode: window.localStorage.getItem("article-night-filter-mode") || "warm",
     nightFilterStrength: Number.parseInt(window.localStorage.getItem("article-night-filter-strength") || "0", 10),
+    enablePdfCopyTool: window.localStorage.getItem(PDF_COPY_TOOL_ENABLED_KEY) === "true",
+    enablePdfThumbnailCapture: window.localStorage.getItem(PDF_THUMBNAIL_CAPTURE_ENABLED_KEY) === "true",
+    downscalePdfCaptureImages: window.localStorage.getItem(PDF_CAPTURE_DOWNSCALE_ENABLED_KEY) !== "false",
     tagColors: JSON.parse(window.localStorage.getItem("article-tag-colors") || "{}"),
     hotkeys: loadHotkeys(),
     keyboardShortcuts: loadKeyboardShortcuts(),
@@ -522,6 +533,20 @@ const dom = {
     nightFilterMode: document.getElementById("night-filter-mode"),
     nightFilterStrengthSlider: document.getElementById("night-filter-strength-slider"),
     nightFilterStrengthValue: document.getElementById("night-filter-strength-value"),
+    pdfNightFilterEnabled: document.getElementById("pdf-night-filter-enabled"),
+    pdfNightFilterControls: document.getElementById("pdf-night-filter-controls"),
+    pdfNightFilterMode: document.getElementById("pdf-night-filter-mode"),
+    pdfNightFilterStrengthSlider: document.getElementById("pdf-night-filter-strength-slider"),
+    pdfNightFilterStrengthValue: document.getElementById("pdf-night-filter-strength-value"),
+    pdfCopyRegionToggle: document.getElementById("pdf-copy-region-toggle"),
+    pdfCaptureThumbnailToggle: document.getElementById("pdf-capture-thumbnail-toggle"),
+    pdfToolPanel: document.getElementById("pdf-tool-panel"),
+    pdfCopyRegionHint: document.getElementById("pdf-copy-region-hint"),
+    pdfCapturePanel: document.getElementById("pdf-capture-panel"),
+    pdfCapturePreset: document.getElementById("pdf-capture-preset"),
+    pdfCapturePreview: document.getElementById("pdf-capture-preview"),
+    pdfCaptureSave: document.getElementById("pdf-capture-save"),
+    pdfCaptureCancel: document.getElementById("pdf-capture-cancel"),
     nightFilterPreMatrix: document.getElementById("night-filter-pre-matrix"),
     nightFilterPostMatrix: document.getElementById("night-filter-post-matrix"),
     nightFilterFuncR: document.getElementById("night-filter-func-r"),
@@ -598,6 +623,7 @@ const dom = {
     pdfViewerModal: document.getElementById("pdf-viewer-modal"),
     pdfViewerTitle: document.getElementById("pdf-viewer-title"),
     pdfViewerMeta: document.getElementById("pdf-viewer-meta"),
+    pdfViewerSubmeta: document.getElementById("pdf-viewer-submeta"),
     pdfViewerClose: document.getElementById("pdf-viewer-close"),
     pdfOpenMetadata: document.getElementById("pdf-open-metadata"),
     pdfOpenAbstract: document.getElementById("pdf-open-abstract"),
@@ -658,6 +684,9 @@ const dom = {
     showErrorsCheckbox: document.getElementById("show-errors-checkbox"),
     autoRefCompile: document.getElementById("auto-ref-compile"),
     showDupeWarnings: document.getElementById("show-dupe-warnings"),
+    enablePdfCopyToolCheckbox: document.getElementById("enable-pdf-copy-tool"),
+    enablePdfThumbnailCaptureCheckbox: document.getElementById("enable-pdf-thumbnail-capture"),
+    downscalePdfCaptureImagesCheckbox: document.getElementById("downscale-pdf-capture-images"),
     enableNicheCheckbox: document.getElementById("enable-niche"),
     experimentalSection: document.getElementById("experimental-section"),
     experimentalArrow: document.getElementById("experimental-arrow"),
@@ -701,11 +730,23 @@ const pdfViewer = {
     pageShells: new Map(),
     pageCanvases: new Map(),
     pageTextLayers: new Map(),
+    pageOverlayLayers: new Map(),
     pageBaseSizes: new Map(),
     pageRenderTasks: new Map(),
     pageTextLayerTasks: new Map(),
     pageTextCache: new Map(),
     pageTextPromises: new Map(),
+    pageTextGeometryCache: new Map(),
+    pageTextGeometryPromises: new Map(),
+    toolMode: "none",
+    toolSession: null,
+    copyRegionPageNumber: 0,
+    copyRegionRect: null,
+    capturePreset: "thumbnail",
+    capturePageNumber: 0,
+    captureRect: null,
+    previewFramePending: false,
+    zenMode: false,
 };
 
 let pdfJsLibPromise = null;
@@ -905,6 +946,30 @@ function setNightFilterTargetFilter(filterValue) {
     });
 }
 
+function forEachNightFilterControlSet(callback) {
+    [
+        {
+            enabled: dom.nightFilterEnabled,
+            controls: dom.nightFilterControls,
+            mode: dom.nightFilterMode,
+            strengthSlider: dom.nightFilterStrengthSlider,
+            strengthValue: dom.nightFilterStrengthValue,
+        },
+        {
+            enabled: dom.pdfNightFilterEnabled,
+            controls: dom.pdfNightFilterControls,
+            mode: dom.pdfNightFilterMode,
+            strengthSlider: dom.pdfNightFilterStrengthSlider,
+            strengthValue: dom.pdfNightFilterStrengthValue,
+        },
+    ].forEach((controlSet) => {
+        if (!controlSet.enabled && !controlSet.controls && !controlSet.mode && !controlSet.strengthSlider && !controlSet.strengthValue) {
+            return;
+        }
+        callback(controlSet);
+    });
+}
+
 function applyNightFilter(modeValue, strengthValue) {
     const mode = normalizeNightFilterMode(modeValue);
     const strength = clampNightFilterStrength(strengthValue);
@@ -913,9 +978,12 @@ function applyNightFilter(modeValue, strengthValue) {
     state.nightFilterMode = mode;
     state.nightFilterStrength = strength;
 
-    if (dom.nightFilterMode) dom.nightFilterMode.value = mode;
-    if (dom.nightFilterStrengthSlider) dom.nightFilterStrengthSlider.value = String(strength);
-    if (dom.nightFilterStrengthValue) dom.nightFilterStrengthValue.textContent = String(strength);
+    forEachNightFilterControlSet((controlSet) => {
+        if (controlSet.enabled) controlSet.enabled.checked = state.nightFilterEnabled;
+        if (controlSet.mode) controlSet.mode.value = mode;
+        if (controlSet.strengthSlider) controlSet.strengthSlider.value = String(strength);
+        if (controlSet.strengthValue) controlSet.strengthValue.textContent = String(strength);
+    });
 
     if (!state.nightFilterEnabled || strength <= 0) {
         setNightFilterTargetFilter("");
@@ -1013,12 +1081,43 @@ function updateTagTintControlVisibility() {
 }
 
 function updateNightFilterControlVisibility() {
-    if (!dom.nightFilterControls) return;
     const show = Boolean(state.nightFilterEnabled);
-    dom.nightFilterControls.classList.toggle("hidden", !show);
-    dom.nightFilterControls.querySelectorAll("input, button, select, textarea").forEach((el) => {
-        el.disabled = !show;
+    forEachNightFilterControlSet((controlSet) => {
+        if (controlSet.enabled) controlSet.enabled.checked = state.nightFilterEnabled;
+        if (!controlSet.controls) return;
+        controlSet.controls.classList.toggle("hidden", !show);
+        controlSet.controls.querySelectorAll("input, button, select, textarea").forEach((el) => {
+            el.disabled = !show;
+        });
     });
+}
+
+function bindNightFilterControlSet(controlSet) {
+    if (controlSet.enabled) {
+        controlSet.enabled.checked = state.nightFilterEnabled;
+        controlSet.enabled.addEventListener("change", () => {
+            state.nightFilterEnabled = controlSet.enabled.checked;
+            window.localStorage.setItem(NIGHT_FILTER_ENABLED_KEY, state.nightFilterEnabled ? "true" : "false");
+            updateNightFilterControlVisibility();
+            applyNightFilter(state.nightFilterMode, state.nightFilterStrength);
+        });
+    }
+    if (controlSet.mode) {
+        controlSet.mode.value = state.nightFilterMode;
+        controlSet.mode.addEventListener("change", () => {
+            applyNightFilter(controlSet.mode.value, state.nightFilterStrength);
+            window.localStorage.setItem("article-night-filter-mode", state.nightFilterMode);
+        });
+    }
+    if (controlSet.strengthSlider) {
+        const commitNightStrength = () => {
+            applyNightFilter(state.nightFilterMode, controlSet.strengthSlider.value);
+            window.localStorage.setItem("article-night-filter-strength", String(state.nightFilterStrength));
+        };
+        controlSet.strengthSlider.addEventListener("input", commitNightStrength);
+        controlSet.strengthSlider.addEventListener("change", commitNightStrength);
+        controlSet.strengthSlider.addEventListener("blur", commitNightStrength);
+    }
 }
 
 function applyFontFamily(value) {
@@ -2342,6 +2441,19 @@ function primaryMeta(md) {
     return bits.join(" | ");
 }
 
+function splitPdfViewerAuthorDisplayParts(authorsRaw) {
+    const normalized = normalizeWhitespace(authorsRaw);
+    if (!normalized) return [];
+    if (normalized.includes(";")) {
+        return normalized
+            .split(/\s*;\s*/)
+            .map((part) => normalizeWhitespace(part))
+            .filter(Boolean);
+    }
+    const parts = splitAuthors(normalized);
+    return parts.length > 0 ? parts : [normalized];
+}
+
 function normalizePdfZoomMode(mode) {
     if (mode === "fit-page" || mode === "custom") return mode;
     return "fit-width";
@@ -2351,6 +2463,39 @@ function clampPdfZoomScale(value) {
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) return 1;
     return Math.max(0.35, Math.min(4, numeric));
+}
+
+function normalizePdfCapturePreset(value) {
+    const preset = normalizeWhitespace(value).toLowerCase().replace(/\s+/g, "_");
+    return PDF_CAPTURE_PRESET_KEYS.has(preset) ? preset : "thumbnail";
+}
+
+function getPdfCapturePresetRatio(preset) {
+    switch (normalizePdfCapturePreset(preset)) {
+        case "square":
+            return 1;
+        case "tall":
+            return 4 / 5;
+        case "free":
+            return null;
+        case "thumbnail":
+        default:
+            return PDF_CAPTURE_THUMBNAIL_W / PDF_CAPTURE_THUMBNAIL_H;
+    }
+}
+
+function getPdfCapturePresetLabel(preset) {
+    switch (normalizePdfCapturePreset(preset)) {
+        case "square":
+            return "Square";
+        case "tall":
+            return "Tall detail";
+        case "free":
+            return "Free crop";
+        case "thumbnail":
+        default:
+            return "Thumbnail";
+    }
 }
 
 function clampPdfPage(pageNumber) {
@@ -2400,17 +2545,48 @@ function persistPdfViewerState() {
 
 function buildPdfViewerMeta(article) {
     const md = article?.metadata || {};
-    const bits = [];
     const yearText = normalizeWhitespace(md.year);
     const authorsText = normalizeWhitespace(md.authors);
     const journalText = normalizeWhitespace(md.journal);
-    if (yearText) bits.push(yearText);
-    if (authorsText) bits.push(compactAuthors(authorsText));
-    if (journalText) bits.push(journalText);
+    const authorParts = splitPdfViewerAuthorDisplayParts(authorsText);
+    const primaryBits = [];
+    const secondaryBits = [];
+    if (yearText) primaryBits.push(yearText);
+    if (journalText) secondaryBits.push(journalText);
     if (pdfViewer.pageCount > 0) {
-        bits.push(`${pdfViewer.pageCount} page${pdfViewer.pageCount === 1 ? "" : "s"}`);
+        secondaryBits.push(`${pdfViewer.pageCount} page${pdfViewer.pageCount === 1 ? "" : "s"}`);
     }
-    return bits.join(" | ");
+    return {
+        yearText: primaryBits.join(" | "),
+        authorsText,
+        authorParts,
+        secondary: secondaryBits.join(" | "),
+    };
+}
+
+function renderPdfViewerPrimaryMeta(meta) {
+    if (!dom.pdfViewerMeta) return;
+    clearNode(dom.pdfViewerMeta);
+    if (!meta) return;
+
+    if (meta.yearText) {
+        dom.pdfViewerMeta.append(document.createTextNode(meta.yearText));
+    }
+
+    const displayAuthors = meta.authorParts?.length ? meta.authorParts : (meta.authorsText ? [meta.authorsText] : []);
+    if (displayAuthors.length === 0) return;
+
+    if (meta.yearText) {
+        dom.pdfViewerMeta.append(document.createTextNode(" | "));
+    }
+
+    const firstAuthor = document.createElement("strong");
+    firstAuthor.textContent = displayAuthors[0];
+    dom.pdfViewerMeta.append(firstAuthor);
+
+    if (displayAuthors.length > 1) {
+        dom.pdfViewerMeta.append(document.createTextNode(`, ${displayAuthors.slice(1).join(", ")}`));
+    }
 }
 
 function updatePdfViewerHeader() {
@@ -2419,8 +2595,11 @@ function updatePdfViewerHeader() {
             ? (normalizeWhitespace(pdfViewer.article.metadata?.title) || pdfViewer.article.pdf_filename || "Reader")
             : "Reader";
     }
-    if (dom.pdfViewerMeta) {
-        dom.pdfViewerMeta.textContent = pdfViewer.article ? buildPdfViewerMeta(pdfViewer.article) : "";
+    const meta = pdfViewer.article ? buildPdfViewerMeta(pdfViewer.article) : null;
+    renderPdfViewerPrimaryMeta(meta);
+    if (dom.pdfViewerSubmeta) {
+        dom.pdfViewerSubmeta.textContent = meta?.secondary || "";
+        dom.pdfViewerSubmeta.classList.toggle("hidden", !meta?.secondary);
     }
 }
 
@@ -2434,6 +2613,247 @@ function setPdfViewerStatus(text = "", isWarning = false) {
 function updatePdfSearchStatus(text = "") {
     if (!dom.pdfSearchStatus) return;
     dom.pdfSearchStatus.textContent = text || "Search all pages";
+}
+
+function getPdfViewerModalCard() {
+    return dom.pdfViewerModal?.querySelector(".pdf-viewer-modal-card") || null;
+}
+
+function getPdfPageOverlayLayer(pageNumber) {
+    return pdfViewer.pageOverlayLayers.get(pageNumber) || null;
+}
+
+function getPdfPageShell(pageNumber) {
+    return pdfViewer.pageShells.get(pageNumber) || null;
+}
+
+function clampPdfToolRect(rect, bounds, minimum = 18) {
+    const minWidth = Math.max(1, minimum);
+    const minHeight = Math.max(1, minimum);
+    const maxWidth = Math.max(minWidth, bounds.width);
+    const maxHeight = Math.max(minHeight, bounds.height);
+    const width = Math.min(Math.max(rect.width, minWidth), maxWidth);
+    const height = Math.min(Math.max(rect.height, minHeight), maxHeight);
+    const left = Math.min(Math.max(rect.left, 0), Math.max(0, bounds.width - width));
+    const top = Math.min(Math.max(rect.top, 0), Math.max(0, bounds.height - height));
+    return { left, top, width, height };
+}
+
+function getPdfPageBounds(pageNumber) {
+    const shell = getPdfPageShell(pageNumber);
+    if (!shell) return { width: 0, height: 0 };
+    return {
+        width: Math.max(1, shell.clientWidth || shell.offsetWidth || 0),
+        height: Math.max(1, shell.clientHeight || shell.offsetHeight || 0),
+    };
+}
+
+function createDefaultPdfCaptureRect(pageNumber, preset = pdfViewer.capturePreset, center = null) {
+    const bounds = getPdfPageBounds(pageNumber);
+    if (!bounds.width || !bounds.height) {
+        return { left: 0, top: 0, width: 0, height: 0 };
+    }
+
+    const ratio = getPdfCapturePresetRatio(preset);
+    const targetWidth = bounds.width * 0.58;
+    const targetHeight = bounds.height * 0.32;
+    let width = targetWidth;
+    let height = targetHeight;
+
+    if (ratio) {
+        width = Math.min(bounds.width * 0.72, Math.max(140, targetWidth));
+        height = width / ratio;
+        if (height > bounds.height * 0.72) {
+            height = bounds.height * 0.72;
+            width = height * ratio;
+        }
+    } else {
+        width = Math.min(bounds.width * 0.72, Math.max(150, targetWidth));
+        height = Math.min(bounds.height * 0.42, Math.max(120, targetHeight));
+    }
+
+    const desiredLeft = center
+        ? center.x - (width / 2)
+        : (bounds.width - width) / 2;
+    const desiredTop = center
+        ? center.y - (height / 2)
+        : (bounds.height - height) / 2;
+
+    return clampPdfToolRect({
+        left: desiredLeft,
+        top: desiredTop,
+        width,
+        height,
+    }, bounds, 28);
+}
+
+function clearPdfCapturePreview() {
+    if (!dom.pdfCapturePreview) return;
+    const ctx = dom.pdfCapturePreview.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, dom.pdfCapturePreview.width, dom.pdfCapturePreview.height);
+}
+
+function clearPdfToolSession() {
+    pdfViewer.toolSession = null;
+}
+
+function renderPdfPageToolOverlay(pageNumber) {
+    const overlay = getPdfPageOverlayLayer(pageNumber);
+    if (!overlay) return;
+    overlay.replaceChildren();
+
+    const copyRect = pdfViewer.toolMode === "copy-region" && pdfViewer.copyRegionPageNumber === pageNumber
+        ? pdfViewer.copyRegionRect
+        : null;
+    if (copyRect) {
+        const selectionEl = document.createElement("div");
+        selectionEl.className = "pdf-tool-box pdf-region-copy-box";
+        selectionEl.style.left = `${copyRect.left}px`;
+        selectionEl.style.top = `${copyRect.top}px`;
+        selectionEl.style.width = `${copyRect.width}px`;
+        selectionEl.style.height = `${copyRect.height}px`;
+        overlay.appendChild(selectionEl);
+    }
+
+    const captureRect = pdfViewer.capturePageNumber === pageNumber ? pdfViewer.captureRect : null;
+    if (captureRect) {
+        const captureEl = document.createElement("div");
+        captureEl.className = "pdf-tool-box pdf-capture-box";
+        captureEl.style.left = `${captureRect.left}px`;
+        captureEl.style.top = `${captureRect.top}px`;
+        captureEl.style.width = `${captureRect.width}px`;
+        captureEl.style.height = `${captureRect.height}px`;
+
+        const label = document.createElement("div");
+        label.className = "pdf-capture-box-label";
+        label.textContent = getPdfCapturePresetLabel(pdfViewer.capturePreset);
+        captureEl.appendChild(label);
+
+        ["top-left", "top-right", "bottom-left", "bottom-right"].forEach((corner) => {
+            const handle = document.createElement("div");
+            handle.className = "pdf-capture-box-handle";
+            handle.dataset.corner = corner;
+            captureEl.appendChild(handle);
+        });
+
+        overlay.appendChild(captureEl);
+    }
+}
+
+function renderPdfToolOverlays() {
+    for (let pageNumber = 1; pageNumber <= pdfViewer.pageCount; pageNumber += 1) {
+        renderPdfPageToolOverlay(pageNumber);
+    }
+}
+
+function requestPdfCapturePreviewRender() {
+    if (pdfViewer.previewFramePending) return;
+    pdfViewer.previewFramePending = true;
+    requestAnimationFrame(() => {
+        pdfViewer.previewFramePending = false;
+        renderPdfCapturePreview();
+    });
+}
+
+function syncPdfToolPanel() {
+    if (dom.pdfToolPanel) {
+        const showPanel = pdfViewer.toolMode === "copy-region" || pdfViewer.toolMode === "capture-thumbnail";
+        dom.pdfToolPanel.classList.toggle("hidden", !showPanel);
+    }
+    if (dom.pdfCopyRegionHint) {
+        dom.pdfCopyRegionHint.classList.toggle("hidden", pdfViewer.toolMode !== "copy-region");
+    }
+    if (dom.pdfCapturePanel) {
+        dom.pdfCapturePanel.classList.toggle("hidden", pdfViewer.toolMode !== "capture-thumbnail");
+    }
+    if (dom.pdfCopyRegionToggle) {
+        dom.pdfCopyRegionToggle.classList.toggle("is-active", pdfViewer.toolMode === "copy-region");
+    }
+    if (dom.pdfCaptureThumbnailToggle) {
+        dom.pdfCaptureThumbnailToggle.classList.toggle("is-active", pdfViewer.toolMode === "capture-thumbnail");
+    }
+    if (dom.pdfCapturePreset) {
+        dom.pdfCapturePreset.value = normalizePdfCapturePreset(pdfViewer.capturePreset);
+    }
+    if (dom.pdfCanvasWrap) {
+        dom.pdfCanvasWrap.classList.toggle("is-tool-active", pdfViewer.toolMode === "copy-region" || pdfViewer.toolMode === "capture-thumbnail");
+    }
+    pdfViewer.pageShells.forEach((shell) => {
+        shell.classList.toggle("is-tool-active", pdfViewer.toolMode === "copy-region" || (pdfViewer.toolMode === "capture-thumbnail" && Number.parseInt(shell.dataset.pageNumber || "", 10) === pdfViewer.capturePageNumber));
+    });
+}
+
+function setPdfZenMode(nextValue) {
+    pdfViewer.zenMode = Boolean(nextValue);
+    const card = getPdfViewerModalCard();
+    if (card) {
+        card.classList.toggle("is-zen", pdfViewer.zenMode);
+    }
+}
+
+function syncPdfExperimentalToolVisibility() {
+    if (dom.enablePdfCopyToolCheckbox) {
+        dom.enablePdfCopyToolCheckbox.checked = state.enablePdfCopyTool;
+    }
+    if (dom.enablePdfThumbnailCaptureCheckbox) {
+        dom.enablePdfThumbnailCaptureCheckbox.checked = state.enablePdfThumbnailCapture;
+    }
+    if (dom.downscalePdfCaptureImagesCheckbox) {
+        dom.downscalePdfCaptureImagesCheckbox.checked = state.downscalePdfCaptureImages;
+    }
+    if (dom.pdfCopyRegionToggle) {
+        dom.pdfCopyRegionToggle.classList.toggle("hidden", !state.enablePdfCopyTool);
+    }
+    if (dom.pdfCaptureThumbnailToggle) {
+        dom.pdfCaptureThumbnailToggle.classList.toggle("hidden", !state.enablePdfThumbnailCapture);
+    }
+    if (!state.enablePdfCopyTool && pdfViewer.toolMode === "copy-region") {
+        pdfViewer.toolMode = "none";
+        pdfViewer.copyRegionPageNumber = 0;
+        pdfViewer.copyRegionRect = null;
+        clearPdfToolSession();
+    }
+    if (!state.enablePdfThumbnailCapture && pdfViewer.toolMode === "capture-thumbnail") {
+        pdfViewer.toolMode = "none";
+        pdfViewer.capturePageNumber = 0;
+        pdfViewer.captureRect = null;
+        clearPdfCapturePreview();
+        clearPdfToolSession();
+    }
+    syncPdfToolPanel();
+    renderPdfToolOverlays();
+}
+
+function stopPdfCaptureTool() {
+    pdfViewer.capturePageNumber = 0;
+    pdfViewer.captureRect = null;
+    clearPdfCapturePreview();
+}
+
+function setPdfToolMode(mode) {
+    const nextMode = mode === "copy-region" || mode === "capture-thumbnail" ? mode : "none";
+    pdfViewer.toolMode = nextMode;
+    clearPdfToolSession();
+
+    if (nextMode !== "copy-region") {
+        pdfViewer.copyRegionPageNumber = 0;
+        pdfViewer.copyRegionRect = null;
+    }
+    if (nextMode !== "capture-thumbnail") {
+        stopPdfCaptureTool();
+    }
+
+    if (nextMode === "capture-thumbnail") {
+        const pageNumber = clampPdfPage(pdfViewer.page);
+        pdfViewer.capturePreset = normalizePdfCapturePreset(dom.pdfCapturePreset?.value || pdfViewer.capturePreset);
+        pdfViewer.capturePageNumber = pageNumber;
+        pdfViewer.captureRect = createDefaultPdfCaptureRect(pageNumber, pdfViewer.capturePreset);
+        requestPdfCapturePreviewRender();
+    }
+
+    syncPdfToolPanel();
+    renderPdfToolOverlays();
 }
 
 function clearPdfCanvas() {
@@ -2452,6 +2872,7 @@ function clearPdfCanvas() {
     pdfViewer.pageShells.clear();
     pdfViewer.pageCanvases.clear();
     pdfViewer.pageTextLayers.clear();
+    pdfViewer.pageOverlayLayers.clear();
     pdfViewer.pageBaseSizes.clear();
     pdfViewer.defaultBaseViewport = null;
 }
@@ -2500,6 +2921,8 @@ function disposePdfDocument() {
     pdfViewer.defaultBaseViewport = null;
     pdfViewer.pageTextCache.clear();
     pdfViewer.pageTextPromises.clear();
+    pdfViewer.pageTextGeometryCache.clear();
+    pdfViewer.pageTextGeometryPromises.clear();
     if (activeDoc && typeof activeDoc.destroy === "function") {
         Promise.resolve(activeDoc.destroy()).catch(() => { });
     }
@@ -2567,8 +2990,13 @@ function syncPdfViewerControls() {
     if (dom.pdfSearchPrev) dom.pdfSearchPrev.disabled = !hasMatches;
     if (dom.pdfSearchNext) dom.pdfSearchNext.disabled = !hasMatches;
     if (dom.pdfOpenExternal) dom.pdfOpenExternal.disabled = !pdfViewer.article;
+    if (dom.pdfCopyRegionToggle) dom.pdfCopyRegionToggle.disabled = !hasDoc || !state.enablePdfCopyTool;
+    if (dom.pdfCaptureThumbnailToggle) dom.pdfCaptureThumbnailToggle.disabled = !hasDoc || !state.enablePdfThumbnailCapture;
+    if (dom.pdfCaptureSave) dom.pdfCaptureSave.disabled = !hasDoc || !pdfViewer.captureRect || pdfViewer.toolMode !== "capture-thumbnail";
+    if (dom.pdfCapturePreset) dom.pdfCapturePreset.disabled = !hasDoc || pdfViewer.toolMode !== "capture-thumbnail";
 
     syncPdfPageListSelection();
+    syncPdfExperimentalToolVisibility();
     updatePdfViewerHeader();
 }
 
@@ -2585,13 +3013,94 @@ function getPdfKnownBaseSize(pageNumber) {
     return pdfViewer.pageBaseSizes.get(pageNumber) || pdfViewer.defaultBaseViewport || { width: 816, height: 1056 };
 }
 
+function capturePdfViewportAnchor(sourceEvt = null) {
+    const wrap = dom.pdfCanvasWrap;
+    if (!pdfViewer.doc || !wrap || wrap.classList.contains("hidden")) return null;
+
+    const rect = wrap.getBoundingClientRect();
+    const viewportWidth = wrap.clientWidth || rect.width || 0;
+    const viewportHeight = wrap.clientHeight || rect.height || 0;
+    const clampViewportCoord = (coord, size) => {
+        if (!Number.isFinite(coord)) return size / 2;
+        return Math.min(Math.max(coord, 0), Math.max(0, size));
+    };
+
+    const viewportX = clampViewportCoord((sourceEvt?.clientX ?? Number.NaN) - rect.left, viewportWidth);
+    const viewportY = clampViewportCoord((sourceEvt?.clientY ?? Number.NaN) - rect.top, viewportHeight);
+    const contentX = wrap.scrollLeft + viewportX;
+    const contentY = wrap.scrollTop + viewportY;
+
+    let anchorPageNumber = null;
+    let anchorShell = null;
+    for (let pageNumber = 1; pageNumber <= pdfViewer.pageCount; pageNumber += 1) {
+        const shell = pdfViewer.pageShells.get(pageNumber);
+        if (!shell) continue;
+        const shellTop = shell.offsetTop;
+        const shellBottom = shellTop + shell.offsetHeight;
+        if (contentY >= shellTop && contentY <= shellBottom) {
+            anchorPageNumber = pageNumber;
+            anchorShell = shell;
+            break;
+        }
+    }
+
+    if (!anchorShell) {
+        anchorPageNumber = clampPdfPage(pdfViewer.page);
+        anchorShell = pdfViewer.pageShells.get(anchorPageNumber) || null;
+    }
+
+    const scrollWidthRange = Math.max(0, wrap.scrollWidth - wrap.clientWidth);
+    const scrollHeightRange = Math.max(0, wrap.scrollHeight - wrap.clientHeight);
+    const anchor = {
+        viewportX,
+        viewportY,
+        scrollLeftRatio: scrollWidthRange > 0 ? wrap.scrollLeft / scrollWidthRange : 0,
+        scrollTopRatio: scrollHeightRange > 0 ? wrap.scrollTop / scrollHeightRange : 0,
+        pageNumber: anchorPageNumber,
+        relativeX: 0.5,
+        relativeY: 0.5,
+    };
+
+    if (!anchorShell) return anchor;
+
+    const shellWidth = Math.max(1, anchorShell.offsetWidth || 0);
+    const shellHeight = Math.max(1, anchorShell.offsetHeight || 0);
+    anchor.relativeX = Math.min(Math.max((contentX - anchorShell.offsetLeft) / shellWidth, 0), 1);
+    anchor.relativeY = Math.min(Math.max((contentY - anchorShell.offsetTop) / shellHeight, 0), 1);
+    return anchor;
+}
+
+function restorePdfViewportAnchor(anchor) {
+    const wrap = dom.pdfCanvasWrap;
+    if (!anchor || !wrap) return;
+
+    let nextScrollLeft = Number.NaN;
+    let nextScrollTop = Number.NaN;
+    if (anchor.pageNumber) {
+        const shell = pdfViewer.pageShells.get(anchor.pageNumber);
+        if (shell) {
+            nextScrollLeft = shell.offsetLeft + (shell.offsetWidth * anchor.relativeX) - anchor.viewportX;
+            nextScrollTop = shell.offsetTop + (shell.offsetHeight * anchor.relativeY) - anchor.viewportY;
+        }
+    }
+
+    const maxScrollLeft = Math.max(0, wrap.scrollWidth - wrap.clientWidth);
+    const maxScrollTop = Math.max(0, wrap.scrollHeight - wrap.clientHeight);
+    if (!Number.isFinite(nextScrollLeft)) nextScrollLeft = maxScrollLeft * (anchor.scrollLeftRatio || 0);
+    if (!Number.isFinite(nextScrollTop)) nextScrollTop = maxScrollTop * (anchor.scrollTopRatio || 0);
+
+    wrap.scrollLeft = Math.min(Math.max(nextScrollLeft, 0), maxScrollLeft);
+    wrap.scrollTop = Math.min(Math.max(nextScrollTop, 0), maxScrollTop);
+}
+
 function ensurePdfPageSurface(pageNumber) {
     const hasTextLayer = !ENABLE_PDF_TEXT_SELECTION || pdfViewer.pageTextLayers.has(pageNumber);
-    if (pdfViewer.pageShells.has(pageNumber) && pdfViewer.pageCanvases.has(pageNumber) && hasTextLayer) {
+    if (pdfViewer.pageShells.has(pageNumber) && pdfViewer.pageCanvases.has(pageNumber) && hasTextLayer && pdfViewer.pageOverlayLayers.has(pageNumber)) {
         return {
             shell: pdfViewer.pageShells.get(pageNumber),
             canvas: pdfViewer.pageCanvases.get(pageNumber),
             textLayer: pdfViewer.pageTextLayers.get(pageNumber) || null,
+            overlay: pdfViewer.pageOverlayLayers.get(pageNumber),
         };
     }
 
@@ -2610,6 +3119,10 @@ function ensurePdfPageSurface(pageNumber) {
         textLayer.dataset.pageNumber = String(pageNumber);
     }
 
+    const overlay = document.createElement("div");
+    overlay.className = "pdf-page-overlay-layer";
+    overlay.dataset.pageNumber = String(pageNumber);
+
     const label = document.createElement("div");
     label.className = "pdf-page-label";
     label.textContent = `Page ${pageNumber}`;
@@ -2618,6 +3131,7 @@ function ensurePdfPageSurface(pageNumber) {
     if (textLayer) {
         shell.appendChild(textLayer);
     }
+    shell.appendChild(overlay);
     shell.appendChild(label);
     dom.pdfCanvasWrap.appendChild(shell);
     pdfViewer.pageShells.set(pageNumber, shell);
@@ -2625,7 +3139,9 @@ function ensurePdfPageSurface(pageNumber) {
     if (textLayer) {
         pdfViewer.pageTextLayers.set(pageNumber, textLayer);
     }
-    return { shell, canvas, textLayer };
+    pdfViewer.pageOverlayLayers.set(pageNumber, overlay);
+    renderPdfPageToolOverlay(pageNumber);
+    return { shell, canvas, textLayer, overlay };
 }
 
 function applyPdfPageSurfaceSize(pageNumber) {
@@ -2637,11 +3153,35 @@ function applyPdfPageSurfaceSize(pageNumber) {
     const baseSize = getPdfKnownBaseSize(pageNumber);
     const width = Math.max(1, Math.floor(baseSize.width * scale));
     const height = Math.max(1, Math.floor(baseSize.height * scale));
+    const previousWidth = shell.offsetWidth || shell.clientWidth || 0;
+    const previousHeight = shell.offsetHeight || shell.clientHeight || 0;
     shell.style.width = `${width}px`;
     shell.style.minHeight = `${height}px`;
     shell.style.height = `${height}px`;
     canvas.style.width = `${width}px`;
     canvas.style.height = `${height}px`;
+
+    if (previousWidth > 0 && previousHeight > 0 && (previousWidth !== width || previousHeight !== height)) {
+        const scaleX = width / previousWidth;
+        const scaleY = height / previousHeight;
+        const bounds = { width, height };
+        if (pdfViewer.capturePageNumber === pageNumber && pdfViewer.captureRect) {
+            pdfViewer.captureRect = clampPdfToolRect({
+                left: pdfViewer.captureRect.left * scaleX,
+                top: pdfViewer.captureRect.top * scaleY,
+                width: pdfViewer.captureRect.width * scaleX,
+                height: pdfViewer.captureRect.height * scaleY,
+            }, bounds, 28);
+        }
+        if (pdfViewer.copyRegionPageNumber === pageNumber && pdfViewer.copyRegionRect) {
+            pdfViewer.copyRegionRect = clampPdfToolRect({
+                left: pdfViewer.copyRegionRect.left * scaleX,
+                top: pdfViewer.copyRegionRect.top * scaleY,
+                width: pdfViewer.copyRegionRect.width * scaleX,
+                height: pdfViewer.copyRegionRect.height * scaleY,
+            }, bounds, 8);
+        }
+    }
 }
 
 function buildPdfPageSurfaces() {
@@ -2651,6 +3191,7 @@ function buildPdfPageSurfaces() {
         ensurePdfPageSurface(pageNumber);
         applyPdfPageSurfaceSize(pageNumber);
     }
+    renderPdfToolOverlays();
 }
 
 function invalidatePdfPageRenders() {
@@ -2768,6 +3309,9 @@ async function renderPdfPageSurface(pageNumber) {
         shell.dataset.renderKey = renderKey;
         shell.classList.remove("is-error");
         shell.classList.add("is-rendered");
+        if (pdfViewer.capturePageNumber === pageNumber) {
+            requestPdfCapturePreviewRender();
+        }
     } catch (err) {
         if (err?.name === "RenderingCancelledException" || err?.name === "AbortException") return;
         shell.classList.add("is-error");
@@ -2827,6 +3371,600 @@ function renderPdfPageList() {
     syncPdfPageListSelection();
 }
 
+function getPdfPageNumberFromEventTarget(target) {
+    const shell = target instanceof HTMLElement ? target.closest(".pdf-page-shell") : null;
+    if (!shell) return null;
+    const pageNumber = Number.parseInt(shell.dataset.pageNumber || "", 10);
+    return Number.isFinite(pageNumber) ? pageNumber : null;
+}
+
+function getPdfLocalPoint(pageNumber, clientX, clientY) {
+    const shell = getPdfPageShell(pageNumber);
+    if (!shell) return null;
+    const bounds = getPdfPageBounds(pageNumber);
+    const rect = shell.getBoundingClientRect();
+    return {
+        x: Math.min(Math.max(clientX - rect.left, 0), bounds.width),
+        y: Math.min(Math.max(clientY - rect.top, 0), bounds.height),
+        bounds,
+    };
+}
+
+function isPointInsidePdfRect(point, rect) {
+    if (!point || !rect) return false;
+    return point.x >= rect.left
+        && point.x <= (rect.left + rect.width)
+        && point.y >= rect.top
+        && point.y <= (rect.top + rect.height);
+}
+
+function getPdfCaptureCornerAtPoint(point, rect, tolerance = 18) {
+    if (!point || !rect) return null;
+    const corners = [
+        { key: "top-left", x: rect.left, y: rect.top },
+        { key: "top-right", x: rect.left + rect.width, y: rect.top },
+        { key: "bottom-left", x: rect.left, y: rect.top + rect.height },
+        { key: "bottom-right", x: rect.left + rect.width, y: rect.top + rect.height },
+    ];
+    const hit = corners.find((corner) => Math.hypot(point.x - corner.x, point.y - corner.y) <= tolerance);
+    return hit?.key || null;
+}
+
+function buildPdfSelectionRect(startX, startY, currentX, currentY, bounds, minimum = 8) {
+    return clampPdfToolRect({
+        left: Math.min(startX, currentX),
+        top: Math.min(startY, currentY),
+        width: Math.abs(currentX - startX),
+        height: Math.abs(currentY - startY),
+    }, bounds, minimum);
+}
+
+function buildPdfCaptureRectFromCorner(corner, anchorX, anchorY, point, ratio, bounds, minimum = 28) {
+    if (!ratio) {
+        switch (corner) {
+            case "top-left":
+                return clampPdfToolRect({
+                    left: point.x,
+                    top: point.y,
+                    width: anchorX - point.x,
+                    height: anchorY - point.y,
+                }, bounds, minimum);
+            case "top-right":
+                return clampPdfToolRect({
+                    left: anchorX,
+                    top: point.y,
+                    width: point.x - anchorX,
+                    height: anchorY - point.y,
+                }, bounds, minimum);
+            case "bottom-left":
+                return clampPdfToolRect({
+                    left: point.x,
+                    top: anchorY,
+                    width: anchorX - point.x,
+                    height: point.y - anchorY,
+                }, bounds, minimum);
+            case "bottom-right":
+            default:
+                return clampPdfToolRect({
+                    left: anchorX,
+                    top: anchorY,
+                    width: point.x - anchorX,
+                    height: point.y - anchorY,
+                }, bounds, minimum);
+        }
+    }
+
+    const leftSide = corner.includes("left");
+    const topSide = corner.includes("top");
+    const dx = leftSide ? anchorX - point.x : point.x - anchorX;
+    const dy = topSide ? anchorY - point.y : point.y - anchorY;
+    let width = Math.max(minimum, dx);
+    let height = width / ratio;
+    if (height > dy) {
+        height = Math.max(minimum, dy);
+        width = height * ratio;
+    }
+
+    const left = leftSide ? anchorX - width : anchorX;
+    const top = topSide ? anchorY - height : anchorY;
+    return clampPdfToolRect({ left, top, width, height }, bounds, minimum);
+}
+
+function movePdfCaptureRect(rect, point, bounds, offsetX, offsetY) {
+    if (!rect || !point) return rect;
+    return clampPdfToolRect({
+        left: point.x - offsetX,
+        top: point.y - offsetY,
+        width: rect.width,
+        height: rect.height,
+    }, bounds, 28);
+}
+
+function getPdfCaptureSourceRect(pageNumber, cropRect) {
+    const canvas = pdfViewer.pageCanvases.get(pageNumber);
+    const shell = getPdfPageShell(pageNumber);
+    if (!canvas || !shell || !cropRect) return null;
+    const scaleX = canvas.width / Math.max(1, shell.clientWidth || shell.offsetWidth || 1);
+    const scaleY = canvas.height / Math.max(1, shell.clientHeight || shell.offsetHeight || 1);
+    return {
+        x: Math.max(0, Math.floor(cropRect.left * scaleX)),
+        y: Math.max(0, Math.floor(cropRect.top * scaleY)),
+        width: Math.max(1, Math.floor(cropRect.width * scaleX)),
+        height: Math.max(1, Math.floor(cropRect.height * scaleY)),
+    };
+}
+
+function drawImageRegionFit(ctx, image, srcRect, targetWidth, targetHeight, mode = "contain") {
+    const srcWidth = Math.max(1, srcRect.width);
+    const srcHeight = Math.max(1, srcRect.height);
+    const scale = mode === "cover"
+        ? Math.max(targetWidth / srcWidth, targetHeight / srcHeight)
+        : Math.min(targetWidth / srcWidth, targetHeight / srcHeight);
+    const drawWidth = srcWidth * scale;
+    const drawHeight = srcHeight * scale;
+    const dx = (targetWidth - drawWidth) / 2;
+    const dy = (targetHeight - drawHeight) / 2;
+    ctx.drawImage(
+        image,
+        srcRect.x,
+        srcRect.y,
+        srcWidth,
+        srcHeight,
+        dx,
+        dy,
+        drawWidth,
+        drawHeight,
+    );
+}
+
+function renderPdfCapturePreview() {
+    if (!dom.pdfCapturePreview) return;
+    const canvas = dom.pdfCapturePreview;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const pageNumber = pdfViewer.capturePageNumber;
+    const cropRect = pdfViewer.captureRect;
+    const sourceCanvas = pdfViewer.pageCanvases.get(pageNumber);
+    const sourceRect = getPdfCaptureSourceRect(pageNumber, cropRect);
+    if (!sourceCanvas || !sourceRect) return;
+
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.save();
+    ctx.filter = "blur(20px) brightness(0.62)";
+    drawImageRegionFit(ctx, sourceCanvas, sourceRect, canvas.width, canvas.height, "cover");
+    ctx.restore();
+    ctx.fillStyle = "rgba(8, 18, 28, 0.14)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    drawImageRegionFit(ctx, sourceCanvas, sourceRect, canvas.width, canvas.height, "contain");
+}
+
+function buildPdfCaptureSourceCanvas(pageNumber, cropRect) {
+    const sourceCanvas = pdfViewer.pageCanvases.get(pageNumber);
+    const sourceRect = getPdfCaptureSourceRect(pageNumber, cropRect);
+    if (!sourceCanvas || !sourceRect) return null;
+
+    const output = document.createElement("canvas");
+    output.width = sourceRect.width;
+    output.height = sourceRect.height;
+    const ctx = output.getContext("2d");
+    if (!ctx) return null;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(
+        sourceCanvas,
+        sourceRect.x,
+        sourceRect.y,
+        sourceRect.width,
+        sourceRect.height,
+        0,
+        0,
+        output.width,
+        output.height,
+    );
+
+    if (!state.downscalePdfCaptureImages) return output;
+
+    const maxDimension = Math.max(output.width, output.height);
+    const totalPixels = output.width * output.height;
+    if (maxDimension <= PDF_CAPTURE_MAX_DIMENSION && totalPixels <= PDF_CAPTURE_MAX_PIXELS) {
+        return output;
+    }
+
+    const scale = Math.min(
+        PDF_CAPTURE_MAX_DIMENSION / Math.max(1, maxDimension),
+        Math.sqrt(PDF_CAPTURE_MAX_PIXELS / Math.max(1, totalPixels)),
+    );
+    if (!Number.isFinite(scale) || scale >= 1) return output;
+
+    const downscaled = document.createElement("canvas");
+    downscaled.width = Math.max(1, Math.floor(output.width * scale));
+    downscaled.height = Math.max(1, Math.floor(output.height * scale));
+    const downscaledCtx = downscaled.getContext("2d");
+    if (!downscaledCtx) return output;
+    downscaledCtx.imageSmoothingEnabled = true;
+    downscaledCtx.imageSmoothingQuality = "high";
+    downscaledCtx.drawImage(output, 0, 0, downscaled.width, downscaled.height);
+    return downscaled;
+}
+
+async function canvasToBlob(canvas, type = "image/jpeg", quality = 0.92) {
+    return new Promise((resolve, reject) => {
+        canvas.toBlob((blob) => {
+            if (!blob) {
+                reject(new Error("Canvas export failed."));
+                return;
+            }
+            resolve(blob);
+        }, type, quality);
+    });
+}
+
+function transformPdfPoint(matrix, x, y) {
+    return {
+        x: (matrix[0] * x) + (matrix[2] * y) + matrix[4],
+        y: (matrix[1] * x) + (matrix[3] * y) + matrix[5],
+    };
+}
+
+function rectsIntersect(a, b) {
+    return a.left < (b.left + b.width)
+        && (a.left + a.width) > b.left
+        && a.top < (b.top + b.height)
+        && (a.top + a.height) > b.top;
+}
+
+async function ensurePdfPageTextGeometry(pageNumber) {
+    if (!pdfViewer.doc) return [];
+    const scaleKey = getPdfEffectiveScale().toFixed(4);
+    const cached = pdfViewer.pageTextGeometryCache.get(pageNumber);
+    if (cached?.scaleKey === scaleKey) {
+        return cached.items;
+    }
+
+    const promiseKey = `${pageNumber}:${scaleKey}`;
+    if (pdfViewer.pageTextGeometryPromises.has(promiseKey)) {
+        return pdfViewer.pageTextGeometryPromises.get(promiseKey);
+    }
+
+    const activeDoc = pdfViewer.doc;
+    const loadId = pdfViewer.loadRequestId;
+    const promise = (async () => {
+        const [pdfjsLib, page] = await Promise.all([
+            loadPdfJsLib(),
+            activeDoc.getPage(pageNumber),
+        ]);
+        const viewport = page.getViewport({ scale: getPdfEffectiveScale() });
+        const textContent = await page.getTextContent();
+        const items = textContent.items
+            .map((item) => {
+                if (!item || typeof item.str !== "string") return null;
+                const text = normalizeWhitespace(item.str);
+                if (!text) return null;
+                const transform = pdfjsLib.Util.transform(viewport.transform, item.transform);
+                const width = Math.max(1, Number(item.width) || 1);
+                const height = Math.max(1, Number(item.height) || 1);
+                const points = [
+                    transformPdfPoint(transform, 0, 0),
+                    transformPdfPoint(transform, width, 0),
+                    transformPdfPoint(transform, 0, height),
+                    transformPdfPoint(transform, width, height),
+                ];
+                const xs = points.map((point) => point.x);
+                const ys = points.map((point) => point.y);
+                const left = Math.min(...xs);
+                const right = Math.max(...xs);
+                const top = Math.min(...ys);
+                const bottom = Math.max(...ys);
+                return {
+                    text,
+                    rawText: item.str,
+                    left,
+                    right,
+                    top,
+                    bottom,
+                    width: Math.max(1, right - left),
+                    height: Math.max(1, bottom - top),
+                    centerY: (top + bottom) / 2,
+                };
+            })
+            .filter(Boolean);
+
+        if (loadId === pdfViewer.loadRequestId && activeDoc === pdfViewer.doc) {
+            pdfViewer.pageTextGeometryCache.set(pageNumber, { scaleKey, items });
+        }
+        return items;
+    })().finally(() => {
+        pdfViewer.pageTextGeometryPromises.delete(promiseKey);
+    });
+
+    pdfViewer.pageTextGeometryPromises.set(promiseKey, promise);
+    return promise;
+}
+
+function joinPdfRegionItems(items) {
+    if (items.length === 0) return "";
+    const lines = [];
+    let currentLine = [];
+    let currentCenterY = null;
+    let currentHeight = 0;
+
+    items.forEach((item) => {
+        if (currentLine.length === 0) {
+            currentLine.push(item);
+            currentCenterY = item.centerY;
+            currentHeight = item.height;
+            return;
+        }
+
+        const tolerance = Math.max(6, Math.max(currentHeight, item.height) * 0.65);
+        if (Math.abs(item.centerY - currentCenterY) <= tolerance) {
+            currentLine.push(item);
+            currentCenterY = (currentCenterY + item.centerY) / 2;
+            currentHeight = Math.max(currentHeight, item.height);
+            return;
+        }
+
+        lines.push(currentLine);
+        currentLine = [item];
+        currentCenterY = item.centerY;
+        currentHeight = item.height;
+    });
+
+    if (currentLine.length > 0) {
+        lines.push(currentLine);
+    }
+
+    return lines.map((line) => {
+        const sortedLine = [...line].sort((a, b) => a.left - b.left);
+        let built = "";
+        sortedLine.forEach((item, index) => {
+            if (index === 0) {
+                built = item.text;
+                return;
+            }
+            const prev = sortedLine[index - 1];
+            const gap = item.left - prev.right;
+            const separator = prev.text.endsWith("-") ? "" : (gap > Math.max(4, prev.height * 0.18) ? " " : "");
+            built += `${separator}${item.text}`;
+        });
+        return built.trim();
+    }).filter(Boolean).join("\n");
+}
+
+async function copyPdfRegionSelection(pageNumber, rect) {
+    const items = await ensurePdfPageTextGeometry(pageNumber);
+    const matches = items
+        .filter((item) => rectsIntersect(item, rect))
+        .sort((a, b) => {
+            const yDiff = a.centerY - b.centerY;
+            if (Math.abs(yDiff) > Math.max(a.height, b.height) * 0.35) {
+                return yDiff;
+            }
+            return a.left - b.left;
+        });
+    const extracted = joinPdfRegionItems(matches);
+    if (!extracted.trim()) {
+        showToast("No text found in that region.");
+        return;
+    }
+    const ok = await copyRawToClipboard(extracted);
+    showToast(ok ? "Copied PDF region text" : "Failed to copy PDF region text");
+}
+
+async function savePdfCaptureThumbnail() {
+    const article = getResolvedPdfViewerArticle();
+    if (!article?.id || !pdfViewer.captureRect || !pdfViewer.capturePageNumber) return;
+    const sourceCanvas = buildPdfCaptureSourceCanvas(pdfViewer.capturePageNumber, pdfViewer.captureRect);
+    if (!sourceCanvas) {
+        setStatus("Capture source is not ready yet.", true);
+        return;
+    }
+
+    try {
+        setStatus("Saving captured thumbnail...");
+        const blob = await canvasToBlob(sourceCanvas);
+        const file = new File([blob], `pdf-capture-${article.id}.jpg`, { type: blob.type || "image/jpeg" });
+        const updatedArticle = await uploadThumbnailForArticle(article, file);
+        if (updatedArticle?.id === article.id) {
+            pdfViewer.article = updatedArticle;
+        }
+        setPdfToolMode("none");
+        syncPdfViewerControls();
+        setStatus("Thumbnail captured from PDF page.");
+    } catch (err) {
+        const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
+        setStatus(`Failed to capture thumbnail: ${message}`, true);
+    }
+}
+
+function handlePdfCanvasPointerDown(evt) {
+    if (!isPdfViewerOpen()) return;
+    if (evt.button !== 0) return;
+    if (pdfViewer.toolMode !== "copy-region" && pdfViewer.toolMode !== "capture-thumbnail") return;
+
+    const pageNumber = getPdfPageNumberFromEventTarget(evt.target);
+    if (!pageNumber) return;
+    const point = getPdfLocalPoint(pageNumber, evt.clientX, evt.clientY);
+    if (!point) return;
+
+    evt.preventDefault();
+    evt.stopPropagation();
+    if (typeof evt.stopImmediatePropagation === "function") evt.stopImmediatePropagation();
+
+    if (pdfViewer.toolMode === "copy-region") {
+        pdfViewer.copyRegionPageNumber = pageNumber;
+        pdfViewer.copyRegionRect = { left: point.x, top: point.y, width: 1, height: 1 };
+        pdfViewer.toolSession = {
+            kind: "copy-region",
+            pageNumber,
+            startX: point.x,
+            startY: point.y,
+            pointerId: evt.pointerId,
+        };
+        renderPdfToolOverlays();
+        return;
+    }
+
+    pdfViewer.capturePreset = normalizePdfCapturePreset(dom.pdfCapturePreset?.value || pdfViewer.capturePreset);
+    if (pageNumber !== pdfViewer.capturePageNumber || !pdfViewer.captureRect) {
+        pdfViewer.capturePageNumber = pageNumber;
+        pdfViewer.captureRect = createDefaultPdfCaptureRect(pageNumber, pdfViewer.capturePreset, point);
+    }
+
+    const ratio = getPdfCapturePresetRatio(pdfViewer.capturePreset);
+    const bounds = point.bounds;
+    const existingRect = pdfViewer.captureRect;
+    const corner = getPdfCaptureCornerAtPoint(point, existingRect);
+    if (corner) {
+        const anchorX = corner.includes("left") ? (existingRect.left + existingRect.width) : existingRect.left;
+        const anchorY = corner.includes("top") ? (existingRect.top + existingRect.height) : existingRect.top;
+        pdfViewer.toolSession = {
+            kind: "capture-thumbnail",
+            action: "resize",
+            pageNumber,
+            pointerId: evt.pointerId,
+            corner,
+            anchorX,
+            anchorY,
+            bounds,
+            ratio,
+        };
+    } else if (isPointInsidePdfRect(point, existingRect)) {
+        pdfViewer.toolSession = {
+            kind: "capture-thumbnail",
+            action: "move",
+            pageNumber,
+            pointerId: evt.pointerId,
+            bounds,
+            offsetX: point.x - existingRect.left,
+            offsetY: point.y - existingRect.top,
+        };
+    } else {
+        pdfViewer.captureRect = { left: point.x, top: point.y, width: 1, height: 1 };
+        pdfViewer.toolSession = {
+            kind: "capture-thumbnail",
+            action: "create",
+            pageNumber,
+            pointerId: evt.pointerId,
+            bounds,
+            ratio,
+            anchorX: point.x,
+            anchorY: point.y,
+            corner: "bottom-right",
+        };
+    }
+    renderPdfToolOverlays();
+    requestPdfCapturePreviewRender();
+}
+
+function handlePdfToolPointerMove(evt) {
+    if (!pdfViewer.toolSession) return;
+    const session = pdfViewer.toolSession;
+    if (typeof session.pointerId === "number" && typeof evt.pointerId === "number" && session.pointerId !== evt.pointerId) {
+        return;
+    }
+
+    const point = getPdfLocalPoint(session.pageNumber, evt.clientX, evt.clientY);
+    if (!point) return;
+
+    evt.preventDefault();
+    if (session.kind === "copy-region") {
+        pdfViewer.copyRegionRect = buildPdfSelectionRect(
+            session.startX,
+            session.startY,
+            point.x,
+            point.y,
+            point.bounds,
+            8,
+        );
+        renderPdfToolOverlays();
+        return;
+    }
+
+    if (session.kind !== "capture-thumbnail") return;
+    if (session.action === "move") {
+        pdfViewer.captureRect = movePdfCaptureRect(
+            pdfViewer.captureRect,
+            point,
+            session.bounds,
+            session.offsetX,
+            session.offsetY,
+        );
+    } else {
+        if (session.action === "create" && !session.ratio) {
+            pdfViewer.captureRect = buildPdfSelectionRect(
+                session.anchorX,
+                session.anchorY,
+                point.x,
+                point.y,
+                session.bounds,
+                28,
+            );
+            renderPdfToolOverlays();
+            requestPdfCapturePreviewRender();
+            return;
+        }
+        const activeCorner = session.action === "create"
+            ? `${point.y < session.anchorY ? "top" : "bottom"}-${point.x < session.anchorX ? "left" : "right"}`
+            : session.corner;
+        pdfViewer.captureRect = buildPdfCaptureRectFromCorner(
+            activeCorner,
+            session.anchorX,
+            session.anchorY,
+            point,
+            session.ratio,
+            session.bounds,
+            28,
+        );
+    }
+    renderPdfToolOverlays();
+    requestPdfCapturePreviewRender();
+}
+
+function handlePdfToolPointerUp(evt) {
+    if (!pdfViewer.toolSession) return;
+    const session = pdfViewer.toolSession;
+    if (typeof session.pointerId === "number" && typeof evt.pointerId === "number" && session.pointerId !== evt.pointerId) {
+        return;
+    }
+
+    const finalRect = session.kind === "copy-region" ? pdfViewer.copyRegionRect : pdfViewer.captureRect;
+    clearPdfToolSession();
+
+    if (session.kind === "copy-region") {
+        if (!finalRect || finalRect.width < 12 || finalRect.height < 12) {
+            pdfViewer.copyRegionRect = null;
+            pdfViewer.copyRegionPageNumber = 0;
+            renderPdfToolOverlays();
+            return;
+        }
+        copyPdfRegionSelection(session.pageNumber, finalRect).catch((err) => {
+            const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
+            setStatus(`Failed to copy PDF region: ${message}`, true);
+        });
+        renderPdfToolOverlays();
+        return;
+    }
+
+    if (!finalRect || finalRect.width < 12 || finalRect.height < 12) {
+        pdfViewer.captureRect = createDefaultPdfCaptureRect(session.pageNumber, pdfViewer.capturePreset);
+    }
+    renderPdfToolOverlays();
+    requestPdfCapturePreviewRender();
+}
+
+function handlePdfViewerDoubleClick(evt) {
+    if (!isPdfViewerOpen()) return;
+    if (pdfViewer.toolMode === "copy-region" || pdfViewer.toolMode === "capture-thumbnail") return;
+    if (!(evt.target instanceof HTMLElement)) return;
+    if (!evt.target.closest(".pdf-page-shell, .pdf-canvas-wrap")) return;
+    evt.preventDefault();
+    setPdfZenMode(!pdfViewer.zenMode);
+}
+
 async function loadPdfJsLib() {
     if (!pdfJsLibPromise) {
         pdfJsLibPromise = import(new URL("./vendor/pdf.min.mjs", window.location.href).href)
@@ -2860,7 +3998,7 @@ function getPdfFitScale(baseViewport, mode) {
     return clampPdfZoomScale(mode === "fit-page" ? fitPage : fitWidth);
 }
 
-async function renderActivePdfPage({ scrollToTop = true } = {}) {
+async function renderActivePdfPage({ scrollToTop = true, anchor = null } = {}) {
     if (!pdfViewer.doc) return;
 
     pdfViewer.renderRequestId += 1;
@@ -2870,9 +4008,14 @@ async function renderActivePdfPage({ scrollToTop = true } = {}) {
 
     if (scrollToTop) {
         scrollPdfPageIntoView(clampPdfPage(pdfViewer.page), "auto");
+    } else if (anchor) {
+        restorePdfViewportAnchor(anchor);
     }
 
     renderVisiblePdfPages();
+    if (pdfViewer.toolMode === "capture-thumbnail") {
+        requestPdfCapturePreviewRender();
+    }
     setPdfViewerStatus("");
     persistPdfViewerState();
     syncPdfViewerControls();
@@ -2888,22 +4031,22 @@ async function goToPdfPage(pageNumber, options = {}) {
     renderVisiblePdfPages();
 }
 
-function setPdfZoomMode(mode) {
+function setPdfZoomMode(mode, anchor = capturePdfViewportAnchor()) {
     if (!pdfViewer.doc) return;
     pdfViewer.zoomMode = normalizePdfZoomMode(mode);
     syncPdfViewerControls();
-    renderActivePdfPage({ scrollToTop: false }).catch((err) => {
+    renderActivePdfPage({ scrollToTop: false, anchor }).catch((err) => {
         const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
         setStatus(`Failed to adjust zoom: ${message}`, true);
     });
 }
 
-function setPdfCustomZoom(nextScale) {
+function setPdfCustomZoom(nextScale, anchor = capturePdfViewportAnchor()) {
     if (!pdfViewer.doc) return;
     pdfViewer.zoomMode = "custom";
     pdfViewer.zoomScale = clampPdfZoomScale(nextScale);
     syncPdfViewerControls();
-    renderActivePdfPage({ scrollToTop: false }).catch((err) => {
+    renderActivePdfPage({ scrollToTop: false, anchor }).catch((err) => {
         const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
         setStatus(`Failed to adjust zoom: ${message}`, true);
     });
@@ -2927,14 +4070,16 @@ function handlePdfViewerGlobalWheel(evt) {
     if (!isPdfViewerOpen()) return;
     evt.preventDefault();
     evt.stopPropagation();
+    if (typeof evt.stopImmediatePropagation === "function") evt.stopImmediatePropagation();
     const wrap = dom.pdfCanvasWrap;
     if (!wrap || wrap.classList.contains("hidden")) return;
 
     if (evt.ctrlKey) {
         if (!pdfViewer.doc) return;
+        const anchor = capturePdfViewportAnchor(evt);
         const currentScale = clampPdfZoomScale(pdfViewer.zoomScale);
         const multiplier = Math.exp((-evt.deltaY || 0) * 0.0015);
-        setPdfCustomZoom(currentScale * multiplier);
+        setPdfCustomZoom(currentScale * multiplier, anchor);
         return;
     }
 
@@ -3131,6 +4276,8 @@ async function openPdfInternal(article) {
 
     disposePdfDocument();
     resetPdfSearchState({ clearInput: true });
+    setPdfZenMode(false);
+    setPdfToolMode("none");
     clearPdfCanvas();
     clearNode(dom.pdfPageList);
     if (dom.pdfCanvasWrap) {
@@ -3147,6 +4294,7 @@ async function openPdfInternal(article) {
     syncPdfViewerControls();
     setPdfViewerStatus("Loading PDF...");
     dom.pdfViewerModal.classList.remove("hidden");
+    syncPdfExperimentalToolVisibility();
 
     try {
         const [pdfjsLib, base64Data] = await Promise.all([
@@ -3209,6 +4357,8 @@ function closePdfViewer() {
     pdfViewer.loadRequestId += 1;
     pdfViewer.renderRequestId += 1;
     disposePdfDocument();
+    setPdfToolMode("none");
+    setPdfZenMode(false);
     pdfViewer.article = null;
     pdfViewer.page = 1;
     pdfViewer.zoomMode = "fit-width";
@@ -5138,7 +6288,7 @@ async function readClipboardImageAsFile() {
 
 async function uploadThumbnailForArticle(article, file) {
     if (!article) return;
-    await replaceThumbnailImage(article, file);
+    return replaceThumbnailImage(article, file);
 }
 
 async function pasteClipboardThumbnailToArticle(article) {
@@ -5345,6 +6495,7 @@ function wireEvents() {
     applyFontFamily(state.fontFamily);
     applyNightFilter(state.nightFilterMode, state.nightFilterStrength);
     updateNightFilterControlVisibility();
+    syncPdfExperimentalToolVisibility();
     updateTagTintControlVisibility();
     if (dom.colorIntensitySlider) {
         dom.colorIntensitySlider.value = String(state.colorIntensity);
@@ -5569,6 +6720,34 @@ function wireEvents() {
         dom.showDupeWarnings.addEventListener("change", () => {
             state.showDupeWarnings = dom.showDupeWarnings.checked;
             window.localStorage.setItem("article-dupe-warnings", state.showDupeWarnings ? "true" : "false");
+        });
+    }
+
+    if (dom.enablePdfCopyToolCheckbox) {
+        dom.enablePdfCopyToolCheckbox.checked = state.enablePdfCopyTool;
+        dom.enablePdfCopyToolCheckbox.addEventListener("change", () => {
+            state.enablePdfCopyTool = dom.enablePdfCopyToolCheckbox.checked;
+            window.localStorage.setItem(PDF_COPY_TOOL_ENABLED_KEY, state.enablePdfCopyTool ? "true" : "false");
+            syncPdfExperimentalToolVisibility();
+            syncPdfViewerControls();
+        });
+    }
+
+    if (dom.enablePdfThumbnailCaptureCheckbox) {
+        dom.enablePdfThumbnailCaptureCheckbox.checked = state.enablePdfThumbnailCapture;
+        dom.enablePdfThumbnailCaptureCheckbox.addEventListener("change", () => {
+            state.enablePdfThumbnailCapture = dom.enablePdfThumbnailCaptureCheckbox.checked;
+            window.localStorage.setItem(PDF_THUMBNAIL_CAPTURE_ENABLED_KEY, state.enablePdfThumbnailCapture ? "true" : "false");
+            syncPdfExperimentalToolVisibility();
+            syncPdfViewerControls();
+        });
+    }
+
+    if (dom.downscalePdfCaptureImagesCheckbox) {
+        dom.downscalePdfCaptureImagesCheckbox.checked = state.downscalePdfCaptureImages;
+        dom.downscalePdfCaptureImagesCheckbox.addEventListener("change", () => {
+            state.downscalePdfCaptureImages = dom.downscalePdfCaptureImagesCheckbox.checked;
+            window.localStorage.setItem(PDF_CAPTURE_DOWNSCALE_ENABLED_KEY, state.downscalePdfCaptureImages ? "true" : "false");
         });
     }
 
@@ -6119,31 +7298,20 @@ function wireEvents() {
             window.localStorage.setItem("article-surface-opacity", String(state.surfaceOpacity));
         });
     }
-    if (dom.nightFilterEnabled) {
-        dom.nightFilterEnabled.checked = state.nightFilterEnabled;
-        dom.nightFilterEnabled.addEventListener("change", () => {
-            state.nightFilterEnabled = dom.nightFilterEnabled.checked;
-            window.localStorage.setItem(NIGHT_FILTER_ENABLED_KEY, state.nightFilterEnabled ? "true" : "false");
-            updateNightFilterControlVisibility();
-            applyNightFilter(state.nightFilterMode, state.nightFilterStrength);
-        });
-    }
-    if (dom.nightFilterMode) {
-        dom.nightFilterMode.value = state.nightFilterMode;
-        dom.nightFilterMode.addEventListener("change", () => {
-            applyNightFilter(dom.nightFilterMode.value, state.nightFilterStrength);
-            window.localStorage.setItem("article-night-filter-mode", state.nightFilterMode);
-        });
-    }
-    if (dom.nightFilterStrengthSlider) {
-        const commitNightStrength = () => {
-            applyNightFilter(state.nightFilterMode, dom.nightFilterStrengthSlider.value);
-            window.localStorage.setItem("article-night-filter-strength", String(state.nightFilterStrength));
-        };
-        dom.nightFilterStrengthSlider.addEventListener("input", commitNightStrength);
-        dom.nightFilterStrengthSlider.addEventListener("change", commitNightStrength);
-        dom.nightFilterStrengthSlider.addEventListener("blur", commitNightStrength);
-    }
+    bindNightFilterControlSet({
+        enabled: dom.nightFilterEnabled,
+        controls: dom.nightFilterControls,
+        mode: dom.nightFilterMode,
+        strengthSlider: dom.nightFilterStrengthSlider,
+        strengthValue: dom.nightFilterStrengthValue,
+    });
+    bindNightFilterControlSet({
+        enabled: dom.pdfNightFilterEnabled,
+        controls: dom.pdfNightFilterControls,
+        mode: dom.pdfNightFilterMode,
+        strengthSlider: dom.pdfNightFilterStrengthSlider,
+        strengthValue: dom.pdfNightFilterStrengthValue,
+    });
     // Tag Filter Custom Dropdown
     dom.tagFilterBtn.addEventListener("click", (evt) => {
         evt.preventDefault();
@@ -6245,6 +7413,58 @@ function wireEvents() {
             }
         });
     }
+    if (dom.pdfCopyRegionToggle) {
+        dom.pdfCopyRegionToggle.addEventListener("click", () => {
+            if (!state.enablePdfCopyTool) return;
+            setPdfToolMode(pdfViewer.toolMode === "copy-region" ? "none" : "copy-region");
+            syncPdfViewerControls();
+        });
+    }
+    if (dom.pdfCaptureThumbnailToggle) {
+        dom.pdfCaptureThumbnailToggle.addEventListener("click", () => {
+            if (!state.enablePdfThumbnailCapture) return;
+            if (pdfViewer.toolMode === "capture-thumbnail") {
+                setPdfToolMode("none");
+                syncPdfViewerControls();
+                return;
+            }
+            renderPdfPageSurface(clampPdfPage(pdfViewer.page))
+                .catch(() => { /* best effort: live preview will update once visible render completes */ })
+                .finally(() => {
+                    setPdfToolMode("capture-thumbnail");
+                    syncPdfViewerControls();
+                });
+        });
+    }
+    if (dom.pdfCapturePreset) {
+        dom.pdfCapturePreset.value = normalizePdfCapturePreset(pdfViewer.capturePreset);
+        dom.pdfCapturePreset.addEventListener("change", () => {
+            pdfViewer.capturePreset = normalizePdfCapturePreset(dom.pdfCapturePreset.value);
+            if (pdfViewer.toolMode !== "capture-thumbnail" || !pdfViewer.capturePageNumber) return;
+            const currentRect = pdfViewer.captureRect;
+            const center = currentRect
+                ? { x: currentRect.left + (currentRect.width / 2), y: currentRect.top + (currentRect.height / 2) }
+                : null;
+            pdfViewer.captureRect = createDefaultPdfCaptureRect(pdfViewer.capturePageNumber, pdfViewer.capturePreset, center);
+            renderPdfToolOverlays();
+            requestPdfCapturePreviewRender();
+            syncPdfViewerControls();
+        });
+    }
+    if (dom.pdfCaptureSave) {
+        dom.pdfCaptureSave.addEventListener("click", () => {
+            savePdfCaptureThumbnail().catch((err) => {
+                const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
+                setStatus(`Failed to capture thumbnail: ${message}`, true);
+            });
+        });
+    }
+    if (dom.pdfCaptureCancel) {
+        dom.pdfCaptureCancel.addEventListener("click", () => {
+            setPdfToolMode("none");
+            syncPdfViewerControls();
+        });
+    }
     if (dom.pdfPrevPage) {
         dom.pdfPrevPage.addEventListener("click", () => {
             goToPdfPage(pdfViewer.page - 1).catch((err) => {
@@ -6319,7 +7539,12 @@ function wireEvents() {
     }
     if (dom.pdfCanvasWrap) {
         dom.pdfCanvasWrap.addEventListener("scroll", debouncedPdfViewerScroll, { passive: true });
+        dom.pdfCanvasWrap.addEventListener("pointerdown", handlePdfCanvasPointerDown);
+        dom.pdfCanvasWrap.addEventListener("dblclick", handlePdfViewerDoubleClick);
     }
+    window.addEventListener("pointermove", handlePdfToolPointerMove, { passive: false });
+    window.addEventListener("pointerup", handlePdfToolPointerUp, { passive: false });
+    window.addEventListener("pointercancel", handlePdfToolPointerUp, { passive: false });
     document.addEventListener("wheel", handlePdfViewerGlobalWheel, { passive: false, capture: true });
     window.addEventListener("resize", debouncedPdfViewerResize);
     dom.form.addEventListener("submit", saveMetadata);
@@ -6740,6 +7965,15 @@ function wireEvents() {
                 return;
             }
             if (dom.pdfViewerModal && !dom.pdfViewerModal.classList.contains("hidden")) {
+                if (pdfViewer.toolMode !== "none") {
+                    setPdfToolMode("none");
+                    syncPdfViewerControls();
+                    return;
+                }
+                if (pdfViewer.zenMode) {
+                    setPdfZenMode(false);
+                    return;
+                }
                 closePdfViewer();
                 return;
             }
@@ -6856,11 +8090,11 @@ function wireEvents() {
                 .map((li) => li.textContent || "")
                 .filter((line) => line.trim().length > 0);
             if (lines.length === 0) {
-                showToast("Error log is empty.");
+                showToast("Debug log is empty.");
                 return;
             }
             const ok = await copyRawToClipboard(lines.join("\n"));
-            showToast(ok ? "Error log copied to clipboard" : "Failed to copy error log");
+            showToast(ok ? "Debug log copied to clipboard" : "Failed to copy debug log");
         });
     }
     if (dom.showErrorsCheckbox) {

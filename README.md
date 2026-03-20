@@ -1050,7 +1050,7 @@ CLI warnings:
 
   - [x] save space in display -> hide the slider until the user clicks on the button
 
-- push v0.8.9
+**- push v0.8.9**
 
 ---
 
@@ -1088,7 +1088,7 @@ CLI warnings:
 
 - [x] move experimental niche system out of visibility until enabled
 
-push v0.9.0
+**push v0.9.0**
 
 ---
 
@@ -1100,8 +1100,51 @@ push v0.9.0
   - [x] filter mode -> filter (with checkbox) and unfold the options only when filter is checked
   - [x] fold tint options when 'tint by tag' is unchecked
 
-push v0.9.1
+**push v0.9.1**
 
+---
+
+?
+
+**push v0.9.2**
+
+---
+
+?
+
+**push v0.9.3**
+
+---
+
+?
+
+**push v0.9.4**
+
+---
+
+- [x] place "tag color intensity" slider under the button like the similar options
+
+**push v0.9.5**
+
+---
+
+- [x] custom PDF reader
+
+**push v0.9.6**
+
+---
+
+- [x] rename the ? menu’s Error Log label and related copy actions to Debug Log
+
+- [x] rework the PDF reader modal header layout so the reader has more side breathing room against the app edges
+
+- [x] restyled PDF reader modal (e.g., removed the page-travel button column on the left edge; increased the minimum margin between the side edges of the modal and the application window)
+
+- [x] added custom PDF reader as a separate hotkey, alt+shift (removed the file menu checkbox)
+
+- [x] get the starry night background in '?' to either cover the bottom or not cover the top
+
+*currently building v0.9.7*
 
 ---
 
@@ -1164,6 +1207,3 @@ node update-version.js <version>
 ```
 
 (e.g., node update-version.js 0.8.5)
-
-
-check out why modal doesn't appear in some themes/filters

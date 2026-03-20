@@ -1,10 +1,10 @@
 ### immediate (bug fixes, small features)
 
-- [ ] edit the NLP tag suggestions so that existing tags are visibly distinct from new tags
+- [ ] edit the tokenized tag suggestions so that existing tags are visibly distinct from new tags
   - maybe right-click replaces it with the next guess
-  - does the NLP convey any kind of confidence that can be conveyed visually?  Does that weigh on the order?
+  - does the tokenizer convey any kind of confidence that can be visualized?  Does that currently weigh on the order?
 
-- [ ] place "tag color intensity" slider under the button like the similar options
+
   
 - address why the filename not writing with underscores
 
@@ -14,6 +14,10 @@
     - [ ] but hide the checkbox in the tag dropdown while it is unchecked in the files menu
 
 - [ ] make referenced dois into columns instead of one row and several columns
+
+- [ ] get the pdf reader search function to highlight the found text
+
+- [ ] clean markup from DOI extraction (I found a <i> </i> in an article title)
 
 ### major revision features
 
@@ -25,7 +29,6 @@
   - add some startup assessment to the existing project size metrics?
   - ask someone with 1000 PDFs to test (Ben?  Kristen?)
 
-- [ ] custom PDF reader
 
 ### minor version revision features
 

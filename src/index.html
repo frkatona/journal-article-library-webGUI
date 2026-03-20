@@ -168,7 +168,19 @@
                                     <input id="long-parse" type="checkbox" />
                                     <span style="font-size:0.82rem;">Long Parse (&gt;2s PDF timeout)</span>
                                 </label>
-                                    <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                                <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                                    <input id="enable-pdf-copy-tool" type="checkbox" />
+                                    <span style="font-size:0.82rem;">Enable PDF copy tool</span>
+                                </label>
+                                <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                                    <input id="enable-pdf-thumbnail-capture" type="checkbox" />
+                                    <span style="font-size:0.82rem;">Enable PDF thumbnail capture</span>
+                                </label>
+                                <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                                    <input id="downscale-pdf-capture-images" type="checkbox" checked />
+                                    <span style="font-size:0.82rem;">Downscale large capture images</span>
+                                </label>
+                                <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
                                     <input id="enable-niche" type="checkbox" />
                                     <span style="font-size:0.82rem;">Enable niche</span>
                                 </label>
@@ -488,12 +500,15 @@
                 <div class="modal-header-title">
                     <h2 id="pdf-viewer-title">Reader</h2>
                     <span id="pdf-viewer-meta" class="meta"></span>
+                    <span id="pdf-viewer-submeta" class="meta pdf-viewer-submeta"></span>
+                    <div class="pdf-viewer-inline-actions">
+                        <button id="pdf-open-metadata" type="button" class="ghost">Edit Metadata</button>
+                        <button id="pdf-open-abstract" type="button" class="ghost">Preview Abstract</button>
+                    </div>
                 </div>
                 <div class="pdf-viewer-header-actions">
-                    <button id="pdf-open-metadata" type="button" class="ghost">Edit Metadata</button>
-                    <button id="pdf-open-abstract" type="button" class="ghost">Preview Abstract</button>
-                    <button id="pdf-open-external" type="button" class="ghost">Open Externally</button>
                     <button id="pdf-viewer-close" type="button">Close</button>
+                    <button id="pdf-open-external" type="button" class="ghost">Open Externally</button>
                 </div>
             </div>
             <div class="pdf-viewer-toolbar">
@@ -518,6 +533,58 @@
                     <button id="pdf-search-prev" type="button" class="ghost">Prev Match</button>
                     <button id="pdf-search-next" type="button" class="ghost">Next Match</button>
                     <span id="pdf-search-status" class="meta">Search all pages</span>
+                </div>
+            </div>
+            <div class="pdf-viewer-utility-bar">
+                <label class="field compact pdf-night-filter-toggle">
+                    <input id="pdf-night-filter-enabled" type="checkbox" />
+                    <span>Enable Low-light Filter</span>
+                </label>
+                <div id="pdf-night-filter-controls" class="pdf-night-filter-controls hidden">
+                    <label class="field compact pdf-night-filter-mode-field">
+                        <span>Filter Technique</span>
+                        <select id="pdf-night-filter-mode">
+                            <option value="warm">Warm</option>
+                            <option value="scalar_dimming">Scalar dimming</option>
+                            <option value="gamma_remap">Gamma re-map</option>
+                            <option value="luminance_remap">Luminance re-map</option>
+                            <option value="sigmoid_contrast">Sigmoid contrast shaping</option>
+                            <option value="soft_knee">Soft-knee compression</option>
+                        </select>
+                    </label>
+                    <label class="field compact pdf-night-filter-strength-field">
+                        <span>Filter Strength <strong id="pdf-night-filter-strength-value">0</strong>%</span>
+                        <input id="pdf-night-filter-strength-slider" type="range" min="0" max="100" step="1"
+                            value="0" />
+                    </label>
+                </div>
+                <div class="pdf-viewer-tool-actions">
+                    <button id="pdf-copy-region-toggle" type="button" class="ghost hidden">Copy Region</button>
+                    <button id="pdf-capture-thumbnail-toggle" type="button" class="ghost hidden">Capture Thumbnail</button>
+                </div>
+            </div>
+            <div id="pdf-tool-panel" class="pdf-tool-panel hidden">
+                <div id="pdf-copy-region-hint" class="meta pdf-tool-hint hidden">
+                    Drag a box on a single page to copy text from that region.
+                </div>
+                <div id="pdf-capture-panel" class="pdf-capture-panel hidden">
+                    <label class="field compact pdf-capture-preset-field">
+                        <span>Capture Preset</span>
+                        <select id="pdf-capture-preset">
+                            <option value="thumbnail">Thumbnail</option>
+                            <option value="square">Square</option>
+                            <option value="tall">Tall detail</option>
+                            <option value="free">Free crop</option>
+                        </select>
+                    </label>
+                    <div class="pdf-capture-preview-block">
+                        <span class="meta">Live Preview</span>
+                        <canvas id="pdf-capture-preview" width="420" height="260"></canvas>
+                    </div>
+                    <div class="pdf-capture-actions">
+                        <button id="pdf-capture-save" type="button">Set As Thumbnail</button>
+                        <button id="pdf-capture-cancel" type="button" class="ghost">Cancel</button>
+                    </div>
                 </div>
             </div>
             <div class="pdf-viewer-body">
@@ -649,41 +716,33 @@
 
     <!-- Hotkeys Modal -->
     <div id="hotkeys-modal" class="modal hidden" role="dialog" aria-modal="true">
-        <div class="modal-card"
-            style="max-width:420px; display:flex; flex-direction:column; height:clamp(400px,92vh,1020px); overflow:hidden; padding-bottom:0;">
-            <div class="modal-header" style="flex-shrink:0;">
+        <div class="modal-card hotkeys-modal-card">
+            <div class="modal-header hotkeys-modal-header">
                 <h2>Keyboard Shortcuts</h2>
                 <button id="hotkeys-close" class="close-btn" type="button">&times;</button>
             </div>
-            <div style="padding:12px 16px; overflow-y:auto; flex:1;">
+            <div class="hotkeys-modal-body">
                 <div id="hotkey-table-container">
                     <!-- JS-populated hotkey table -->
                 </div>
-                <div style="margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <span
-                            style="font-size: 0.8rem; color: var(--muted); font-weight: 600; letter-spacing: 0.03em;">Error
-                            Log</span>
-                        <div style="display:flex; align-items:center; gap:6px;">
-                            <button id="error-log-copy" type="button" class="ghost"
-                                style="font-size: 0.75rem; padding: 2px 6px;">Copy</button>
-                            <button id="error-log-clear" type="button" class="ghost"
-                                style="font-size: 0.75rem; padding: 2px 6px;">Clear</button>
+                <div class="hotkeys-debug-log">
+                    <div class="hotkeys-debug-log-header">
+                        <span class="hotkeys-debug-log-label">Debug Log</span>
+                        <div class="hotkeys-debug-log-actions">
+                            <button id="error-log-copy" type="button" class="ghost hotkeys-debug-log-btn">Copy</button>
+                            <button id="error-log-clear" type="button" class="ghost hotkeys-debug-log-btn">Clear</button>
                         </div>
                     </div>
-                    <ul id="error-log-list"
-                        style="margin-top: 8px; padding-left: 0; list-style: none; max-height: 100px; overflow-y: auto; font-family: monospace; font-size: 0.75rem; color: var(--danger); word-break: break-all; display: flex; flex-direction: column; gap: 4px;">
+                    <ul id="error-log-list" class="hotkeys-debug-log-list">
                     </ul>
                 </div>
             </div>
-            <div
-                style="text-align: center; border-top: 1px solid var(--line); padding: 12px 16px; background: var(--bg); flex-shrink:0;">
-                <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:10px; align-items:center;">
-                    <div id="hotkey-tip-text"
-                        style="font-size:0.78rem; color:var(--text); line-height:1.35; text-align:center;"></div>
-                    <div style="display:flex; align-items:center; justify-content:center; gap:10px;">
+            <div class="hotkeys-modal-footer">
+                <div class="hotkeys-modal-tip-stack">
+                    <div id="hotkey-tip-text" class="hotkeys-modal-tip-text"></div>
+                    <div class="hotkeys-modal-tip-row">
                         <a id="hotkey-tip-source" href="#" target="_blank" rel="noopener noreferrer"
-                            style="font-size:0.75rem; color:var(--accent); text-align:center; text-decoration:none;"></a>
+                            class="hotkeys-modal-tip-source"></a>
                         <!--
                         <button id="hotkey-tip-next" type="button" class="ghost"
                             aria-label="Next tip" title="Next tip"
@@ -691,10 +750,10 @@
                         -->
                     </div>
                 </div>
-                <div style="border-top:1px solid var(--line); opacity:0.7; margin:0 0 10px;"></div>
-                <a id="version-link" href="https://github.com/frkatona/journal-article-library-webGUI/tree/tauri"
+                <div class="hotkeys-modal-footer-separator"></div>
+                <a id="version-link" href="https://github.com/frkatona/journal-article-library-webGUI/releases"
                     target="_blank" rel="noopener noreferrer"
-                    style="font-size: 0.8rem; color: var(--muted); font-weight: 600; cursor: pointer; letter-spacing: 0.03em; text-decoration:none;">v0.9.6</a>
+                    class="hotkeys-version-link">v0.9.6</a>
             </div>
         </div>
     </div>
