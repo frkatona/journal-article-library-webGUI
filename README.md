@@ -1104,33 +1104,46 @@ CLI warnings:
 
 ---
 
-?
+- [x] give a gentle visual indicator in the metadata window when there are unsaved changes
+
+tags
+  - [x] 'experimental' files menu option to remove all of a given tag
+  - [x] 'experimental' files menu option to rename all of a given tag (e.g., 'MURI' --> 'MURI project')
+  - [x] change tag coloration to be more outline-focused.  add a slider for how far the inside color gradient should reach across the card 
 
 **push v0.9.2**
 
 ---
 
-?
+forgot about 0.9.3 LOL
 
 **push v0.9.3**
 
 ---
 
-?
+- [x] give 'remove article' button in metadata danger text
+- [x] add a gentle highlight on the article most recently selected by any means (opened in PDF, metadata modal, or abstract modal)
+- [x] place "tag color intensity" slider under the button like the similar options
 
 **push v0.9.4**
 
 ---
 
-- [x] place "tag color intensity" slider under the button like the similar options
+forgot about 0.9.5 LOL
 
 **push v0.9.5**
 
 ---
 
-- [x] custom PDF reader
+- [x] custom PDF reader production build smoke test
 
 **push v0.9.6**
+
+---
+
+- [x] restyled PDF reader modal (e.g., removed the page-travel button column on the left edge; increased the minimum margin between the side edges of the modal and the application window)
+
+**push v0.9.7**
 
 ---
 
@@ -1138,15 +1151,19 @@ CLI warnings:
 
 - [x] rework the PDF reader modal header layout so the reader has more side breathing room against the app edges
 
-- [x] restyled PDF reader modal (e.g., removed the page-travel button column on the left edge; increased the minimum margin between the side edges of the modal and the application window)
-
 - [x] added custom PDF reader as a separate hotkey, alt+shift (removed the file menu checkbox)
 
 - [x] get the starry night background in '?' to either cover the bottom or not cover the top
 
-*currently building v0.9.7*
+**push v0.9.8**
 
 ---
+
+- [x] when capturing a thumbnail, also remove make the 'copy region' button
+
+- [ ] testing why box highlight copy/paste implementation in pdf reacher is so egregious
+
+**push v0.9.9**
 
 ### think about more first
 

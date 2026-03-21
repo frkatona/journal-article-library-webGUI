@@ -4,8 +4,6 @@
   - maybe right-click replaces it with the next guess
   - does the tokenizer convey any kind of confidence that can be visualized?  Does that currently weigh on the order?
 
-
-  
 - address why the filename not writing with underscores
 
 - [ ] 'niche' filters not hiding properly
@@ -33,7 +31,6 @@
 - json -> database
   - add some startup assessment to the existing project size metrics?
   - ask someone with 1000 PDFs to test (Ben?  Kristen?)
-
 
 ### minor version revision features
 

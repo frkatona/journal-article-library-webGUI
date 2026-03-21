@@ -1522,6 +1522,30 @@ main {
   box-shadow: inset 0 0 0 1px rgba(255, 241, 211, 0.22), 0 0 0 1px rgba(245, 179, 77, 0.18);
 }
 
+.pdf-region-copy-debug-label {
+  position: absolute;
+  top: -30px;
+  left: 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(8, 20, 32, 0.84);
+  color: #eef7ff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22);
+}
+
+.pdf-copy-region-detected-hit {
+  position: absolute;
+  box-sizing: border-box;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 111, 111, 0.96);
+  background: rgba(255, 111, 111, 0.22);
+  box-shadow: inset 0 0 0 1px rgba(255, 242, 242, 0.24);
+}
+
 .pdf-region-copy-box.is-flash {
   animation: pdfRegionFlash 0.8s ease-out;
 }
@@ -1671,6 +1695,7 @@ main {
 .pdf-viewer-modal-card.is-header-folded .pdf-viewer-toolbar,
 .pdf-viewer-modal-card.is-header-folded .pdf-viewer-utility-bar,
 .pdf-viewer-modal-card.is-header-folded .pdf-tool-panel,
+.pdf-viewer-modal-card.is-header-folded .pdf-viewer-inline-actions,
 .pdf-viewer-modal-card.is-header-folded .pdf-viewer-status {
   display: none;
 }

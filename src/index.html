@@ -70,6 +70,8 @@
                 <select id="primary-sort">
                     <option value="year_desc">Year (newest)</option>
                     <option value="year_asc">Year (oldest)</option>
+                    <option value="page_count_desc">Page Count (most)</option>
+                    <option value="page_count_asc">Page Count (least)</option>
                     <option value="title_asc">Title (A-Z)</option>
                     <option value="authors_asc">Authors (A-Z)</option>
                     <option value="journal_asc">Journal (A-Z)</option>
@@ -88,6 +90,8 @@
                     <option value="title_asc">Title (A-Z)</option>
                     <option value="year_desc">Year (newest)</option>
                     <option value="year_asc">Year (oldest)</option>
+                    <option value="page_count_desc">Page Count (most)</option>
+                    <option value="page_count_asc">Page Count (least)</option>
                     <option value="authors_asc">Authors (A-Z)</option>
                     <option value="journal_asc">Journal (A-Z)</option>
                     <option value="doi_asc">DOI (A-Z)</option>
@@ -343,10 +347,18 @@
                             </span>
                             <input id="surface-opacity-slider" type="range" min="30" max="100" step="1" value="100" />
                         </div>
+                        <div class="field slider-collapsible" data-slider-field>
+                            <span data-slider-toggle
+                                style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                                <span>Default PDF Zoom <strong id="default-pdf-zoom-value">100</strong>%</span>
+                                <span class="slider-caret" aria-hidden="true">&#9656;</span>
+                            </span>
+                            <input id="default-pdf-zoom-slider" type="range" min="50" max="150" step="1" value="100" />
+                        </div>
                     </div>
                 </div>
 
-                <button id="hotkeys-btn" type="button" class="icon-toggle" aria-label="Keyboard Shortcuts"
+                <button id="hotkeys-btn" type="button" class="icon-toggle" aria-label="Hotkeys"
                     style="border-radius:50%; width: 34px; height: 34px; padding: 0; display:flex; align-items:center; justify-content:center; font-weight: bold; font-size: 1.1rem; border: 1px solid var(--line); background: var(--bg-soft); color: var(--muted);">?</button>
             </div>
     </header>
@@ -739,7 +751,7 @@
     <div id="hotkeys-modal" class="modal hidden" role="dialog" aria-modal="true">
         <div class="modal-card hotkeys-modal-card">
             <div class="modal-header hotkeys-modal-header">
-                <h2>Keyboard Shortcuts</h2>
+                <h2>Hotkeys</h2>
                 <button id="hotkeys-close" class="close-btn" type="button">&times;</button>
             </div>
             <div class="hotkeys-modal-body">

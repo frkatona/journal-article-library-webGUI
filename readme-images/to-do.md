@@ -1,18 +1,12 @@
-- [x] give a gentle visual indicator in the metadata window when there are unsaved changes
-- tags
-	- [x] 'experimental' files menu option to remove all of a given tag
-	- [x] 'experimental' files menu option to rename all of a given tag (e.g., 'MURI' --> 'MURI project')
-	- [x] change tag coloration to be more outline-focused.  add a slider for how far the inside color gradient should reach across the card 
-	- [ ] have the tag filter update when a tag is updated in metadata
-- [x] give 'remove article' button in metadata danger text
-- [x] add a gentle highlight on the article most recently selected by any means (opened in PDF, metadata modal, or abstract modal)
-- [x] generate a 'brainstorm.md' file with ideas for these potentially problematic ideas
-  - [ ] begin considering possibilities for syncing between devices
-    - button to attempt sync with a github repo?  what are merge conflict pain points and how can they be managed or predicted before a merge is attempted?
-  - [ ] button to rename the PDFs based on the formatted metadata
-  - [ ] 'all, some, none' tag filter types - allow use of each (separate columns in the dropdown?  separate dropdowns?)
-  - [ ] assign 'types' of tags as an alternative to 'niche' tags ('format', like textbook, manual, etc.?), and having a 'project' (MURI, etc.)?
 
+- [?] have the tag filter update when a tag is updated in metadata
 
+- [ ] option to add 'notes' to the abstract view as a bullet point card
 
+- [ ] when a crossref DOI request is made, print to the debug log the rolling number of requests for that time period
 
+- [ ] begin considering possibilities for syncing between devices
+  - button to attempt sync with a github repo?  what are merge conflict pain points and how can they be managed or predicted before a merge is attempted?
+- [ ] button to rename the PDFs based on the formatted metadata
+- [ ] 'all, some, none' tag filter types - allow use of each (separate columns in the dropdown?  separate dropdowns?)
+- [ ] assign 'types' of tags as an alternative to 'niche' tags ('format', like textbook, manual, etc.?), and having a 'project' (MURI, etc.)?

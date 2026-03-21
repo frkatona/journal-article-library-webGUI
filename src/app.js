@@ -32,8 +32,15 @@ const PDF_COPY_TOOL_ENABLED_KEY = "article-pdf-copy-tool-enabled";
 const PDF_THUMBNAIL_CAPTURE_ENABLED_KEY = "article-pdf-thumbnail-capture-enabled";
 const PDF_CAPTURE_DOWNSCALE_ENABLED_KEY = "article-pdf-capture-downscale-enabled";
 const PDF_STARRY_BACKGROUND_ENABLED_KEY = "article-pdf-starry-background-enabled";
+const DEFAULT_PDF_ZOOM_KEY = "article-default-pdf-zoom";
 const PDF_VIEWER_STATE_KEY = "article-pdf-viewer-state-v1";
 const ENABLE_PDF_TEXT_SELECTION = false;
+const CROSSREF_ESTIMATED_POLITE_LIMIT_PER_SECOND = 10;
+const DOI_RATE_MONITOR_WINDOW_MS = 60_000;
+const DOI_RATE_WARNING_THRESHOLD_RATIO = 0.8;
+const DOI_RATE_WARNING_MIN_SAMPLE_SIZE = 6;
+const DOI_RATE_WARNING_MIN_OBSERVATION_MS = 10_000;
+const DOI_RATE_WARNING_COOLDOWN_MS = 20_000;
 const PDF_CAPTURE_PRESET_KEYS = new Set(["thumbnail", "square", "tall", "free"]);
 const PDF_CAPTURE_THUMBNAIL_W = 420;
 const PDF_CAPTURE_THUMBNAIL_H = 260;
@@ -477,6 +484,7 @@ const state = {
     tagGradientReach: Number.parseInt(window.localStorage.getItem("article-tag-gradient-reach") || "26", 10),
     modalBackdropDarkness: Number.parseInt(window.localStorage.getItem("article-modal-backdrop-darkness") || "58", 10),
     surfaceOpacity: Number.parseInt(window.localStorage.getItem("article-surface-opacity") || "100", 10),
+    defaultPdfZoom: Number.parseInt(window.localStorage.getItem(DEFAULT_PDF_ZOOM_KEY) || "100", 10),
     nightFilterEnabled: initNightFilterEnabledPreference(),
     nightFilterMode: window.localStorage.getItem("article-night-filter-mode") || "warm",
     nightFilterStrength: Number.parseInt(window.localStorage.getItem("article-night-filter-strength") || "0", 10),
@@ -507,6 +515,8 @@ const state = {
     metadataDirty: false,
     metadataSaving: false,
     metadataBaselineKey: "",
+    doiFetchRecentTimestamps: [],
+    lastDoiRateWarningAt: 0,
 };
 
 const dom = {
@@ -530,6 +540,8 @@ const dom = {
     modalBackdropValue: document.getElementById("modal-backdrop-value"),
     surfaceOpacitySlider: document.getElementById("surface-opacity-slider"),
     surfaceOpacityValue: document.getElementById("surface-opacity-value"),
+    defaultPdfZoomSlider: document.getElementById("default-pdf-zoom-slider"),
+    defaultPdfZoomValue: document.getElementById("default-pdf-zoom-value"),
     nightFilterEnabled: document.getElementById("night-filter-enabled"),
     nightFilterControls: document.getElementById("night-filter-controls"),
     nightFilterMode: document.getElementById("night-filter-mode"),
@@ -725,7 +737,7 @@ const pdfViewer = {
     page: 1,
     pageCount: 0,
     defaultBaseViewport: null,
-    zoomMode: "fit-width",
+    zoomMode: "custom",
     zoomScale: 1,
     renderTask: null,
     loadingTask: null,
@@ -752,6 +764,10 @@ const pdfViewer = {
     toolSession: null,
     copyRegionPageNumber: 0,
     copyRegionRect: null,
+    copyRegionDebugMatches: [],
+    copyRegionDebugPageNumber: 0,
+    copyRegionDebugReady: false,
+    copyRegionDebugRequestId: 0,
     capturePreset: "thumbnail",
     capturePageNumber: 0,
     captureRect: null,
@@ -763,6 +779,8 @@ let pdfJsLibPromise = null;
 const SORT_KEYS = new Set([
     "year_desc",
     "year_asc",
+    "page_count_desc",
+    "page_count_asc",
     "title_asc",
     "authors_asc",
     "journal_asc",
@@ -876,6 +894,19 @@ function applySurfaceOpacity(value) {
     document.documentElement.style.setProperty("--surface-opacity-factor", (opacityPercent / 100).toFixed(2));
     if (dom.surfaceOpacitySlider) dom.surfaceOpacitySlider.value = String(opacityPercent);
     if (dom.surfaceOpacityValue) dom.surfaceOpacityValue.textContent = String(opacityPercent);
+}
+
+function clampDefaultPdfZoom(value) {
+    const n = Number.parseInt(String(value), 10);
+    if (Number.isNaN(n)) return 100;
+    return Math.max(50, Math.min(150, n));
+}
+
+function applyDefaultPdfZoom(value) {
+    const zoomPercent = clampDefaultPdfZoom(value);
+    state.defaultPdfZoom = zoomPercent;
+    if (dom.defaultPdfZoomSlider) dom.defaultPdfZoomSlider.value = String(zoomPercent);
+    if (dom.defaultPdfZoomValue) dom.defaultPdfZoomValue.textContent = String(zoomPercent);
 }
 
 function clampTagGradientReach(value) {
@@ -1204,6 +1235,38 @@ function setStatus(text, isWarning = false) {
     if (isWarning) {
         logGlobalError(text, "", "");
     }
+}
+
+function pruneDoiFetchRateHistory(now = Date.now()) {
+    state.doiFetchRecentTimestamps = state.doiFetchRecentTimestamps
+        .filter((timestamp) => Number.isFinite(timestamp) && (now - timestamp) <= DOI_RATE_MONITOR_WINDOW_MS);
+    return state.doiFetchRecentTimestamps;
+}
+
+function maybeWarnAboutDoiRateLimit(now = Date.now()) {
+    const timestamps = pruneDoiFetchRateHistory(now);
+    if (timestamps.length < DOI_RATE_WARNING_MIN_SAMPLE_SIZE) return;
+    if ((now - state.lastDoiRateWarningAt) < DOI_RATE_WARNING_COOLDOWN_MS) return;
+
+    const observedWindowMs = Math.max(DOI_RATE_WARNING_MIN_OBSERVATION_MS, now - timestamps[0]);
+    const estimatedPerMinute = (timestamps.length / observedWindowMs) * 60_000;
+    const estimatedLimitPerMinute = CROSSREF_ESTIMATED_POLITE_LIMIT_PER_SECOND * 60;
+    const warningThresholdPerMinute = estimatedLimitPerMinute * DOI_RATE_WARNING_THRESHOLD_RATIO;
+    if (estimatedPerMinute < warningThresholdPerMinute) return;
+
+    state.lastDoiRateWarningAt = now;
+    const recentSeconds = Math.max(10, Math.round(Math.min(observedWindowMs, DOI_RATE_MONITOR_WINDOW_MS) / 1000));
+    const roundedEstimatedPerMinute = Math.max(10, Math.round(estimatedPerMinute / 10) * 10);
+    const message = `DOI lookup pace may hit Crossref's estimated polite-pool limit soon (~${CROSSREF_ESTIMATED_POLITE_LIMIT_PER_SECOND} req/s, ~${estimatedLimitPerMinute}/min). Recent pace: ~${roundedEstimatedPerMinute}/min over the last ${recentSeconds}s.`;
+    if (state.showErrorsGlobally) {
+        showGlobalErrorBanner(message);
+    }
+}
+
+function recordDoiFetchAttempt(now = Date.now()) {
+    pruneDoiFetchRateHistory(now);
+    state.doiFetchRecentTimestamps.push(now);
+    maybeWarnAboutDoiRateLimit(now);
 }
 
 function clampAbstractSectionCount(value) {
@@ -2303,6 +2366,11 @@ function dateEpoch(dateStr) {
     return Number.isNaN(t) ? -1 : t;
 }
 
+function pageCountValue(article) {
+    const count = Number(article?.page_count);
+    return Number.isFinite(count) ? count : 0;
+}
+
 function compareSortKey(a, b, key) {
     const aMd = a.metadata || {};
     const bMd = b.metadata || {};
@@ -2311,6 +2379,10 @@ function compareSortKey(a, b, key) {
             return yearValue(b) - yearValue(a);
         case "year_asc":
             return yearValue(a) - yearValue(b);
+        case "page_count_desc":
+            return pageCountValue(b) - pageCountValue(a);
+        case "page_count_asc":
+            return pageCountValue(a) - pageCountValue(b);
         case "title_asc":
             return toSortString(aMd.title).localeCompare(toSortString(bMd.title));
         case "authors_asc":
@@ -2633,6 +2705,10 @@ function getPdfPageOverlayLayer(pageNumber) {
     return pdfViewer.pageOverlayLayers.get(pageNumber) || null;
 }
 
+function getPdfPageCanvas(pageNumber) {
+    return pdfViewer.pageCanvases.get(pageNumber) || null;
+}
+
 function getPdfPageShell(pageNumber) {
     return pdfViewer.pageShells.get(pageNumber) || null;
 }
@@ -2650,11 +2726,11 @@ function clampPdfToolRect(rect, bounds, minimum = 18) {
 }
 
 function getPdfPageBounds(pageNumber) {
-    const shell = getPdfPageShell(pageNumber);
-    if (!shell) return { width: 0, height: 0 };
+    const surface = getPdfPageCanvas(pageNumber) || getPdfPageShell(pageNumber);
+    if (!surface) return { width: 0, height: 0 };
     return {
-        width: Math.max(1, shell.clientWidth || shell.offsetWidth || 0),
-        height: Math.max(1, shell.clientHeight || shell.offsetHeight || 0),
+        width: Math.max(1, surface.clientWidth || surface.offsetWidth || 0),
+        height: Math.max(1, surface.clientHeight || surface.offsetHeight || 0),
     };
 }
 
@@ -2729,6 +2805,56 @@ function scalePdfRelativeRectToPage(pageNumber, rect) {
     };
 }
 
+function clearPdfCopyRegionDebugMatches() {
+    pdfViewer.copyRegionDebugMatches = [];
+    pdfViewer.copyRegionDebugPageNumber = 0;
+    pdfViewer.copyRegionDebugReady = false;
+    pdfViewer.copyRegionDebugRequestId += 1;
+}
+
+function syncPdfCopyRegionDebugMatches() {
+    const requestId = pdfViewer.copyRegionDebugRequestId + 1;
+    pdfViewer.copyRegionDebugRequestId = requestId;
+
+    if (pdfViewer.toolMode !== "copy-region" || !pdfViewer.copyRegionPageNumber || !pdfViewer.copyRegionRect) {
+        clearPdfCopyRegionDebugMatches();
+        return;
+    }
+
+    const pageNumber = pdfViewer.copyRegionPageNumber;
+    const rect = pdfViewer.copyRegionRect;
+    pdfViewer.copyRegionDebugPageNumber = pageNumber;
+    pdfViewer.copyRegionDebugReady = false;
+    pdfViewer.copyRegionDebugMatches = [];
+
+    const applyMatches = (items) => {
+        if (pdfViewer.copyRegionDebugRequestId !== requestId) return;
+        if (pdfViewer.toolMode !== "copy-region" || pdfViewer.copyRegionPageNumber !== pageNumber || pdfViewer.copyRegionRect !== rect) {
+            return;
+        }
+        pdfViewer.copyRegionDebugPageNumber = pageNumber;
+        pdfViewer.copyRegionDebugReady = true;
+        pdfViewer.copyRegionDebugMatches = items.filter((item) => rectsIntersect(item, rect));
+        renderPdfPageToolOverlay(pageNumber);
+    };
+
+    const scaleKey = getPdfEffectiveScale().toFixed(4);
+    const cached = pdfViewer.pageTextGeometryCache.get(pageNumber);
+    if (cached?.scaleKey === scaleKey) {
+        applyMatches(cached.items);
+        return;
+    }
+
+    ensurePdfPageTextGeometry(pageNumber)
+        .then(applyMatches)
+        .catch(() => {
+            if (pdfViewer.copyRegionDebugRequestId !== requestId) return;
+            pdfViewer.copyRegionDebugReady = true;
+            pdfViewer.copyRegionDebugMatches = [];
+            renderPdfPageToolOverlay(pageNumber);
+        });
+}
+
 function renderPdfPageToolOverlay(pageNumber) {
     const overlay = getPdfPageOverlayLayer(pageNumber);
     if (!overlay) return;
@@ -2768,7 +2894,29 @@ function renderPdfPageToolOverlay(pageNumber) {
         selectionEl.style.top = `${copyRect.top}px`;
         selectionEl.style.width = `${copyRect.width}px`;
         selectionEl.style.height = `${copyRect.height}px`;
+
+        const debugLabel = document.createElement("div");
+        debugLabel.className = "pdf-region-copy-debug-label";
+        if (pdfViewer.copyRegionDebugPageNumber === pageNumber && pdfViewer.copyRegionDebugReady) {
+            const count = pdfViewer.copyRegionDebugMatches.length;
+            debugLabel.textContent = `${count} detected text box${count === 1 ? "" : "es"}`;
+        } else {
+            debugLabel.textContent = "Scanning text boxes...";
+        }
+        selectionEl.appendChild(debugLabel);
         overlay.appendChild(selectionEl);
+
+        if (pdfViewer.copyRegionDebugPageNumber === pageNumber) {
+            pdfViewer.copyRegionDebugMatches.forEach((item) => {
+                const hitEl = document.createElement("div");
+                hitEl.className = "pdf-copy-region-detected-hit";
+                hitEl.style.left = `${item.left}px`;
+                hitEl.style.top = `${item.top}px`;
+                hitEl.style.width = `${item.width}px`;
+                hitEl.style.height = `${item.height}px`;
+                overlay.appendChild(hitEl);
+            });
+        }
     }
 
     const captureRect = pdfViewer.capturePageNumber === pageNumber ? pdfViewer.captureRect : null;
@@ -2823,9 +2971,11 @@ function syncPdfToolPanel() {
         dom.pdfCapturePanel.classList.toggle("hidden", pdfViewer.toolMode !== "capture-thumbnail");
     }
     if (dom.pdfCopyRegionToggle) {
+        dom.pdfCopyRegionToggle.classList.toggle("hidden", !state.enablePdfCopyTool || pdfViewer.toolMode === "capture-thumbnail");
         dom.pdfCopyRegionToggle.classList.toggle("is-active", pdfViewer.toolMode === "copy-region");
     }
     if (dom.pdfCaptureThumbnailToggle) {
+        dom.pdfCaptureThumbnailToggle.classList.toggle("hidden", !state.enablePdfThumbnailCapture || pdfViewer.toolMode === "capture-thumbnail");
         dom.pdfCaptureThumbnailToggle.classList.toggle("is-active", pdfViewer.toolMode === "capture-thumbnail");
     }
     if (dom.pdfCapturePreset) {
@@ -2877,7 +3027,7 @@ function syncPdfExperimentalToolVisibility() {
         dom.pdfStage.classList.toggle("pdf-stage-starry", state.enablePdfStarryBackground);
     }
     if (dom.pdfCopyRegionToggle) {
-        dom.pdfCopyRegionToggle.classList.toggle("hidden", !state.enablePdfCopyTool);
+        dom.pdfCopyRegionToggle.classList.toggle("hidden", !state.enablePdfCopyTool || pdfViewer.toolMode === "capture-thumbnail");
     }
     if (dom.pdfCaptureThumbnailToggle) {
         dom.pdfCaptureThumbnailToggle.classList.toggle("hidden", !state.enablePdfThumbnailCapture);
@@ -2886,6 +3036,7 @@ function syncPdfExperimentalToolVisibility() {
         pdfViewer.toolMode = "none";
         pdfViewer.copyRegionPageNumber = 0;
         pdfViewer.copyRegionRect = null;
+        clearPdfCopyRegionDebugMatches();
         clearPdfToolSession();
     }
     if (!state.enablePdfThumbnailCapture && pdfViewer.toolMode === "capture-thumbnail") {
@@ -2913,6 +3064,7 @@ function setPdfToolMode(mode) {
     if (nextMode !== "copy-region") {
         pdfViewer.copyRegionPageNumber = 0;
         pdfViewer.copyRegionRect = null;
+        clearPdfCopyRegionDebugMatches();
     }
     if (nextMode !== "capture-thumbnail") {
         stopPdfCaptureTool();
@@ -2928,11 +3080,13 @@ function setPdfToolMode(mode) {
 
     syncPdfToolPanel();
     renderPdfToolOverlays();
+    syncPdfCopyRegionDebugMatches();
 }
 
 function clearPdfCanvas() {
     if (!dom.pdfCanvasWrap) return;
     clearNode(dom.pdfCanvasWrap);
+    clearPdfCopyRegionDebugMatches();
     if (dom.pdfCanvas) {
         const ctx = dom.pdfCanvas.getContext("2d");
         if (ctx) ctx.clearRect(0, 0, dom.pdfCanvas.width, dom.pdfCanvas.height);
@@ -3456,10 +3610,10 @@ function getPdfPageNumberFromEventTarget(target) {
 }
 
 function getPdfLocalPoint(pageNumber, clientX, clientY) {
-    const shell = getPdfPageShell(pageNumber);
-    if (!shell) return null;
+    const surface = getPdfPageCanvas(pageNumber) || getPdfPageShell(pageNumber);
+    if (!surface) return null;
     const bounds = getPdfPageBounds(pageNumber);
-    const rect = shell.getBoundingClientRect();
+    const rect = surface.getBoundingClientRect();
     return {
         x: Math.min(Math.max(clientX - rect.left, 0), bounds.width),
         y: Math.min(Math.max(clientY - rect.top, 0), bounds.height),
@@ -3679,13 +3833,6 @@ async function canvasToBlob(canvas, type = "image/jpeg", quality = 0.92) {
     });
 }
 
-function transformPdfPoint(matrix, x, y) {
-    return {
-        x: (matrix[0] * x) + (matrix[2] * y) + matrix[4],
-        y: (matrix[1] * x) + (matrix[3] * y) + matrix[5],
-    };
-}
-
 function rectsIntersect(a, b) {
     return a.left < (b.left + b.width)
         && (a.left + a.width) > b.left
@@ -3721,13 +3868,32 @@ async function ensurePdfPageTextGeometry(pageNumber) {
                 const text = normalizeWhitespace(item.str);
                 if (!text) return null;
                 const transform = pdfjsLib.Util.transform(viewport.transform, item.transform);
-                const width = Math.max(1, Number(item.width) || 1);
-                const height = Math.max(1, Number(item.height) || 1);
+                const style = textContent.styles?.[item.fontName] || null;
+                const angle = Math.atan2(transform[1], transform[0]);
+                const width = Math.max(1, Math.abs(Number(item.width) || 0) * viewport.scale);
+                const fontHeight = Math.max(
+                    1,
+                    Math.hypot(transform[2], transform[3]) || Math.hypot(transform[0], transform[1]) || 1,
+                );
+                let ascent = fontHeight * 0.8;
+                if (typeof style?.ascent === "number") {
+                    ascent = style.ascent * fontHeight;
+                } else if (typeof style?.descent === "number") {
+                    ascent = (1 + style.descent) * fontHeight;
+                }
+                ascent = Math.max(1, Math.min(fontHeight, ascent));
+                const height = fontHeight;
+                const leftOrigin = transform[4];
+                const topOrigin = transform[5] - ascent;
+                const widthDx = Math.cos(angle) * width;
+                const widthDy = Math.sin(angle) * width;
+                const heightDx = -Math.sin(angle) * height;
+                const heightDy = Math.cos(angle) * height;
                 const points = [
-                    transformPdfPoint(transform, 0, 0),
-                    transformPdfPoint(transform, width, 0),
-                    transformPdfPoint(transform, 0, height),
-                    transformPdfPoint(transform, width, height),
+                    { x: leftOrigin, y: topOrigin },
+                    { x: leftOrigin + widthDx, y: topOrigin + widthDy },
+                    { x: leftOrigin + heightDx, y: topOrigin + heightDy },
+                    { x: leftOrigin + widthDx + heightDx, y: topOrigin + widthDy + heightDy },
                 ];
                 const xs = points.map((point) => point.x);
                 const ys = points.map((point) => point.y);
@@ -4022,6 +4188,7 @@ function handlePdfCanvasPointerDown(evt) {
             pointerId: evt.pointerId,
         };
         renderPdfToolOverlays();
+        syncPdfCopyRegionDebugMatches();
         return;
     }
 
@@ -4098,6 +4265,7 @@ function handlePdfToolPointerMove(evt) {
             8,
         );
         renderPdfToolOverlays();
+        syncPdfCopyRegionDebugMatches();
         return;
     }
 
@@ -4155,6 +4323,7 @@ function handlePdfToolPointerUp(evt) {
         if (!finalRect || finalRect.width < 12 || finalRect.height < 12) {
             pdfViewer.copyRegionRect = null;
             pdfViewer.copyRegionPageNumber = 0;
+            clearPdfCopyRegionDebugMatches();
             renderPdfToolOverlays();
             return;
         }
@@ -4163,6 +4332,7 @@ function handlePdfToolPointerUp(evt) {
             setStatus(`Failed to copy PDF region: ${message}`, true);
         });
         renderPdfToolOverlays();
+        syncPdfCopyRegionDebugMatches();
         return;
     }
 
@@ -4530,9 +4700,15 @@ async function openPdfInternal(article) {
     }
     pdfViewer.article = article;
     const savedState = readSavedPdfViewerState(article.id);
-    pdfViewer.page = savedState?.page || 1;
-    pdfViewer.zoomMode = savedState?.zoomMode || "fit-width";
-    pdfViewer.zoomScale = savedState?.zoomScale || 1;
+    if (savedState) {
+        pdfViewer.page = savedState.page || 1;
+        pdfViewer.zoomMode = savedState.zoomMode;
+        pdfViewer.zoomScale = savedState.zoomScale;
+    } else {
+        pdfViewer.page = 1;
+        pdfViewer.zoomMode = "custom";
+        pdfViewer.zoomScale = clampPdfZoomScale(state.defaultPdfZoom / 100);
+    }
     updatePdfViewerHeader();
     syncPdfViewerControls();
     setPdfViewerStatus("Loading PDF...");
@@ -4604,8 +4780,8 @@ function closePdfViewer() {
     setPdfHeaderFolded(false);
     pdfViewer.article = null;
     pdfViewer.page = 1;
-    pdfViewer.zoomMode = "fit-width";
-    pdfViewer.zoomScale = 1;
+    pdfViewer.zoomMode = "custom";
+    pdfViewer.zoomScale = clampPdfZoomScale(state.defaultPdfZoom / 100);
     resetPdfSearchState({ clearInput: true });
     clearNode(dom.pdfPageList);
     clearPdfCanvas();
@@ -5414,7 +5590,7 @@ function buildHotkeyTable() {
     // ─── Keyboard-shortcut section ───
     const kbHeader = document.createElement("div");
     kbHeader.style.cssText = "font-size:0.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;padding:0 0 4px;";
-    kbHeader.textContent = "Keyboard Shortcuts";
+    kbHeader.textContent = "Hotkeys";
     container.appendChild(kbHeader);
 
     const kbTable = document.createElement("table");
@@ -6804,6 +6980,7 @@ function wireEvents() {
     applyCardFont(state.cardFont);
     applyModalBackdropDarkness(state.modalBackdropDarkness);
     applySurfaceOpacity(state.surfaceOpacity);
+    applyDefaultPdfZoom(state.defaultPdfZoom);
     applyFontFamily(state.fontFamily);
     applyNightFilter(state.nightFilterMode, state.nightFilterStrength);
     updateNightFilterControlVisibility();
@@ -7620,6 +7797,12 @@ function wireEvents() {
             window.localStorage.setItem("article-surface-opacity", String(state.surfaceOpacity));
         });
     }
+    if (dom.defaultPdfZoomSlider) {
+        dom.defaultPdfZoomSlider.addEventListener("input", () => {
+            applyDefaultPdfZoom(dom.defaultPdfZoomSlider.value);
+            window.localStorage.setItem(DEFAULT_PDF_ZOOM_KEY, String(state.defaultPdfZoom));
+        });
+    }
     bindNightFilterControlSet({
         enabled: dom.nightFilterEnabled,
         controls: dom.nightFilterControls,
@@ -7966,6 +8149,7 @@ function wireEvents() {
         }
 
         try {
+            recordDoiFetchAttempt();
             const meta = await invoke("fetch_doi_metadata", { doi: doiStr });
             if (meta.title) dom.title.value = meta.title;
             if (meta.authors) dom.authors.value = meta.authors;
