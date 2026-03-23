@@ -1161,9 +1161,37 @@ forgot about 0.9.5 LOL
 
 - [x] when capturing a thumbnail, also remove make the 'copy region' button
 
-- [ ] testing why box highlight copy/paste implementation in pdf reacher is so egregious
+- [x] fixed egregious box highlight copy/paste implementation in pdf reader
+
+- [x] consistent casing in shortcuts editor
+
+- [x] added the PDF reader to the modal rotation hotkeys (up/down) and separated them into prev/next in the shortcut editor
+
+- [x] added new editable hotkeys in the PDF reader (c copy tool; p paste thumbnail)
+
+- [x] added option for unlocked reader horizontal span
+
+- [x] hotkey tooltips on corresponding buttons, and corresponding letter underlining where appropriate (c copy tool; p paste thumbnail; t thumbnail selector tool)
+
+- [x] made 'saved' status in metadata modal more readable with green highlight on change
+
+- [x] applied markdown formatting to the abstract preview notes (when 'show notes in abstract' is enabled)
+
+- [x] fixed demo mode maintaining user display preferences
+
+- [x] added the date to the 'duplicate DOIs found' prompt
+
+- [x] forced the debug log to fit remaining space after allowing the hotkeys to stretch
+
+- [x] changed PDF preview copied text to reveal/unfold only when the copy tool is active 
 
 **push v0.9.9**
+
+---
+
+- [ ] interrupt with the 'duplicate DOI' warning as soon as DOI is saved
+
+*next: v1.0.0*
 
 ### think about more first
 

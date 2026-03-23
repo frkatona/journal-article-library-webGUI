@@ -3,6 +3,7 @@ const { invoke } = window.__TAURI__.core;
 
 // Thumbnail cache: relPath -> dataUrl
 const thumbCache = new Map();
+let metadataSavedBlinkTimeout = null;
 
 const DEFAULT_HOTKEYS = {
     openPdfExternal: { ctrl: false, alt: false, shift: false },  // plain click
@@ -14,11 +15,15 @@ const DEFAULT_HOTKEYS = {
 };
 const KEYBOARD_SHORTCUTS_STORAGE_KEY = "article-keyboard-shortcuts";
 const DEMO_MODE_KEY = "article-demo-mode";
+const DEMO_MODE_PREF_SNAPSHOT_KEY = "article-demo-pref-snapshot-v1";
 const THEME_PRESET_STORAGE_KEY = "article-theme-presets";
 const DEFAULT_KEYBOARD_SHORTCUTS = {
     pasteThumb: ["P"],
+    pdfCopyTool: ["C"],
+    pdfThumbnailTool: ["T"],
     enter: ["Ctrl+Enter"],
-    arrowToggle: ["ArrowUp", "ArrowDown"],
+    prevModal: ["ArrowUp"],
+    nextModal: ["ArrowDown"],
     prevArticle: ["ArrowLeft"],
     nextArticle: ["ArrowRight"],
 };
@@ -27,11 +32,16 @@ const ENABLE_NICHE_KEY = "article-enable-niche";
 const SHOW_NICHE_KEY = "article-show-niche";
 const SHOW_REF_DOIS_KEY = "article-show-ref-dois";
 const SHOW_REF_DOIS_PREF_TOUCHED_KEY = "article-show-ref-dois-pref-touched";
+const ABSTRACT_PREVIEW_NOTES_ENABLED_KEY = "article-abstract-preview-notes-enabled";
 const NIGHT_FILTER_ENABLED_KEY = "article-night-filter-enabled";
 const PDF_COPY_TOOL_ENABLED_KEY = "article-pdf-copy-tool-enabled";
+const PDF_COPY_PREVIEW_ENABLED_KEY = "article-pdf-copy-preview-enabled";
+const PDF_COPY_PREVIEW_DURATION_KEY = "article-pdf-copy-preview-duration";
 const PDF_THUMBNAIL_CAPTURE_ENABLED_KEY = "article-pdf-thumbnail-capture-enabled";
 const PDF_CAPTURE_DOWNSCALE_ENABLED_KEY = "article-pdf-capture-downscale-enabled";
 const PDF_STARRY_BACKGROUND_ENABLED_KEY = "article-pdf-starry-background-enabled";
+const PDF_VIEWER_WIDTH_UNLOCKED_KEY = "article-pdf-viewer-width-unlocked";
+const DEBUG_LOG_RETENTION_KEY = "article-debug-log-retention";
 const DEFAULT_PDF_ZOOM_KEY = "article-default-pdf-zoom";
 const PDF_VIEWER_STATE_KEY = "article-pdf-viewer-state-v1";
 const ENABLE_PDF_TEXT_SELECTION = false;
@@ -42,6 +52,9 @@ const DOI_RATE_WARNING_MIN_SAMPLE_SIZE = 6;
 const DOI_RATE_WARNING_MIN_OBSERVATION_MS = 10_000;
 const DOI_RATE_WARNING_COOLDOWN_MS = 20_000;
 const PDF_CAPTURE_PRESET_KEYS = new Set(["thumbnail", "square", "tall", "free"]);
+const INFINITE_SLIDER_VALUE = 10;
+const DEFAULT_PDF_COPY_PREVIEW_DURATION_SETTING = 3;
+const DEFAULT_DEBUG_LOG_RETENTION_SETTING = 9;
 const PDF_CAPTURE_THUMBNAIL_W = 420;
 const PDF_CAPTURE_THUMBNAIL_H = 260;
 const PDF_CAPTURE_MAX_DIMENSION = 2400;
@@ -294,6 +307,59 @@ function cloneDefaultKeyboardShortcuts() {
     );
 }
 
+function listStoredArticlePreferenceKeys() {
+    const keys = [];
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+        const key = window.localStorage.key(i);
+        if (!key || !key.startsWith("article-")) continue;
+        if (key === DEMO_MODE_KEY || key === DEMO_MODE_PREF_SNAPSHOT_KEY) continue;
+        keys.push(key);
+    }
+    return keys;
+}
+
+function readDemoModePreferenceSnapshot() {
+    try {
+        const raw = window.localStorage.getItem(DEMO_MODE_PREF_SNAPSHOT_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === "object" ? parsed : null;
+    } catch {
+        return null;
+    }
+}
+
+function storeDemoModePreferenceSnapshot() {
+    const snapshot = {};
+    listStoredArticlePreferenceKeys().forEach((key) => {
+        snapshot[key] = window.localStorage.getItem(key);
+    });
+    window.localStorage.setItem(DEMO_MODE_PREF_SNAPSHOT_KEY, JSON.stringify(snapshot));
+    return snapshot;
+}
+
+function clearStoredArticlePreferences() {
+    listStoredArticlePreferenceKeys().forEach((key) => {
+        window.localStorage.removeItem(key);
+    });
+}
+
+function restoreStoredArticlePreferences(snapshot) {
+    if (!snapshot || typeof snapshot !== "object") return false;
+    clearStoredArticlePreferences();
+    Object.entries(snapshot).forEach(([key, value]) => {
+        if (!key || key === DEMO_MODE_KEY || key === DEMO_MODE_PREF_SNAPSHOT_KEY) return;
+        if (typeof value === "string") {
+            window.localStorage.setItem(key, value);
+        }
+    });
+    return true;
+}
+
+function resetStoredArticlePreferencesToDefaults() {
+    clearStoredArticlePreferences();
+}
+
 function normalizeShortcutKey(key) {
     const raw = String(key || "").trim();
     if (!raw) return "";
@@ -356,11 +422,27 @@ function loadKeyboardShortcuts() {
         const raw = JSON.parse(window.localStorage.getItem(KEYBOARD_SHORTCUTS_STORAGE_KEY) || "null");
         if (!raw || typeof raw !== "object") return defaults;
 
+        const rawHasPrevModal = Object.prototype.hasOwnProperty.call(raw, "prevModal");
+        const rawHasNextModal = Object.prototype.hasOwnProperty.call(raw, "nextModal");
+        const legacyToggleList = typeof raw.arrowToggle === "string"
+            ? [raw.arrowToggle]
+            : (Array.isArray(raw.arrowToggle) ? raw.arrowToggle : []);
+        const normalizedLegacyToggleBindings = legacyToggleList.map(normalizeShortcutBinding).filter(Boolean);
+
         for (const key of Object.keys(defaults)) {
             const value = raw[key];
             const asList = typeof value === "string" ? [value] : (Array.isArray(value) ? value : []);
             const normalized = asList.map(normalizeShortcutBinding).filter(Boolean);
             if (normalized.length > 0) defaults[key] = normalized;
+        }
+
+        if (!rawHasPrevModal) {
+            const legacyPrevBindings = normalizedLegacyToggleBindings.filter((binding) => binding === "ArrowUp");
+            if (legacyPrevBindings.length > 0) defaults.prevModal = legacyPrevBindings;
+        }
+        if (!rawHasNextModal) {
+            const legacyNextBindings = normalizedLegacyToggleBindings.filter((binding) => binding === "ArrowDown");
+            if (legacyNextBindings.length > 0) defaults.nextModal = legacyNextBindings;
         }
     } catch {
         return defaults;
@@ -411,9 +493,66 @@ function getKeyboardShortcutBindings(shortcutKey) {
     return state.keyboardShortcuts?.[shortcutKey] || DEFAULT_KEYBOARD_SHORTCUTS[shortcutKey] || [];
 }
 
+function usesKeyboardShortcutBinding(shortcutKey, binding) {
+    const normalizedBinding = normalizeShortcutBinding(binding);
+    if (!normalizedBinding) return false;
+    return getKeyboardShortcutBindings(shortcutKey).includes(normalizedBinding);
+}
+
 function getKeyboardShortcutDisplay(shortcutKey) {
     const bindings = getKeyboardShortcutBindings(shortcutKey);
     return bindings.map(formatShortcutBinding).join(" / ");
+}
+
+function setButtonMnemonicLabel(button, parts, shouldUnderline) {
+    if (!button) return;
+    clearNode(button);
+
+    const prefix = String(parts?.prefix || "");
+    const key = String(parts?.key || "");
+    const suffix = String(parts?.suffix || "");
+
+    if (prefix) button.appendChild(document.createTextNode(prefix));
+
+    if (key) {
+        if (shouldUnderline) {
+            const letter = document.createElement("span");
+            letter.className = "shortcut-mnemonic-letter";
+            letter.textContent = key;
+            button.appendChild(letter);
+        } else {
+            button.appendChild(document.createTextNode(key));
+        }
+    }
+
+    if (suffix) button.appendChild(document.createTextNode(suffix));
+}
+
+function setShortcutTooltip(button, shortcutKey) {
+    if (!button) return;
+    const display = getKeyboardShortcutDisplay(shortcutKey);
+    button.title = display ? `Hotkey: ${display}` : "";
+}
+
+function syncKeyboardShortcutButtonHints() {
+    setButtonMnemonicLabel(dom.pdfCopyRegionToggle, {
+        key: "C",
+        suffix: "opy Region",
+    }, usesKeyboardShortcutBinding("pdfCopyTool", "C"));
+    setShortcutTooltip(dom.pdfCopyRegionToggle, "pdfCopyTool");
+
+    setButtonMnemonicLabel(dom.pdfCaptureThumbnailToggle, {
+        prefix: "Capture ",
+        key: "T",
+        suffix: "humbnail",
+    }, usesKeyboardShortcutBinding("pdfThumbnailTool", "T"));
+    setShortcutTooltip(dom.pdfCaptureThumbnailToggle, "pdfThumbnailTool");
+
+    setButtonMnemonicLabel(dom.thumbPaste, {
+        key: "P",
+        suffix: "aste from Clipboard",
+    }, usesKeyboardShortcutBinding("pasteThumb", "P"));
+    setShortcutTooltip(dom.thumbPaste, "pasteThumb");
 }
 
 function eventToShortcutBinding(evt) {
@@ -489,9 +628,16 @@ const state = {
     nightFilterMode: window.localStorage.getItem("article-night-filter-mode") || "warm",
     nightFilterStrength: Number.parseInt(window.localStorage.getItem("article-night-filter-strength") || "0", 10),
     enablePdfCopyTool: window.localStorage.getItem(PDF_COPY_TOOL_ENABLED_KEY) === "true",
+    previewCopiedText: window.localStorage.getItem(PDF_COPY_PREVIEW_ENABLED_KEY) !== "false",
+    pdfCopyPreviewDurationSetting: clampInfiniteSliderSetting(
+        window.localStorage.getItem(PDF_COPY_PREVIEW_DURATION_KEY),
+        DEFAULT_PDF_COPY_PREVIEW_DURATION_SETTING,
+    ),
     enablePdfThumbnailCapture: window.localStorage.getItem(PDF_THUMBNAIL_CAPTURE_ENABLED_KEY) === "true",
     downscalePdfCaptureImages: window.localStorage.getItem(PDF_CAPTURE_DOWNSCALE_ENABLED_KEY) !== "false",
     enablePdfStarryBackground: window.localStorage.getItem(PDF_STARRY_BACKGROUND_ENABLED_KEY) === "true",
+    unlockPdfViewerWidth: window.localStorage.getItem(PDF_VIEWER_WIDTH_UNLOCKED_KEY) === "true",
+    showAbstractPreviewNotes: window.localStorage.getItem(ABSTRACT_PREVIEW_NOTES_ENABLED_KEY) === "true",
     tagColors: JSON.parse(window.localStorage.getItem("article-tag-colors") || "{}"),
     hotkeys: loadHotkeys(),
     keyboardShortcuts: loadKeyboardShortcuts(),
@@ -506,6 +652,10 @@ const state = {
     showErrorsGlobally: window.localStorage.getItem("article-show-errors") !== "false",
     abstractSectionCount: Number.parseInt(window.localStorage.getItem("article-abstract-sections") || "4", 10),
     debugMode: window.localStorage.getItem("article-debug-mode") === "true",
+    debugLogRetentionSetting: clampInfiniteSliderSetting(
+        window.localStorage.getItem(DEBUG_LOG_RETENTION_KEY),
+        DEFAULT_DEBUG_LOG_RETENTION_SETTING,
+    ),
     demoMode: window.localStorage.getItem(DEMO_MODE_KEY) === "true",
     tagSuggestionArticles: [],
     tagSuggestionCorpusMode: null,
@@ -514,6 +664,7 @@ const state = {
     thumbnailUndo: null,
     metadataDirty: false,
     metadataSaving: false,
+    metadataIndicatorMode: "",
     metadataBaselineKey: "",
     doiFetchRecentTimestamps: [],
     lastDoiRateWarningAt: 0,
@@ -667,6 +818,8 @@ const dom = {
     abstractMeta: document.getElementById("abstract-meta"),
     abstractMetaDivider: document.getElementById("abstract-meta-divider"),
     abstractText: document.getElementById("abstract-text"),
+    abstractNotesSection: document.getElementById("abstract-notes-section"),
+    abstractNotesText: document.getElementById("abstract-notes-text"),
     abstractReferencesSection: document.getElementById("abstract-references-section"),
     abstractReferencesList: document.getElementById("abstract-references-list"),
     metaRemove: document.getElementById("meta-remove"),
@@ -706,13 +859,23 @@ const dom = {
     autoRefCompile: document.getElementById("auto-ref-compile"),
     showDupeWarnings: document.getElementById("show-dupe-warnings"),
     enablePdfCopyToolCheckbox: document.getElementById("enable-pdf-copy-tool"),
+    pdfCopyPreviewToggleWrap: document.getElementById("pdf-copy-preview-toggle-wrap"),
+    previewCopiedTextCheckbox: document.getElementById("preview-copied-text"),
+    pdfCopyPreviewDurationField: document.getElementById("pdf-copy-preview-duration-field"),
+    pdfCopyPreviewDurationValue: document.getElementById("pdf-copy-preview-duration-value"),
+    pdfCopyPreviewDurationSlider: document.getElementById("pdf-copy-preview-duration-slider"),
     enablePdfThumbnailCaptureCheckbox: document.getElementById("enable-pdf-thumbnail-capture"),
     downscalePdfCaptureImagesCheckbox: document.getElementById("downscale-pdf-capture-images"),
     enablePdfStarryBackgroundCheckbox: document.getElementById("enable-pdf-starry-background"),
+    unlockPdfViewerWidthCheckbox: document.getElementById("unlock-pdf-viewer-width"),
+    showAbstractPreviewNotesCheckbox: document.getElementById("show-abstract-notes-preview"),
     enableNicheCheckbox: document.getElementById("enable-niche"),
     experimentalSection: document.getElementById("experimental-section"),
     experimentalArrow: document.getElementById("experimental-arrow"),
     debugModeCheckbox: document.getElementById("debug-mode"),
+    debugModeOptions: document.getElementById("debug-mode-options"),
+    debugLogRetentionValue: document.getElementById("debug-log-retention-value"),
+    debugLogRetentionSlider: document.getElementById("debug-log-retention-slider"),
     demoModeCheckbox: document.getElementById("demo-mode"),
     errorLogList: document.getElementById("error-log-list"),
     errorLogCopy: document.getElementById("error-log-copy"),
@@ -810,6 +973,32 @@ function normalizeSortKey(value, fallback) {
 function normalizeFontKey(value, fallback) {
     const key = String(value || "").trim().toLowerCase();
     return Object.prototype.hasOwnProperty.call(FONT_FAMILIES, key) ? key : fallback;
+}
+
+function clampInfiniteSliderSetting(value, fallback) {
+    const parsed = Number.parseInt(String(value), 10);
+    if (Number.isNaN(parsed)) return fallback;
+    return Math.max(1, Math.min(INFINITE_SLIDER_VALUE, parsed));
+}
+
+function formatInfiniteDurationLabel(value) {
+    return value >= INFINITE_SLIDER_VALUE ? "Infinity" : `${value}s`;
+}
+
+function formatDebugLogRetentionLabel(value) {
+    return value >= INFINITE_SLIDER_VALUE ? "Infinity" : `${value * 10} entries`;
+}
+
+function getPdfCopyPreviewDurationMs() {
+    return state.pdfCopyPreviewDurationSetting >= INFINITE_SLIDER_VALUE
+        ? Number.POSITIVE_INFINITY
+        : Math.max(1, state.pdfCopyPreviewDurationSetting) * 1000;
+}
+
+function getDebugLogEntryLimit() {
+    return state.debugLogRetentionSetting >= INFINITE_SLIDER_VALUE
+        ? Number.POSITIVE_INFINITY
+        : Math.max(1, state.debugLogRetentionSetting) * 10;
 }
 
 function toSortString(value) {
@@ -1229,6 +1418,43 @@ function wireSliderToggles(container) {
     });
 }
 
+function trimErrorLogListToLimit() {
+    if (!dom.errorLogList) return;
+    const limit = getDebugLogEntryLimit();
+    if (!Number.isFinite(limit)) return;
+    while (dom.errorLogList.children.length > limit) {
+        dom.errorLogList.removeChild(dom.errorLogList.lastChild);
+    }
+}
+
+function syncExperimentalNestedOptions() {
+    if (dom.pdfCopyPreviewToggleWrap) {
+        dom.pdfCopyPreviewToggleWrap.classList.toggle("hidden", !state.enablePdfCopyTool);
+    }
+    if (dom.previewCopiedTextCheckbox) {
+        dom.previewCopiedTextCheckbox.checked = state.previewCopiedText;
+    }
+    if (dom.pdfCopyPreviewDurationField) {
+        dom.pdfCopyPreviewDurationField.classList.toggle("hidden", !state.enablePdfCopyTool || !state.previewCopiedText);
+    }
+    if (dom.pdfCopyPreviewDurationSlider) {
+        dom.pdfCopyPreviewDurationSlider.value = String(state.pdfCopyPreviewDurationSetting);
+    }
+    if (dom.pdfCopyPreviewDurationValue) {
+        dom.pdfCopyPreviewDurationValue.textContent = formatInfiniteDurationLabel(state.pdfCopyPreviewDurationSetting);
+    }
+    if (dom.debugModeOptions) {
+        dom.debugModeOptions.classList.toggle("hidden", !state.debugMode);
+    }
+    if (dom.debugLogRetentionSlider) {
+        dom.debugLogRetentionSlider.value = String(state.debugLogRetentionSetting);
+    }
+    if (dom.debugLogRetentionValue) {
+        dom.debugLogRetentionValue.textContent = formatDebugLogRetentionLabel(state.debugLogRetentionSetting);
+    }
+    trimErrorLogListToLimit();
+}
+
 function setStatus(text, isWarning = false) {
     dom.statusLine.textContent = text;
     dom.statusLine.classList.toggle("warning", isWarning);
@@ -1243,8 +1469,21 @@ function pruneDoiFetchRateHistory(now = Date.now()) {
     return state.doiFetchRecentTimestamps;
 }
 
-function maybeWarnAboutDoiRateLimit(now = Date.now()) {
+function getDoiFetchWindowStats(now = Date.now()) {
     const timestamps = pruneDoiFetchRateHistory(now);
+    const windowSeconds = Math.max(1, Math.round(DOI_RATE_MONITOR_WINDOW_MS / 1000));
+    const estimatedLimitPerWindow = Math.max(1, Math.round(CROSSREF_ESTIMATED_POLITE_LIMIT_PER_SECOND * windowSeconds));
+    return {
+        timestamps,
+        windowSeconds,
+        estimatedLimitPerWindow,
+        requestsMade: timestamps.length,
+        remainingRequests: Math.max(0, estimatedLimitPerWindow - timestamps.length),
+    };
+}
+
+function maybeWarnAboutDoiRateLimit(now = Date.now()) {
+    const { timestamps } = getDoiFetchWindowStats(now);
     if (timestamps.length < DOI_RATE_WARNING_MIN_SAMPLE_SIZE) return;
     if ((now - state.lastDoiRateWarningAt) < DOI_RATE_WARNING_COOLDOWN_MS) return;
 
@@ -1266,6 +1505,10 @@ function maybeWarnAboutDoiRateLimit(now = Date.now()) {
 function recordDoiFetchAttempt(now = Date.now()) {
     pruneDoiFetchRateHistory(now);
     state.doiFetchRecentTimestamps.push(now);
+    const stats = getDoiFetchWindowStats(now);
+    debugLog(
+        `Crossref DOI rolling window (${stats.windowSeconds}s): ${stats.requestsMade}/${stats.estimatedLimitPerWindow} requests used, ${stats.remainingRequests} remaining.`,
+    );
     maybeWarnAboutDoiRateLimit(now);
 }
 
@@ -1296,9 +1539,7 @@ function debugLog(message) {
         li.textContent = text;
         li.style.color = "var(--muted)";
         dom.errorLogList.prepend(li);
-        while (dom.errorLogList.children.length > 100) {
-            dom.errorLogList.removeChild(dom.errorLogList.lastChild);
-        }
+        trimErrorLogListToLimit();
     }
 }
 
@@ -1468,21 +1709,39 @@ function buildMetadataSnapshotKey(snapshot) {
 
 function updateMetadataDirtyIndicator() {
     if (!dom.metadataDirtyIndicator) return;
-    dom.metadataDirtyIndicator.classList.remove("is-dirty", "is-saving");
+    const previousMode = state.metadataIndicatorMode;
+    dom.metadataDirtyIndicator.classList.remove("is-dirty", "is-saving", "is-saved", "is-newly-saved");
 
     if (state.metadataSaving) {
+        state.metadataIndicatorMode = "saving";
         dom.metadataDirtyIndicator.textContent = "Saving...";
         dom.metadataDirtyIndicator.classList.add("is-saving");
         return;
     }
 
     if (state.metadataDirty) {
+        state.metadataIndicatorMode = "dirty";
         dom.metadataDirtyIndicator.textContent = "Unsaved changes";
         dom.metadataDirtyIndicator.classList.add("is-dirty");
         return;
     }
 
+    state.metadataIndicatorMode = "saved";
     dom.metadataDirtyIndicator.textContent = "Saved";
+    dom.metadataDirtyIndicator.classList.add("is-saved");
+
+    if (previousMode && previousMode !== "saved") {
+        if (metadataSavedBlinkTimeout) {
+            window.clearTimeout(metadataSavedBlinkTimeout);
+            metadataSavedBlinkTimeout = null;
+        }
+        void dom.metadataDirtyIndicator.offsetWidth;
+        dom.metadataDirtyIndicator.classList.add("is-newly-saved");
+        metadataSavedBlinkTimeout = window.setTimeout(() => {
+            dom.metadataDirtyIndicator?.classList.remove("is-newly-saved");
+            metadataSavedBlinkTimeout = null;
+        }, 1400);
+    }
 }
 
 function clearMetadataChangeTracking() {
@@ -1594,12 +1853,19 @@ const PDF_LIGATURES = {
     "\uFB06": "st",
 };
 
-function normalizePdfAbstractText(raw) {
+function normalizePdfTextArtifacts(raw, options = {}) {
+    const preserveParagraphBreaks = Boolean(options.preserveParagraphBreaks);
     let s = String(raw || "");
     if (!s) return "";
 
     if (typeof s.normalize === "function") {
         s = s.normalize("NFKC");
+    }
+
+    s = s.replace(/\r\n?/g, "\n");
+    const paragraphSentinel = preserveParagraphBreaks ? "\uE001" : "";
+    if (paragraphSentinel) {
+        s = s.replace(/\n{2,}/g, paragraphSentinel);
     }
 
     // Remove invisible joiners and soft hyphen artifacts commonly present in PDF copy.
@@ -1626,10 +1892,24 @@ function normalizePdfAbstractText(raw) {
     // Strip remaining non-printable control chars (except line breaks handled below).
     s = s.replace(/[\u0000-\u0008\u000B\u000C\u000F-\u001F\u007F]/g, "");
 
-    // Flatten remaining line breaks and normalize spacing.
-    s = s.replace(/[\r\n]+/g, " ");
-    s = s.replace(/\s+/g, " ").trim();
+    if (paragraphSentinel) {
+        s = s.replace(/[ \t]*\n[ \t]*/g, " ");
+        s = s.replace(/\s+/g, " ").trim();
+        s = s.split(paragraphSentinel).map((part) => part.trim()).filter(Boolean).join("\n\n");
+    } else {
+        // Flatten remaining line breaks and normalize spacing.
+        s = s.replace(/\n+/g, " ");
+        s = s.replace(/\s+/g, " ").trim();
+    }
     return s;
+}
+
+function normalizePdfAbstractText(raw) {
+    return normalizePdfTextArtifacts(raw);
+}
+
+function cleanCopiedPdfRegionText(raw) {
+    return normalizePdfTextArtifacts(raw, { preserveParagraphBreaks: true });
 }
 
 function tokenizeAbstractSentences(rawText) {
@@ -2330,6 +2610,198 @@ function updateTagAutocomplete(query) {
 function escapeHtml(str) {
     return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
+
+function sanitizeMarkdownHref(rawHref) {
+    const trimmed = String(rawHref || "").trim();
+    if (!trimmed) return "";
+    const normalized = /^www\./i.test(trimmed) ? `https://${trimmed}` : trimmed;
+    try {
+        const parsed = new URL(normalized, window.location.href);
+        if (parsed.protocol === "http:" || parsed.protocol === "https:" || parsed.protocol === "mailto:") {
+            return parsed.href;
+        }
+    } catch {
+        return "";
+    }
+    return "";
+}
+
+function renderMarkdownInline(text) {
+    const source = String(text || "");
+    const tokenPattern = /(`([^`\n]+)`)|(\[([^\]\n]+)\]\(([^)\n]+)\))|(\*\*([^\n]+?)\*\*|__([^\n]+?)__)|(\*([^*\n]+)\*|_([^_\n]+)_)|(~~([^~\n]+)~~)|((?:https?:\/\/|www\.)[^\s<]+)/g;
+    let html = "";
+    let lastIndex = 0;
+
+    for (const match of source.matchAll(tokenPattern)) {
+        const index = Number.isInteger(match.index) ? match.index : 0;
+        html += escapeHtml(source.slice(lastIndex, index));
+
+        if (match[2] !== undefined) {
+            html += `<code>${escapeHtml(match[2])}</code>`;
+        } else if (match[4] !== undefined && match[5] !== undefined) {
+            const safeHref = sanitizeMarkdownHref(match[5]);
+            const labelHtml = renderMarkdownInline(match[4]);
+            html += safeHref
+                ? `<a href="${escapeHtml(safeHref)}" target="_blank" rel="noopener noreferrer">${labelHtml}</a>`
+                : labelHtml;
+        } else if (match[7] !== undefined || match[8] !== undefined) {
+            const content = match[7] !== undefined ? match[7] : match[8];
+            html += `<strong>${renderMarkdownInline(content)}</strong>`;
+        } else if (match[10] !== undefined || match[11] !== undefined) {
+            const content = match[10] !== undefined ? match[10] : match[11];
+            html += `<em>${renderMarkdownInline(content)}</em>`;
+        } else if (match[13] !== undefined) {
+            html += `<del>${renderMarkdownInline(match[13])}</del>`;
+        } else if (match[14] !== undefined) {
+            const safeHref = sanitizeMarkdownHref(match[14]);
+            html += safeHref
+                ? `<a href="${escapeHtml(safeHref)}" target="_blank" rel="noopener noreferrer">${escapeHtml(match[14])}</a>`
+                : escapeHtml(match[14]);
+        } else {
+            html += escapeHtml(match[0]);
+        }
+
+        lastIndex = index + match[0].length;
+    }
+
+    html += escapeHtml(source.slice(lastIndex));
+    return html;
+}
+
+function renderMarkdownParagraph(text) {
+    return text
+        .split("\n")
+        .map((line) => renderMarkdownInline(line))
+        .join("<br>");
+}
+
+function consumeMarkdownList(lines, startIndex, ordered) {
+    const matcher = ordered ? /^\s*\d+\.\s+(.*)$/ : /^\s*[*+-]\s+(.*)$/;
+    const tagName = ordered ? "ol" : "ul";
+    const items = [];
+    let index = startIndex;
+
+    while (index < lines.length) {
+        const line = lines[index];
+        const match = line.match(matcher);
+        if (!match) break;
+
+        const itemLines = [match[1]];
+        index += 1;
+
+        while (index < lines.length) {
+            const nextLine = lines[index];
+            if (!nextLine.trim()) break;
+            if (matcher.test(nextLine)) break;
+            if (!/^\s+/.test(nextLine) && isMarkdownBlockBoundary(nextLine)) break;
+            itemLines.push(nextLine.replace(/^\s+/, ""));
+            index += 1;
+        }
+
+        items.push(`<li>${renderMarkdownParagraph(itemLines.join("\n"))}</li>`);
+
+        while (index < lines.length && !lines[index].trim()) {
+            if (index + 1 < lines.length && lines[index + 1].match(matcher)) {
+                index += 1;
+                break;
+            }
+            index += 1;
+        }
+    }
+
+    return {
+        html: `<${tagName}>${items.join("")}</${tagName}>`,
+        nextIndex: index,
+    };
+}
+
+function isMarkdownBlockBoundary(line) {
+    const trimmed = String(line || "").trim();
+    if (!trimmed) return true;
+    return /^#{1,6}\s+/.test(trimmed) ||
+        /^```/.test(trimmed) ||
+        /^>\s?/.test(trimmed) ||
+        /^([-*_])(?:\s*\1){2,}\s*$/.test(trimmed) ||
+        /^\s*[*+-]\s+/.test(line) ||
+        /^\s*\d+\.\s+/.test(line);
+}
+
+function renderMarkdownToHtml(markdown) {
+    const lines = String(markdown || "").replace(/\r\n?/g, "\n").split("\n");
+    const blocks = [];
+    let index = 0;
+
+    while (index < lines.length) {
+        const line = lines[index];
+        const trimmed = line.trim();
+
+        if (!trimmed) {
+            index += 1;
+            continue;
+        }
+
+        if (/^```/.test(trimmed)) {
+            const codeLines = [];
+            index += 1;
+            while (index < lines.length && !/^```/.test(lines[index].trim())) {
+                codeLines.push(lines[index]);
+                index += 1;
+            }
+            if (index < lines.length && /^```/.test(lines[index].trim())) index += 1;
+            blocks.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+            continue;
+        }
+
+        const headingMatch = trimmed.match(/^(#{1,6})\s+(.*)$/);
+        if (headingMatch) {
+            const level = headingMatch[1].length;
+            blocks.push(`<h${level}>${renderMarkdownInline(headingMatch[2])}</h${level}>`);
+            index += 1;
+            continue;
+        }
+
+        if (/^([-*_])(?:\s*\1){2,}\s*$/.test(trimmed)) {
+            blocks.push("<hr>");
+            index += 1;
+            continue;
+        }
+
+        if (/^>\s?/.test(trimmed)) {
+            const quoteLines = [];
+            while (index < lines.length && /^>\s?/.test(lines[index].trim())) {
+                quoteLines.push(lines[index].replace(/^\s*>\s?/, ""));
+                index += 1;
+            }
+            blocks.push(`<blockquote>${renderMarkdownToHtml(quoteLines.join("\n"))}</blockquote>`);
+            continue;
+        }
+
+        if (/^\s*[*+-]\s+/.test(line)) {
+            const list = consumeMarkdownList(lines, index, false);
+            blocks.push(list.html);
+            index = list.nextIndex;
+            continue;
+        }
+
+        if (/^\s*\d+\.\s+/.test(line)) {
+            const list = consumeMarkdownList(lines, index, true);
+            blocks.push(list.html);
+            index = list.nextIndex;
+            continue;
+        }
+
+        const paragraphLines = [line];
+        index += 1;
+        while (index < lines.length && lines[index].trim() && !isMarkdownBlockBoundary(lines[index])) {
+            paragraphLines.push(lines[index]);
+            index += 1;
+        }
+        blocks.push(`<p>${renderMarkdownParagraph(paragraphLines.join("\n"))}</p>`);
+    }
+
+    return blocks.join("");
+}
+
 async function getThumbDataUrl(relPath) {
     if (!relPath) return "";
     if (thumbCache.has(relPath)) return thumbCache.get(relPath);
@@ -3023,8 +3495,15 @@ function syncPdfExperimentalToolVisibility() {
     if (dom.enablePdfStarryBackgroundCheckbox) {
         dom.enablePdfStarryBackgroundCheckbox.checked = state.enablePdfStarryBackground;
     }
+    if (dom.unlockPdfViewerWidthCheckbox) {
+        dom.unlockPdfViewerWidthCheckbox.checked = state.unlockPdfViewerWidth;
+    }
     if (dom.pdfStage) {
         dom.pdfStage.classList.toggle("pdf-stage-starry", state.enablePdfStarryBackground);
+    }
+    const viewerCard = getPdfViewerModalCard();
+    if (viewerCard) {
+        viewerCard.classList.toggle("is-width-unlocked", state.unlockPdfViewerWidth);
     }
     if (dom.pdfCopyRegionToggle) {
         dom.pdfCopyRegionToggle.classList.toggle("hidden", !state.enablePdfCopyTool || pdfViewer.toolMode === "capture-thumbnail");
@@ -3046,6 +3525,7 @@ function syncPdfExperimentalToolVisibility() {
         clearPdfCapturePreview();
         clearPdfToolSession();
     }
+    syncExperimentalNestedOptions();
     syncPdfToolPanel();
     renderPdfToolOverlays();
 }
@@ -4124,14 +4604,18 @@ async function copyPdfRegionSelection(pageNumber, rect) {
             }
             return a.left - b.left;
         });
-    const extracted = joinPdfRegionItems(matches);
+    const extracted = cleanCopiedPdfRegionText(joinPdfRegionItems(matches));
     if (!extracted.trim()) {
         showToast("No text found in that region.");
         return;
     }
     const ok = await copyRawToClipboard(extracted);
     if (ok) {
-        showPdfCopyPreview(extracted);
+        if (state.previewCopiedText) {
+            showPdfCopyPreview(extracted, getPdfCopyPreviewDurationMs());
+        } else {
+            hidePdfCopyPreview();
+        }
         return;
     }
     showToast("Failed to copy PDF region text");
@@ -4680,6 +5164,29 @@ async function openPdf(article) {
     await openPdfExternal(article);
 }
 
+function togglePdfCopyRegionTool() {
+    if (!isPdfViewerOpen() || !state.enablePdfCopyTool) return false;
+    setPdfToolMode(pdfViewer.toolMode === "copy-region" ? "none" : "copy-region");
+    syncPdfViewerControls();
+    return true;
+}
+
+function togglePdfThumbnailCaptureTool() {
+    if (!isPdfViewerOpen() || !state.enablePdfThumbnailCapture) return false;
+    if (pdfViewer.toolMode === "capture-thumbnail") {
+        setPdfToolMode("none");
+        syncPdfViewerControls();
+        return true;
+    }
+    renderPdfPageSurface(clampPdfPage(pdfViewer.page))
+        .catch(() => { /* best effort: live preview will update once visible render completes */ })
+        .finally(() => {
+            setPdfToolMode("capture-thumbnail");
+            syncPdfViewerControls();
+        });
+    return true;
+}
+
 async function openPdfInternal(article) {
     if (!article?.id) return;
     markArticleSelected(article);
@@ -4832,6 +5339,12 @@ function resetTimedNoticeProgress(progressEl) {
     progressEl.style.transform = "scaleX(0)";
 }
 
+function setPersistentNoticeProgress(progressEl) {
+    if (!progressEl) return;
+    progressEl.style.transition = "none";
+    progressEl.style.transform = "scaleX(1)";
+}
+
 function startTimedNoticeProgress(progressEl, durationMs = TIMED_NOTICE_DURATION_MS) {
     if (!progressEl) return;
     progressEl.style.transition = "none";
@@ -4856,16 +5369,21 @@ function hidePdfCopyPreview() {
     resetTimedNoticeProgress(dom.pdfCopyPreviewProgress);
 }
 
-function showPdfCopyPreview(text, durationMs = TIMED_NOTICE_DURATION_MS) {
+function showPdfCopyPreview(text, durationMs = getPdfCopyPreviewDurationMs()) {
     if (!dom.pdfCopyPreview || !dom.pdfCopyPreviewText) return;
     clearTimeout(pdfCopyPreviewHideTimer);
     dom.pdfCopyPreviewText.textContent = text;
     dom.pdfCopyPreview.classList.remove("hidden");
     dom.pdfCopyPreview.classList.add("visible");
-    startTimedNoticeProgress(dom.pdfCopyPreviewProgress, durationMs);
-    pdfCopyPreviewHideTimer = setTimeout(() => {
-        hidePdfCopyPreview();
-    }, durationMs);
+    if (Number.isFinite(durationMs) && durationMs > 0) {
+        startTimedNoticeProgress(dom.pdfCopyPreviewProgress, durationMs);
+        pdfCopyPreviewHideTimer = setTimeout(() => {
+            hidePdfCopyPreview();
+        }, durationMs);
+    } else {
+        setPersistentNoticeProgress(dom.pdfCopyPreviewProgress);
+        pdfCopyPreviewHideTimer = null;
+    }
 }
 
 function hideGlobalErrorBanner() {
@@ -5463,11 +5981,14 @@ const CLICK_ACTIONS = [
     { key: "openLocation", label: "Open File Location" },
 ];
 const KEYBOARD_SHORTCUTS = [
-    { label: "Paste thumbnail", key: "pasteThumb" },
-    { label: "Save & close", key: "enter" },
-    { label: "Switch modal", key: "arrowToggle" },
-    { label: "Prev article", key: "prevArticle" },
-    { label: "Next article", key: "nextArticle" },
+    { label: "paste thumbnail", key: "pasteThumb" },
+    { label: "PDF copy tool", key: "pdfCopyTool" },
+    { label: "PDF thumbnail tool", key: "pdfThumbnailTool" },
+    { label: "save & close", key: "enter" },
+    { label: "prev modal", key: "prevModal" },
+    { label: "next modal", key: "nextModal" },
+    { label: "prev article", key: "prevArticle" },
+    { label: "next article", key: "nextArticle" },
 ];
 const WELLNESS_TIPS = [
     {
@@ -5503,6 +6024,7 @@ const WELLNESS_TIPS = [
 let _hkListening = null; // { key, cleanup }
 
 function buildHotkeyTable() {
+    syncKeyboardShortcutButtonHints();
     const container = dom.hotkeyTableContainer;
     if (!container) return;
     clearNode(container);
@@ -5922,7 +6444,13 @@ function openAbstract(article) {
     const abstractText = typeof md.abstract === "string" ? md.abstract.trim() : "";
     const formattedAbstract = formatAbstractForDisplay(abstractText, state.abstractSectionCount);
     dom.abstractText.textContent = formattedAbstract || "No abstract available.";
-    debugLog(`Opened abstract modal for article ${article.id} (sections=${state.abstractSectionCount}).`);
+    const notesText = typeof md.notes === "string" ? md.notes.trim() : "";
+    if (dom.abstractNotesSection && dom.abstractNotesText) {
+        const shouldShowNotes = state.showAbstractPreviewNotes && Boolean(notesText);
+        dom.abstractNotesSection.style.display = shouldShowNotes ? "block" : "none";
+        dom.abstractNotesText.innerHTML = shouldShowNotes ? renderMarkdownToHtml(notesText) : "";
+    }
+    debugLog(`Opened abstract modal for article ${article.id} (sections=${state.abstractSectionCount}, notes=${state.showAbstractPreviewNotes && Boolean(notesText)}).`);
 
     if (dom.abstractReferencesSection) {
         dom.abstractReferencesSection.style.display = "none";
@@ -6010,6 +6538,52 @@ function openAbstract(article) {
 function closeAbstract() {
     dom.abstractModal.classList.add("hidden");
     state.abstractPreviewArticle = null;
+}
+
+const MODAL_ROTATION_ORDER = ["metadata", "abstract", "pdf"];
+
+function getCurrentModalRotationView() {
+    if (!dom.modal.classList.contains("hidden")) return "metadata";
+    if (!dom.abstractModal.classList.contains("hidden")) return "abstract";
+    if (isPdfViewerOpen()) return "pdf";
+    return "";
+}
+
+function getAdjacentModalRotationView(currentView, direction) {
+    const currentIndex = MODAL_ROTATION_ORDER.indexOf(currentView);
+    if (currentIndex < 0) return "";
+    const span = MODAL_ROTATION_ORDER.length;
+    const step = direction < 0 ? -1 : 1;
+    return MODAL_ROTATION_ORDER[(currentIndex + step + span) % span];
+}
+
+function closeModalRotationView(view) {
+    if (view === "metadata") {
+        closeEditor();
+        return;
+    }
+    if (view === "abstract") {
+        closeAbstract();
+        return;
+    }
+    if (view === "pdf") {
+        closePdfViewer();
+    }
+}
+
+async function openModalRotationView(view, article) {
+    if (!article?.id) return;
+    if (view === "metadata") {
+        openEditor(article);
+        return;
+    }
+    if (view === "abstract") {
+        openAbstract(article);
+        return;
+    }
+    if (view === "pdf") {
+        await openPdfInternal(article);
+    }
 }
 
 function hasEmptyMetadata(article) {
@@ -6444,6 +7018,139 @@ function updateTagFilterUI() {
     }
 }
 
+function syncTagMatchModeUi(mode) {
+    const resolvedMode = ["all", "none"].includes(mode) ? mode : "any";
+    const tagMatchRadios = document.querySelectorAll('input[name="tag-match-mode"]');
+    const tmAnyLbl = document.getElementById("tm-any-lbl");
+    const tmAllLbl = document.getElementById("tm-all-lbl");
+    const tmNoneLbl = document.getElementById("tm-none-lbl");
+
+    tagMatchRadios.forEach((radio) => {
+        radio.checked = radio.value === resolvedMode;
+    });
+
+    if (resolvedMode === "all") {
+        if (tmAllLbl) { tmAllLbl.style.background = "var(--accent)"; tmAllLbl.style.color = "white"; }
+        if (tmAnyLbl) { tmAnyLbl.style.background = "var(--bg)"; tmAnyLbl.style.color = "var(--text)"; }
+        if (tmNoneLbl) { tmNoneLbl.style.background = "var(--bg)"; tmNoneLbl.style.color = "var(--text)"; }
+    } else if (resolvedMode === "none") {
+        if (tmNoneLbl) { tmNoneLbl.style.background = "var(--accent)"; tmNoneLbl.style.color = "white"; }
+        if (tmAnyLbl) { tmAnyLbl.style.background = "var(--bg)"; tmAnyLbl.style.color = "var(--text)"; }
+        if (tmAllLbl) { tmAllLbl.style.background = "var(--bg)"; tmAllLbl.style.color = "var(--text)"; }
+    } else {
+        if (tmAnyLbl) { tmAnyLbl.style.background = "var(--accent)"; tmAnyLbl.style.color = "white"; }
+        if (tmAllLbl) { tmAllLbl.style.background = "var(--bg)"; tmAllLbl.style.color = "var(--text)"; }
+        if (tmNoneLbl) { tmNoneLbl.style.background = "var(--bg)"; tmNoneLbl.style.color = "var(--text)"; }
+    }
+}
+
+function refreshPreferenceStateFromStorage() {
+    state.viewMode = window.localStorage.getItem("article-view-mode") || "preview";
+    if (state.viewMode !== "preview" && state.viewMode !== "details") {
+        state.viewMode = "preview";
+    }
+    state.cardHeight = Number.parseInt(window.localStorage.getItem("article-card-height") || "138", 10);
+    state.autoFitHeight = window.localStorage.getItem("article-autofit-height") === "true";
+    state.cardWidth = Number.parseInt(window.localStorage.getItem("article-card-width") || "200", 10);
+    state.cardFont = Number.parseInt(window.localStorage.getItem("article-card-font") || "14", 10);
+    state.fontFamily = normalizeFontKey(window.localStorage.getItem("article-font-family") || "segoe", "segoe");
+    state.themePresets = loadThemePresets();
+    state.theme = VALID_THEMES.has(window.localStorage.getItem("article-theme") || "ocean")
+        ? (window.localStorage.getItem("article-theme") || "ocean")
+        : "ocean";
+    state.primarySort = normalizeSortKey(window.localStorage.getItem("article-primary-sort") || "year_desc", "year_desc");
+    state.secondarySort = normalizeSortKey(window.localStorage.getItem("article-secondary-sort") || "title_asc", "title_asc");
+    state.tagFilterMode = window.localStorage.getItem("article-tag-mode") || "all";
+    state.tintByTag = window.localStorage.getItem("article-tint-by-tag") === "true";
+    state.filterIncomplete = window.localStorage.getItem("article-filter-incomplete") === "true";
+    state.autoRefCompile = window.localStorage.getItem("article-auto-ref") === "true";
+    state.showDupeWarnings = window.localStorage.getItem("article-dupe-warnings") !== "false";
+    state.colorIntensity = Number.parseInt(window.localStorage.getItem("article-color-intensity") || "13", 10);
+    state.tagGradientReach = Number.parseInt(window.localStorage.getItem("article-tag-gradient-reach") || "26", 10);
+    state.modalBackdropDarkness = Number.parseInt(window.localStorage.getItem("article-modal-backdrop-darkness") || "58", 10);
+    state.surfaceOpacity = Number.parseInt(window.localStorage.getItem("article-surface-opacity") || "100", 10);
+    state.defaultPdfZoom = Number.parseInt(window.localStorage.getItem(DEFAULT_PDF_ZOOM_KEY) || "100", 10);
+    state.nightFilterEnabled = initNightFilterEnabledPreference();
+    state.nightFilterMode = normalizeNightFilterMode(window.localStorage.getItem("article-night-filter-mode") || "warm");
+    state.nightFilterStrength = clampNightFilterStrength(window.localStorage.getItem("article-night-filter-strength") || "0");
+    state.enablePdfCopyTool = window.localStorage.getItem(PDF_COPY_TOOL_ENABLED_KEY) === "true";
+    state.previewCopiedText = window.localStorage.getItem(PDF_COPY_PREVIEW_ENABLED_KEY) !== "false";
+    state.pdfCopyPreviewDurationSetting = clampInfiniteSliderSetting(
+        window.localStorage.getItem(PDF_COPY_PREVIEW_DURATION_KEY),
+        DEFAULT_PDF_COPY_PREVIEW_DURATION_SETTING,
+    );
+    state.enablePdfThumbnailCapture = window.localStorage.getItem(PDF_THUMBNAIL_CAPTURE_ENABLED_KEY) === "true";
+    state.downscalePdfCaptureImages = window.localStorage.getItem(PDF_CAPTURE_DOWNSCALE_ENABLED_KEY) !== "false";
+    state.enablePdfStarryBackground = window.localStorage.getItem(PDF_STARRY_BACKGROUND_ENABLED_KEY) === "true";
+    state.unlockPdfViewerWidth = window.localStorage.getItem(PDF_VIEWER_WIDTH_UNLOCKED_KEY) === "true";
+    state.showAbstractPreviewNotes = window.localStorage.getItem(ABSTRACT_PREVIEW_NOTES_ENABLED_KEY) === "true";
+    state.tagColors = JSON.parse(window.localStorage.getItem("article-tag-colors") || "{}");
+    state.hotkeys = loadHotkeys();
+    state.keyboardShortcuts = loadKeyboardShortcuts();
+    state.nicheTags = JSON.parse(window.localStorage.getItem("article-niche-tags") || "[]");
+    state.enableNiche = initEnableNichePreference();
+    state.showNiche = initShowNichePreference();
+    state.showRefDois = initShowRefDoisPreference();
+    state.wellnessTipIndex = normalizeTipIndex(Number.parseInt(window.localStorage.getItem("article-wellness-tip-index") || "0", 10));
+    state.showErrorsGlobally = window.localStorage.getItem("article-show-errors") !== "false";
+    state.abstractSectionCount = clampAbstractSectionCount(window.localStorage.getItem("article-abstract-sections") || "4");
+    state.debugMode = window.localStorage.getItem("article-debug-mode") === "true";
+    state.debugLogRetentionSetting = clampInfiniteSliderSetting(
+        window.localStorage.getItem(DEBUG_LOG_RETENTION_KEY),
+        DEFAULT_DEBUG_LOG_RETENTION_SETTING,
+    );
+
+    if (_hkListening) {
+        _hkListening.cleanup();
+        _hkListening = null;
+    }
+
+    if (dom.viewModeToggle) dom.viewModeToggle.checked = state.viewMode === "details";
+    if (dom.primarySort) dom.primarySort.value = state.primarySort;
+    if (dom.secondarySort) dom.secondarySort.value = state.secondarySort;
+    if (dom.cardHeightAutofit) dom.cardHeightAutofit.checked = state.autoFitHeight;
+    if (dom.autoRefCompile) dom.autoRefCompile.checked = state.autoRefCompile;
+    if (dom.filterIncomplete) dom.filterIncomplete.checked = state.filterIncomplete;
+    if (dom.tintByTag) dom.tintByTag.checked = state.tintByTag;
+    if (dom.showDupeWarnings) dom.showDupeWarnings.checked = state.showDupeWarnings;
+    if (dom.showErrorsCheckbox) dom.showErrorsCheckbox.checked = state.showErrorsGlobally;
+    if (dom.showRefDoisCheckbox) dom.showRefDoisCheckbox.checked = state.showRefDois;
+    if (dom.showAbstractPreviewNotesCheckbox) dom.showAbstractPreviewNotesCheckbox.checked = state.showAbstractPreviewNotes;
+    if (dom.debugModeCheckbox) dom.debugModeCheckbox.checked = state.debugMode;
+    if (dom.enableNicheCheckbox) dom.enableNicheCheckbox.checked = state.enableNiche;
+    if (dom.showNicheCheckbox) dom.showNicheCheckbox.checked = state.enableNiche ? state.showNiche : false;
+    if (dom.nicheTagsInput) dom.nicheTagsInput.value = "";
+    setNicheTagChips(state.nicheTags);
+
+    applyCardHeight(state.cardHeight);
+    applyCardWidth(state.cardWidth);
+    applyCardFont(state.cardFont);
+    applyModalBackdropDarkness(state.modalBackdropDarkness);
+    applySurfaceOpacity(state.surfaceOpacity);
+    applyDefaultPdfZoom(state.defaultPdfZoom);
+    applyFontFamily(state.fontFamily);
+    applyTheme(state.theme);
+    applyNightFilter(state.nightFilterMode, state.nightFilterStrength);
+    updateNightFilterControlVisibility();
+    updateTagTintControlVisibility();
+    applyTagGradientReach(state.tagGradientReach);
+    applyAbstractSectionCount(state.abstractSectionCount);
+    updateNicheUiVisibility();
+    syncTagMatchModeUi(state.tagFilterMode);
+    syncExperimentalNestedOptions();
+    syncPdfExperimentalToolVisibility();
+    syncPdfViewerControls();
+    syncPdfViewerChromeState();
+    if (dom.colorIntensitySlider) dom.colorIntensitySlider.value = String(state.colorIntensity);
+    if (dom.colorIntensityValue) dom.colorIntensityValue.textContent = String(state.colorIntensity);
+    if (!state.showErrorsGlobally) {
+        hideGlobalErrorBanner();
+    }
+    buildHotkeyTable();
+    renderThemeSelectOptions();
+    renderArticles();
+}
+
 function persistDemoModePreference(enabled) {
     state.demoMode = Boolean(enabled);
     window.localStorage.setItem(DEMO_MODE_KEY, state.demoMode ? "true" : "false");
@@ -6455,6 +7162,7 @@ function persistDemoModePreference(enabled) {
 async function reloadLibraryForStorageSwitch() {
     closeEditor();
     closeAbstract();
+    closePdfViewer();
     stopThumbnailUndoPrompt();
     thumbCache.clear();
     invalidateTagSuggestionCorpus();
@@ -6489,6 +7197,7 @@ async function setDemoModeEnabled(enabled, { startup = false } = {}) {
     setFilesMenuOpen(false);
     setStatus(nextMode ? "Enabling demo mode..." : "Exiting demo mode...");
 
+    let restoredPreferenceSnapshot = true;
     try {
         await invoke("set_demo_mode", {
             enabled: nextMode,
@@ -6505,6 +7214,18 @@ async function setDemoModeEnabled(enabled, { startup = false } = {}) {
     persistDemoModePreference(nextMode);
 
     if (!startup) {
+        if (nextMode) {
+            storeDemoModePreferenceSnapshot();
+            resetStoredArticlePreferencesToDefaults();
+        } else {
+            restoredPreferenceSnapshot = restoreStoredArticlePreferences(readDemoModePreferenceSnapshot());
+            window.localStorage.removeItem(DEMO_MODE_PREF_SNAPSHOT_KEY);
+        }
+
+        refreshPreferenceStateFromStorage();
+    }
+
+    if (!startup) {
         try {
             await reloadLibraryForStorageSwitch();
         } catch (err) {
@@ -6512,7 +7233,11 @@ async function setDemoModeEnabled(enabled, { startup = false } = {}) {
             setStatus(`Demo mode switched, but reload failed: ${message}`, true);
             return false;
         }
-        showToast(nextMode ? "Demo mode enabled" : "Demo data deleted");
+        if (!nextMode && !restoredPreferenceSnapshot) {
+            setStatus("Demo data deleted, but the previous preference snapshot was unavailable.", true);
+        } else {
+            showToast(nextMode ? "Demo mode enabled" : "Demo data deleted");
+        }
     }
 
     return true;
@@ -6917,7 +7642,8 @@ async function checkDuplicates() {
             title.textContent = article.metadata?.title || article.pdf_filename;
             const meta = document.createElement("div");
             meta.className = "meta";
-            meta.textContent = article.pdf_filename;
+            const addedText = prettyDate(article.date_added) || article.date_added || "Unknown";
+            meta.textContent = `${article.pdf_filename} | Added: ${addedText}`;
             info.appendChild(title);
             info.appendChild(meta);
 
@@ -7218,9 +7944,36 @@ function wireEvents() {
         dom.enablePdfCopyToolCheckbox.addEventListener("change", () => {
             state.enablePdfCopyTool = dom.enablePdfCopyToolCheckbox.checked;
             window.localStorage.setItem(PDF_COPY_TOOL_ENABLED_KEY, state.enablePdfCopyTool ? "true" : "false");
+            syncExperimentalNestedOptions();
             syncPdfExperimentalToolVisibility();
             syncPdfViewerControls();
         });
+    }
+
+    if (dom.previewCopiedTextCheckbox) {
+        dom.previewCopiedTextCheckbox.checked = state.previewCopiedText;
+        dom.previewCopiedTextCheckbox.addEventListener("change", () => {
+            state.previewCopiedText = dom.previewCopiedTextCheckbox.checked;
+            window.localStorage.setItem(PDF_COPY_PREVIEW_ENABLED_KEY, state.previewCopiedText ? "true" : "false");
+            if (!state.previewCopiedText) {
+                hidePdfCopyPreview();
+            }
+            syncExperimentalNestedOptions();
+        });
+    }
+
+    if (dom.pdfCopyPreviewDurationSlider) {
+        dom.pdfCopyPreviewDurationSlider.value = String(state.pdfCopyPreviewDurationSetting);
+        const commitPdfCopyPreviewDuration = () => {
+            state.pdfCopyPreviewDurationSetting = clampInfiniteSliderSetting(
+                dom.pdfCopyPreviewDurationSlider.value,
+                DEFAULT_PDF_COPY_PREVIEW_DURATION_SETTING,
+            );
+            window.localStorage.setItem(PDF_COPY_PREVIEW_DURATION_KEY, String(state.pdfCopyPreviewDurationSetting));
+            syncExperimentalNestedOptions();
+        };
+        dom.pdfCopyPreviewDurationSlider.addEventListener("input", commitPdfCopyPreviewDuration);
+        dom.pdfCopyPreviewDurationSlider.addEventListener("change", commitPdfCopyPreviewDuration);
     }
 
     if (dom.enablePdfThumbnailCaptureCheckbox) {
@@ -7250,15 +8003,41 @@ function wireEvents() {
         });
     }
 
+    if (dom.unlockPdfViewerWidthCheckbox) {
+        dom.unlockPdfViewerWidthCheckbox.checked = state.unlockPdfViewerWidth;
+        dom.unlockPdfViewerWidthCheckbox.addEventListener("change", () => {
+            state.unlockPdfViewerWidth = dom.unlockPdfViewerWidthCheckbox.checked;
+            window.localStorage.setItem(PDF_VIEWER_WIDTH_UNLOCKED_KEY, state.unlockPdfViewerWidth ? "true" : "false");
+            syncPdfExperimentalToolVisibility();
+        });
+    }
+
     if (dom.debugModeCheckbox) {
         dom.debugModeCheckbox.checked = state.debugMode;
         dom.debugModeCheckbox.addEventListener("change", () => {
             state.debugMode = dom.debugModeCheckbox.checked;
             window.localStorage.setItem("article-debug-mode", state.debugMode ? "true" : "false");
+            syncExperimentalNestedOptions();
             debugLog(`Debug mode ${state.debugMode ? "enabled" : "disabled"}.`);
             if (state.debugMode) setStatus("Debug mode enabled.");
         });
     }
+
+    if (dom.debugLogRetentionSlider) {
+        dom.debugLogRetentionSlider.value = String(state.debugLogRetentionSetting);
+        const commitDebugLogRetention = () => {
+            state.debugLogRetentionSetting = clampInfiniteSliderSetting(
+                dom.debugLogRetentionSlider.value,
+                DEFAULT_DEBUG_LOG_RETENTION_SETTING,
+            );
+            window.localStorage.setItem(DEBUG_LOG_RETENTION_KEY, String(state.debugLogRetentionSetting));
+            syncExperimentalNestedOptions();
+        };
+        dom.debugLogRetentionSlider.addEventListener("input", commitDebugLogRetention);
+        dom.debugLogRetentionSlider.addEventListener("change", commitDebugLogRetention);
+    }
+
+    syncExperimentalNestedOptions();
 
     if (dom.demoModeCheckbox) {
         dom.demoModeCheckbox.checked = state.demoMode;
@@ -7324,6 +8103,17 @@ function wireEvents() {
             state.showRefDois = dom.showRefDoisCheckbox.checked;
             window.localStorage.setItem(SHOW_REF_DOIS_KEY, state.showRefDois ? "true" : "false");
             window.localStorage.setItem(SHOW_REF_DOIS_PREF_TOUCHED_KEY, "true");
+        });
+    }
+
+    if (dom.showAbstractPreviewNotesCheckbox) {
+        dom.showAbstractPreviewNotesCheckbox.checked = state.showAbstractPreviewNotes;
+        dom.showAbstractPreviewNotesCheckbox.addEventListener("change", () => {
+            state.showAbstractPreviewNotes = dom.showAbstractPreviewNotesCheckbox.checked;
+            window.localStorage.setItem(ABSTRACT_PREVIEW_NOTES_ENABLED_KEY, state.showAbstractPreviewNotes ? "true" : "false");
+            if (state.abstractPreviewArticle && dom.abstractModal && !dom.abstractModal.classList.contains("hidden")) {
+                openAbstract(state.abstractPreviewArticle);
+            }
         });
     }
 
@@ -7925,25 +8715,12 @@ function wireEvents() {
     }
     if (dom.pdfCopyRegionToggle) {
         dom.pdfCopyRegionToggle.addEventListener("click", () => {
-            if (!state.enablePdfCopyTool) return;
-            setPdfToolMode(pdfViewer.toolMode === "copy-region" ? "none" : "copy-region");
-            syncPdfViewerControls();
+            togglePdfCopyRegionTool();
         });
     }
     if (dom.pdfCaptureThumbnailToggle) {
         dom.pdfCaptureThumbnailToggle.addEventListener("click", () => {
-            if (!state.enablePdfThumbnailCapture) return;
-            if (pdfViewer.toolMode === "capture-thumbnail") {
-                setPdfToolMode("none");
-                syncPdfViewerControls();
-                return;
-            }
-            renderPdfPageSurface(clampPdfPage(pdfViewer.page))
-                .catch(() => { /* best effort: live preview will update once visible render completes */ })
-                .finally(() => {
-                    setPdfToolMode("capture-thumbnail");
-                    syncPdfViewerControls();
-                });
+            togglePdfThumbnailCaptureTool();
         });
     }
     if (dom.pdfCapturePreset) {
@@ -8402,14 +9179,18 @@ function wireEvents() {
             : (metadataOpen ? state.current : state.abstractPreviewArticle);
         if (!activeArticle?.id) return false;
 
-        const isToggleShortcut = !pdfViewerOpen && matchesKeyboardShortcut(evt, "arrowToggle");
+        const modalView = getCurrentModalRotationView();
+        const isPrevModalShortcut = matchesKeyboardShortcut(evt, "prevModal");
+        const isNextModalShortcut = matchesKeyboardShortcut(evt, "nextModal");
         const isPrevShortcut = matchesKeyboardShortcut(evt, "prevArticle");
         const isNextShortcut = matchesKeyboardShortcut(evt, "nextArticle");
-        if (!isToggleShortcut && !isPrevShortcut && !isNextShortcut) return false;
+        const isModalSwitchShortcut = isPrevModalShortcut || isNextModalShortcut;
+        if (!isModalSwitchShortcut && !isPrevShortcut && !isNextShortcut) return false;
 
-        const direction = isPrevShortcut ? -1 : 1;
-        const targetArticle = isToggleShortcut ? activeArticle : getNeighborArticleById(activeArticle.id, direction);
-        if (!targetArticle?.id) return false;
+        const articleDirection = isPrevShortcut ? -1 : 1;
+        const modalDirection = isPrevModalShortcut ? -1 : 1;
+        const targetArticle = isModalSwitchShortcut ? activeArticle : getNeighborArticleById(activeArticle.id, articleDirection);
+        if (!targetArticle?.id || !modalView) return false;
 
         evt.preventDefault();
         evt.stopPropagation();
@@ -8418,34 +9199,27 @@ function wireEvents() {
 
         (async () => {
             const resolved = resolveArticleById(targetArticle.id) || targetArticle;
-
-            if (pdfViewerOpen) {
-                await openPdfInternal(resolved);
-                return;
-            }
-
-            if (metadataOpen) {
-                await saveMetadata({ type: isToggleShortcut ? "arrow-modal-toggle" : "arrow-article-nav" });
-            }
-
-            if (isToggleShortcut) {
-                if (abstractOpen) {
-                    closeAbstract();
-                    openEditor(resolved);
-                } else {
-                    closeEditor();
-                    openAbstract(resolved);
+            if (isModalSwitchShortcut) {
+                const targetView = getAdjacentModalRotationView(modalView, modalDirection);
+                if (!targetView) return;
+                if (modalView === "metadata") {
+                    await saveMetadata({
+                        type: isPrevModalShortcut ? "arrow-prev-modal" : "arrow-next-modal",
+                    });
                 }
+                const latestResolved = resolveArticleById(resolved.id) || resolved;
+                closeModalRotationView(modalView);
+                await openModalRotationView(targetView, latestResolved);
                 return;
             }
 
-            if (abstractOpen) {
-                closeAbstract();
-                openAbstract(resolved);
-            } else {
-                closeEditor();
-                openEditor(resolved);
+            if (modalView === "metadata") {
+                await saveMetadata({ type: "arrow-article-nav" });
             }
+
+            const latestResolved = resolveArticleById(resolved.id) || resolved;
+            closeModalRotationView(modalView);
+            await openModalRotationView(modalView, latestResolved);
         })()
             .catch((err) => {
                 const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
@@ -8543,6 +9317,24 @@ function wireEvents() {
             }
         }
 
+        const pdfViewerOpen = isPdfViewerOpen();
+        if (pdfViewerOpen && !isPdfViewerEditableField(evt.target) && !evt.repeat) {
+            if (matchesKeyboardShortcut(evt, "pdfCopyTool")) {
+                if (togglePdfCopyRegionTool()) {
+                    evt.preventDefault();
+                    evt.stopPropagation();
+                    return;
+                }
+            }
+            if (matchesKeyboardShortcut(evt, "pdfThumbnailTool")) {
+                if (togglePdfThumbnailCaptureTool()) {
+                    evt.preventDefault();
+                    evt.stopPropagation();
+                    return;
+                }
+            }
+        }
+
         if (matchesKeyboardShortcut(evt, "enter") && !dom.modal.classList.contains("hidden")) {
             evt.preventDefault();
             saveMetadata(evt).then(() => closeEditor());
@@ -8633,9 +9425,7 @@ function logGlobalError(message, source, lineno) {
     li.textContent = text;
     if (dom.errorLogList) {
         dom.errorLogList.prepend(li);
-        while (dom.errorLogList.children.length > 50) {
-            dom.errorLogList.removeChild(dom.errorLogList.lastChild);
-        }
+        trimErrorLogListToLimit();
     }
 
     if (state.showErrorsGlobally) {

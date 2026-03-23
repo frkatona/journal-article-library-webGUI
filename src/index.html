@@ -156,10 +156,16 @@
                                     <input id="show-dupe-warnings" type="checkbox" />
                                     <span style="font-size:0.82rem;">Warn on duplicate DOIs</span>
                                 </label>
-                                <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
-                                    <input id="debug-mode" type="checkbox" />
-                                    <span style="font-size:0.82rem;">Debug mode (verbose routine output)</span>
-                                </label>
+                                <div class="experimental-option-stack">
+                                    <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                                        <input id="debug-mode" type="checkbox" />
+                                        <span style="font-size:0.82rem;">Debug mode (verbose routine output)</span>
+                                    </label>
+                                    <div id="debug-mode-options" class="field experimental-nested-control hidden">
+                                        <span>Debug log history <strong id="debug-log-retention-value">90 entries</strong></span>
+                                        <input id="debug-log-retention-slider" type="range" min="1" max="10" step="1" value="9" />
+                                    </div>
+                                </div>
                                 <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
                                     <input id="demo-mode" type="checkbox" />
                                     <span style="font-size:0.82rem;">Demo mode</span>
@@ -172,10 +178,21 @@
                                     <input id="long-parse" type="checkbox" />
                                     <span style="font-size:0.82rem;">Long Parse (&gt;2s PDF timeout)</span>
                                 </label>
-                                <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
-                                    <input id="enable-pdf-copy-tool" type="checkbox" />
-                                    <span style="font-size:0.82rem;">Enable PDF copy tool</span>
-                                </label>
+                                <div class="experimental-option-stack">
+                                    <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                                        <input id="enable-pdf-copy-tool" type="checkbox" />
+                                        <span style="font-size:0.82rem;">Enable PDF copy tool</span>
+                                    </label>
+                                    <label id="pdf-copy-preview-toggle-wrap" class="field experimental-nested-check hidden"
+                                        style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                                        <input id="preview-copied-text" type="checkbox" />
+                                        <span style="font-size:0.8rem;">Preview copied text</span>
+                                    </label>
+                                    <div id="pdf-copy-preview-duration-field" class="field experimental-nested-control hidden">
+                                        <span>Copy preview auto-close <strong id="pdf-copy-preview-duration-value">3s</strong></span>
+                                        <input id="pdf-copy-preview-duration-slider" type="range" min="1" max="10" step="1" value="3" />
+                                    </div>
+                                </div>
                                 <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
                                     <input id="enable-pdf-thumbnail-capture" type="checkbox" />
                                     <span style="font-size:0.82rem;">Enable PDF thumbnail capture</span>
@@ -187,6 +204,14 @@
                                 <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
                                     <input id="enable-pdf-starry-background" type="checkbox" />
                                     <span style="font-size:0.82rem;">Enable PDF starry background</span>
+                                </label>
+                                <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                                    <input id="unlock-pdf-viewer-width" type="checkbox" />
+                                    <span style="font-size:0.82rem;">Unlock PDF viewer width</span>
+                                </label>
+                                <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                                    <input id="show-abstract-notes-preview" type="checkbox" />
+                                    <span style="font-size:0.82rem;">Show notes in abstract preview</span>
                                 </label>
                                 <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
                                     <input id="enable-niche" type="checkbox" />
@@ -388,7 +413,7 @@
             <div class="modal-header">
                 <div class="modal-header-title">
                     <h2 id="modal-title">Edit Article</h2>
-                    <span id="metadata-dirty-indicator" class="metadata-dirty-indicator" aria-live="polite">Saved</span>
+                    <span id="metadata-dirty-indicator" class="metadata-dirty-indicator is-saved" aria-live="polite">Saved</span>
                 </div>
                 <button id="modal-close" type="button" title="Escape">Close</button>
             </div>
@@ -501,6 +526,10 @@
                     <div id="abstract-meta-divider" class="abstract-meta-divider"></div>
                 </div>
                 <div id="abstract-text"></div>
+                <div id="abstract-notes-section" class="abstract-notes-section" style="display:none;">
+                    <h3>Notes</h3>
+                    <div id="abstract-notes-text" class="abstract-notes-text"></div>
+                </div>
                 <div id="abstract-references-section" class="meta"
                     style="margin-top:20px; border-top:1px solid var(--line); padding-top:10px; display:none;">
                     <h3 style="font-size:0.9rem; margin-bottom:8px;">Referenced DOIs</h3>
@@ -786,7 +815,7 @@
                 <div class="hotkeys-modal-footer-separator"></div>
                 <a id="version-link" href="https://github.com/frkatona/journal-article-library-webGUI/releases"
                     target="_blank" rel="noopener noreferrer"
-                    class="hotkeys-version-link">v0.9.8</a>
+                    class="hotkeys-version-link">v0.9.9</a>
             </div>
         </div>
     </div>
