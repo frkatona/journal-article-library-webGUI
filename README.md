@@ -1185,6 +1185,13 @@ forgot about 0.9.5 LOL
 
 - [x] changed PDF preview copied text to reveal/unfold only when the copy tool is active 
 
+- [x] updated native typeface customizability
+  - organized into serif vs sans
+  - removed Trebuchet MS
+  - added Google Sans, Roboto Slab, Merriweather, and Cormorant Garamond
+
+- [x] starry night background: de-tiled the pattern and de-seamed the loop
+
 **push v0.9.9**
 
 ---

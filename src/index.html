@@ -161,8 +161,11 @@
                                         <input id="debug-mode" type="checkbox" />
                                         <span style="font-size:0.82rem;">Debug mode (verbose routine output)</span>
                                     </label>
-                                    <div id="debug-mode-options" class="field experimental-nested-control hidden">
-                                        <span>Debug log history <strong id="debug-log-retention-value">90 entries</strong></span>
+                                    <div id="debug-mode-options" class="field experimental-nested-control slider-collapsible expanded hidden" data-slider-field>
+                                        <span data-slider-toggle style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                                            <span>Debug log history <strong id="debug-log-retention-value">90 entries</strong></span>
+                                            <span class="slider-caret" aria-hidden="true">&#9656;</span>
+                                        </span>
                                         <input id="debug-log-retention-slider" type="range" min="1" max="10" step="1" value="9" />
                                     </div>
                                 </div>
@@ -170,14 +173,17 @@
                                     <input id="demo-mode" type="checkbox" />
                                     <span style="font-size:0.82rem;">Demo mode</span>
                                 </label>
-                                <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
-                                    <input id="parse-pdfs" type="checkbox" />
-                                    <span style="font-size:0.82rem;">Parse PDFs</span>
-                                </label>
-                                <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
-                                    <input id="long-parse" type="checkbox" />
-                                    <span style="font-size:0.82rem;">Long Parse (&gt;2s PDF timeout)</span>
-                                </label>
+                                <div class="experimental-option-stack">
+                                    <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                                        <input id="parse-pdfs" type="checkbox" />
+                                        <span style="font-size:0.82rem;">Parse PDFs</span>
+                                    </label>
+                                    <label id="long-parse-wrap" class="field experimental-nested-check hidden"
+                                        style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                                        <input id="long-parse" type="checkbox" />
+                                        <span style="font-size:0.8rem;">Long Parse (&gt;2s PDF timeout)</span>
+                                    </label>
+                                </div>
                                 <div class="experimental-option-stack">
                                     <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
                                         <input id="enable-pdf-copy-tool" type="checkbox" />
@@ -188,31 +194,52 @@
                                         <input id="preview-copied-text" type="checkbox" />
                                         <span style="font-size:0.8rem;">Preview copied text</span>
                                     </label>
-                                    <div id="pdf-copy-preview-duration-field" class="field experimental-nested-control hidden">
-                                        <span>Copy preview auto-close <strong id="pdf-copy-preview-duration-value">3s</strong></span>
+                                    <div id="pdf-copy-preview-duration-field" class="field experimental-nested-control slider-collapsible expanded hidden" data-slider-field>
+                                        <span data-slider-toggle style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                                            <span>Copy preview auto-close <strong id="pdf-copy-preview-duration-value">3s</strong></span>
+                                            <span class="slider-caret" aria-hidden="true">&#9656;</span>
+                                        </span>
                                         <input id="pdf-copy-preview-duration-slider" type="range" min="1" max="10" step="1" value="3" />
                                     </div>
                                 </div>
                                 <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
-                                    <input id="enable-pdf-thumbnail-capture" type="checkbox" />
-                                    <span style="font-size:0.82rem;">Enable PDF thumbnail capture</span>
-                                </label>
-                                <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
                                     <input id="downscale-pdf-capture-images" type="checkbox" checked />
                                     <span style="font-size:0.82rem;">Downscale large capture images</span>
                                 </label>
-                                <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
-                                    <input id="enable-pdf-starry-background" type="checkbox" />
-                                    <span style="font-size:0.82rem;">Enable PDF starry background</span>
-                                </label>
-                                <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
-                                    <input id="unlock-pdf-viewer-width" type="checkbox" />
-                                    <span style="font-size:0.82rem;">Unlock PDF viewer width</span>
-                                </label>
-                                <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
-                                    <input id="show-abstract-notes-preview" type="checkbox" />
-                                    <span style="font-size:0.82rem;">Show notes in abstract preview</span>
-                                </label>
+                                <div class="experimental-option-stack">
+                                    <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                                        <input id="enable-pdf-starry-background" type="checkbox" />
+                                        <span style="font-size:0.82rem;">Enable PDF starry background</span>
+                                    </label>
+                                    <div id="pdf-starry-brightness-field" class="field experimental-nested-control slider-collapsible expanded hidden" data-slider-field>
+                                        <span data-slider-toggle style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                                            <span>Star brightness <strong id="pdf-starry-brightness-value">100</strong>%</span>
+                                            <span class="slider-caret" aria-hidden="true">&#9656;</span>
+                                        </span>
+                                        <input id="pdf-starry-brightness-slider" type="range" min="20" max="180" step="1" value="100" />
+                                    </div>
+                                    <div id="pdf-starry-speed-field" class="field experimental-nested-control slider-collapsible expanded hidden" data-slider-field>
+                                        <span data-slider-toggle style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                                            <span>Drift speed <strong id="pdf-starry-speed-value">100</strong>%</span>
+                                            <span class="slider-caret" aria-hidden="true">&#9656;</span>
+                                        </span>
+                                        <input id="pdf-starry-speed-slider" type="range" min="30" max="220" step="1" value="100" />
+                                    </div>
+                                    <div id="pdf-starry-density-field" class="field experimental-nested-control slider-collapsible expanded hidden" data-slider-field>
+                                        <span data-slider-toggle style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                                            <span>Star density <strong id="pdf-starry-density-value">100</strong>%</span>
+                                            <span class="slider-caret" aria-hidden="true">&#9656;</span>
+                                        </span>
+                                        <input id="pdf-starry-density-slider" type="range" min="50" max="160" step="1" value="100" />
+                                    </div>
+                                    <div id="pdf-starry-straightness-field" class="field experimental-nested-control slider-collapsible expanded hidden" data-slider-field>
+                                        <span data-slider-toggle style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                                            <span>Line straightness <strong id="pdf-starry-straightness-value">100</strong>%</span>
+                                            <span class="slider-caret" aria-hidden="true">&#9656;</span>
+                                        </span>
+                                        <input id="pdf-starry-straightness-slider" type="range" min="0" max="100" step="1" value="100" />
+                                    </div>
+                                </div>
                                 <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
                                     <input id="enable-niche" type="checkbox" />
                                     <span style="font-size:0.82rem;">Enable niche</span>
@@ -267,11 +294,21 @@
                         <label class="field">
                             <span>Font</span>
                             <select id="font-family-select">
-                                <option value="segoe">Segoe UI</option>
-                                <option value="arial">Arial</option>
-                                <option value="georgia">Georgia</option>
-                                <option value="trebuchet">Trebuchet MS</option>
-                                <option value="courier">Courier New</option>
+                                <optgroup label="Sans">
+                                    <option value="segoe">Segoe UI</option>
+                                    <option value="arial">Arial</option>
+                                    <option value="montserrat">Montserrat</option>
+                                </optgroup>
+                                <optgroup label="Serif">
+                                    <option value="roboto_slab">Roboto Slab</option>
+                                    <option value="merriweather">Merriweather</option>
+                                    <option value="cormorant_garamond">Cormorant Garamond</option>
+                                </optgroup>
+                                <optgroup label="Monospace">
+                                    <option value="roboto_mono">Roboto Mono</option>
+                                    <option value="fira_code">Fira Code</option>
+                                    <option value="cascadia_code">Cascadia Code</option>
+                                </optgroup>
                             </select>
                         </label>
                         <hr style="border:none; border-top:1px solid var(--line); margin:6px 0; opacity:0.6;" />
@@ -309,9 +346,6 @@
                                 <select id="night-filter-mode">
                                     <option value="warm">Warm</option>
                                     <option value="scalar_dimming">Scalar dimming</option>
-                                    <option value="gamma_remap">Gamma re-map</option>
-                                    <option value="luminance_remap">Luminance re-map</option>
-                                    <option value="sigmoid_contrast">Sigmoid contrast shaping</option>
                                     <option value="soft_knee">Soft-knee compression</option>
                                 </select>
                             </label>
@@ -367,10 +401,10 @@
                         <div class="field slider-collapsible" data-slider-field>
                             <span data-slider-toggle
                                 style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-                                <span>UI Surface Opacity <strong id="surface-opacity-value">100</strong>%</span>
+                                <span>UI Surface Opacity <strong id="surface-opacity-value">95</strong>%</span>
                                 <span class="slider-caret" aria-hidden="true">&#9656;</span>
                             </span>
-                            <input id="surface-opacity-slider" type="range" min="30" max="100" step="1" value="100" />
+                            <input id="surface-opacity-slider" type="range" min="30" max="95" step="1" value="95" />
                         </div>
                         <div class="field slider-collapsible" data-slider-field>
                             <span data-slider-toggle
@@ -380,6 +414,14 @@
                             </span>
                             <input id="default-pdf-zoom-slider" type="range" min="50" max="150" step="1" value="100" />
                         </div>
+                        <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                            <input id="unlock-pdf-viewer-width" type="checkbox" />
+                            <span style="font-size:0.82rem;">Unlock PDF viewer width</span>
+                        </label>
+                        <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                            <input id="show-abstract-notes-preview" type="checkbox" />
+                            <span style="font-size:0.82rem;">Show notes in abstract preview</span>
+                        </label>
                     </div>
                 </div>
 
@@ -413,7 +455,7 @@
             <div class="modal-header">
                 <div class="modal-header-title">
                     <h2 id="modal-title">Edit Article</h2>
-                    <span id="metadata-dirty-indicator" class="metadata-dirty-indicator is-saved" aria-live="polite">Saved</span>
+                    <span id="metadata-dirty-indicator" class="metadata-dirty-indicator is-idle" aria-live="polite"></span>
                 </div>
                 <button id="modal-close" type="button" title="Escape">Close</button>
             </div>
@@ -595,14 +637,14 @@
                         <select id="pdf-night-filter-mode">
                             <option value="warm">Warm</option>
                             <option value="scalar_dimming">Scalar dimming</option>
-                            <option value="gamma_remap">Gamma re-map</option>
-                            <option value="luminance_remap">Luminance re-map</option>
-                            <option value="sigmoid_contrast">Sigmoid contrast shaping</option>
                             <option value="soft_knee">Soft-knee compression</option>
                         </select>
                     </label>
-                    <label class="field compact pdf-night-filter-strength-field">
-                        <span>Filter Strength <strong id="pdf-night-filter-strength-value">0</strong>%</span>
+                    <label class="field compact pdf-night-filter-strength-field slider-collapsible expanded" data-slider-field>
+                        <span data-slider-toggle style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                            <span>Filter Strength <strong id="pdf-night-filter-strength-value">0</strong>%</span>
+                            <span class="slider-caret" aria-hidden="true">&#9656;</span>
+                        </span>
                         <input id="pdf-night-filter-strength-slider" type="range" min="0" max="100" step="1"
                             value="0" />
                     </label>
@@ -780,7 +822,7 @@
     <div id="hotkeys-modal" class="modal hidden" role="dialog" aria-modal="true">
         <div class="modal-card hotkeys-modal-card">
             <div class="modal-header hotkeys-modal-header">
-                <h2>Hotkeys</h2>
+                <h2>Shortcuts</h2>
                 <button id="hotkeys-close" class="close-btn" type="button">&times;</button>
             </div>
             <div class="hotkeys-modal-body">

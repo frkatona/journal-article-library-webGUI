@@ -37,9 +37,12 @@ const NIGHT_FILTER_ENABLED_KEY = "article-night-filter-enabled";
 const PDF_COPY_TOOL_ENABLED_KEY = "article-pdf-copy-tool-enabled";
 const PDF_COPY_PREVIEW_ENABLED_KEY = "article-pdf-copy-preview-enabled";
 const PDF_COPY_PREVIEW_DURATION_KEY = "article-pdf-copy-preview-duration";
-const PDF_THUMBNAIL_CAPTURE_ENABLED_KEY = "article-pdf-thumbnail-capture-enabled";
 const PDF_CAPTURE_DOWNSCALE_ENABLED_KEY = "article-pdf-capture-downscale-enabled";
 const PDF_STARRY_BACKGROUND_ENABLED_KEY = "article-pdf-starry-background-enabled";
+const PDF_STARRY_BRIGHTNESS_KEY = "article-pdf-starry-brightness";
+const PDF_STARRY_SPEED_KEY = "article-pdf-starry-speed";
+const PDF_STARRY_DENSITY_KEY = "article-pdf-starry-density";
+const PDF_STARRY_STRAIGHTNESS_KEY = "article-pdf-starry-straightness";
 const PDF_VIEWER_WIDTH_UNLOCKED_KEY = "article-pdf-viewer-width-unlocked";
 const DEBUG_LOG_RETENTION_KEY = "article-debug-log-retention";
 const DEFAULT_PDF_ZOOM_KEY = "article-default-pdf-zoom";
@@ -59,6 +62,10 @@ const PDF_CAPTURE_THUMBNAIL_W = 420;
 const PDF_CAPTURE_THUMBNAIL_H = 260;
 const PDF_CAPTURE_MAX_DIMENSION = 2400;
 const PDF_CAPTURE_MAX_PIXELS = 6_000_000;
+const DEFAULT_PDF_STARRY_BRIGHTNESS = 100;
+const DEFAULT_PDF_STARRY_SPEED = 100;
+const DEFAULT_PDF_STARRY_DENSITY = 100;
+const DEFAULT_PDF_STARRY_STRAIGHTNESS = 100;
 const THEME_KEYS = ["ocean", "midnight", "nord", "monokai", "solarized", "light"];
 const TAG_SUGGESTION_BATCH_SIZE = 500;
 const TAG_SUGGESTION_MAX_ARTICLES = 5000;
@@ -633,9 +640,13 @@ const state = {
         window.localStorage.getItem(PDF_COPY_PREVIEW_DURATION_KEY),
         DEFAULT_PDF_COPY_PREVIEW_DURATION_SETTING,
     ),
-    enablePdfThumbnailCapture: window.localStorage.getItem(PDF_THUMBNAIL_CAPTURE_ENABLED_KEY) === "true",
+    enablePdfThumbnailCapture: true,
     downscalePdfCaptureImages: window.localStorage.getItem(PDF_CAPTURE_DOWNSCALE_ENABLED_KEY) !== "false",
     enablePdfStarryBackground: window.localStorage.getItem(PDF_STARRY_BACKGROUND_ENABLED_KEY) === "true",
+    pdfStarryBrightness: clampPdfStarryBrightness(window.localStorage.getItem(PDF_STARRY_BRIGHTNESS_KEY)),
+    pdfStarrySpeed: clampPdfStarrySpeed(window.localStorage.getItem(PDF_STARRY_SPEED_KEY)),
+    pdfStarryDensity: clampPdfStarryDensity(window.localStorage.getItem(PDF_STARRY_DENSITY_KEY)),
+    pdfStarryStraightness: clampPdfStarryStraightness(window.localStorage.getItem(PDF_STARRY_STRAIGHTNESS_KEY)),
     unlockPdfViewerWidth: window.localStorage.getItem(PDF_VIEWER_WIDTH_UNLOCKED_KEY) === "true",
     showAbstractPreviewNotes: window.localStorage.getItem(ABSTRACT_PREVIEW_NOTES_ENABLED_KEY) === "true",
     tagColors: JSON.parse(window.localStorage.getItem("article-tag-colors") || "{}"),
@@ -664,6 +675,7 @@ const state = {
     thumbnailUndo: null,
     metadataDirty: false,
     metadataSaving: false,
+    metadataSavedSinceOpen: false,
     metadataIndicatorMode: "",
     metadataBaselineKey: "",
     doiFetchRecentTimestamps: [],
@@ -737,6 +749,7 @@ const dom = {
     strategySelect: document.getElementById("strategy-select"),
     viewModeToggle: document.getElementById("view-mode-toggle"),
     parsePdfs: document.getElementById("parse-pdfs"),
+    longParseWrap: document.getElementById("long-parse-wrap"),
     reindexBtn: document.getElementById("reindex-btn"),
     openArticlesBtn: document.getElementById("open-articles-btn"),
     renameTagBtn: document.getElementById("rename-tag-btn"),
@@ -864,9 +877,20 @@ const dom = {
     pdfCopyPreviewDurationField: document.getElementById("pdf-copy-preview-duration-field"),
     pdfCopyPreviewDurationValue: document.getElementById("pdf-copy-preview-duration-value"),
     pdfCopyPreviewDurationSlider: document.getElementById("pdf-copy-preview-duration-slider"),
-    enablePdfThumbnailCaptureCheckbox: document.getElementById("enable-pdf-thumbnail-capture"),
     downscalePdfCaptureImagesCheckbox: document.getElementById("downscale-pdf-capture-images"),
     enablePdfStarryBackgroundCheckbox: document.getElementById("enable-pdf-starry-background"),
+    pdfStarryBrightnessField: document.getElementById("pdf-starry-brightness-field"),
+    pdfStarryBrightnessSlider: document.getElementById("pdf-starry-brightness-slider"),
+    pdfStarryBrightnessValue: document.getElementById("pdf-starry-brightness-value"),
+    pdfStarrySpeedField: document.getElementById("pdf-starry-speed-field"),
+    pdfStarrySpeedSlider: document.getElementById("pdf-starry-speed-slider"),
+    pdfStarrySpeedValue: document.getElementById("pdf-starry-speed-value"),
+    pdfStarryDensityField: document.getElementById("pdf-starry-density-field"),
+    pdfStarryDensitySlider: document.getElementById("pdf-starry-density-slider"),
+    pdfStarryDensityValue: document.getElementById("pdf-starry-density-value"),
+    pdfStarryStraightnessField: document.getElementById("pdf-starry-straightness-field"),
+    pdfStarryStraightnessSlider: document.getElementById("pdf-starry-straightness-slider"),
+    pdfStarryStraightnessValue: document.getElementById("pdf-starry-straightness-value"),
     unlockPdfViewerWidthCheckbox: document.getElementById("unlock-pdf-viewer-width"),
     showAbstractPreviewNotesCheckbox: document.getElementById("show-abstract-notes-preview"),
     enableNicheCheckbox: document.getElementById("enable-niche"),
@@ -960,9 +984,13 @@ const SORT_KEYS = new Set([
 const FONT_FAMILIES = {
     segoe: '"Segoe UI", Tahoma, Geneva, Verdana, sans-serif',
     arial: 'Arial, "Helvetica Neue", Helvetica, sans-serif',
-    georgia: 'Georgia, "Times New Roman", Times, serif',
-    trebuchet: '"Trebuchet MS", "Lucida Sans Unicode", "Lucida Grande", "Lucida Sans", Arial, sans-serif',
-    courier: '"Courier New", Courier, monospace',
+    montserrat: '"Montserrat", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif',
+    roboto_slab: '"Roboto Slab", Georgia, "Times New Roman", Times, serif',
+    merriweather: '"Merriweather", Georgia, "Times New Roman", Times, serif',
+    cormorant_garamond: '"Cormorant Garamond", Georgia, "Times New Roman", Times, serif',
+    roboto_mono: '"Roboto Mono", "Courier New", Courier, monospace',
+    fira_code: '"Fira Code", "Cascadia Code", "Roboto Mono", "Courier New", Courier, monospace',
+    cascadia_code: '"Cascadia Code", "Cascadia Mono", "Roboto Mono", "Fira Code", "Courier New", Courier, monospace',
 };
 
 function normalizeSortKey(value, fallback) {
@@ -1071,18 +1099,54 @@ function applyModalBackdropDarkness(value) {
     if (dom.modalBackdropValue) dom.modalBackdropValue.textContent = String(darkness);
 }
 
+const SURFACE_OPACITY_ACTUAL_MIN = 30;
+const SURFACE_OPACITY_ACTUAL_MAX = 100;
+const SURFACE_OPACITY_DISPLAY_MIN = 30;
+const SURFACE_OPACITY_DISPLAY_MAX = 95;
+
 function clampSurfaceOpacity(value) {
     const n = Number.parseInt(String(value), 10);
-    if (Number.isNaN(n)) return 100;
-    return Math.max(30, Math.min(100, n));
+    if (Number.isNaN(n)) return SURFACE_OPACITY_ACTUAL_MAX;
+    return Math.max(SURFACE_OPACITY_ACTUAL_MIN, Math.min(SURFACE_OPACITY_ACTUAL_MAX, n));
 }
 
-function applySurfaceOpacity(value) {
-    const opacityPercent = clampSurfaceOpacity(value);
+function clampSurfaceOpacityDisplay(value) {
+    const n = Number.parseInt(String(value), 10);
+    if (Number.isNaN(n)) return SURFACE_OPACITY_DISPLAY_MAX;
+    return Math.max(SURFACE_OPACITY_DISPLAY_MIN, Math.min(SURFACE_OPACITY_DISPLAY_MAX, n));
+}
+
+function surfaceOpacityActualToDisplay(value) {
+    const actual = clampSurfaceOpacity(value);
+    const actualSpan = SURFACE_OPACITY_ACTUAL_MAX - SURFACE_OPACITY_ACTUAL_MIN;
+    const displaySpan = SURFACE_OPACITY_DISPLAY_MAX - SURFACE_OPACITY_DISPLAY_MIN;
+    if (actualSpan <= 0 || displaySpan <= 0) return SURFACE_OPACITY_DISPLAY_MAX;
+    const ratio = (actual - SURFACE_OPACITY_ACTUAL_MIN) / actualSpan;
+    return clampSurfaceOpacityDisplay(
+        Math.round(SURFACE_OPACITY_DISPLAY_MIN + (ratio * displaySpan)),
+    );
+}
+
+function surfaceOpacityDisplayToActual(value) {
+    const display = clampSurfaceOpacityDisplay(value);
+    const displaySpan = SURFACE_OPACITY_DISPLAY_MAX - SURFACE_OPACITY_DISPLAY_MIN;
+    const actualSpan = SURFACE_OPACITY_ACTUAL_MAX - SURFACE_OPACITY_ACTUAL_MIN;
+    if (displaySpan <= 0 || actualSpan <= 0) return SURFACE_OPACITY_ACTUAL_MAX;
+    const ratio = (display - SURFACE_OPACITY_DISPLAY_MIN) / displaySpan;
+    return clampSurfaceOpacity(
+        Math.round(SURFACE_OPACITY_ACTUAL_MIN + (ratio * actualSpan)),
+    );
+}
+
+function applySurfaceOpacity(value, options = {}) {
+    const opacityPercent = options.displayScale
+        ? surfaceOpacityDisplayToActual(value)
+        : clampSurfaceOpacity(value);
+    const displayPercent = surfaceOpacityActualToDisplay(opacityPercent);
     state.surfaceOpacity = opacityPercent;
     document.documentElement.style.setProperty("--surface-opacity-factor", (opacityPercent / 100).toFixed(2));
-    if (dom.surfaceOpacitySlider) dom.surfaceOpacitySlider.value = String(opacityPercent);
-    if (dom.surfaceOpacityValue) dom.surfaceOpacityValue.textContent = String(opacityPercent);
+    if (dom.surfaceOpacitySlider) dom.surfaceOpacitySlider.value = String(displayPercent);
+    if (dom.surfaceOpacityValue) dom.surfaceOpacityValue.textContent = String(displayPercent);
 }
 
 function clampDefaultPdfZoom(value) {
@@ -1111,18 +1175,97 @@ function applyTagGradientReach(value) {
     if (dom.tagGradientReachValue) dom.tagGradientReachValue.textContent = String(reach);
 }
 
+function clampPdfStarryBrightness(value) {
+    const n = Number.parseInt(String(value), 10);
+    if (Number.isNaN(n)) return DEFAULT_PDF_STARRY_BRIGHTNESS;
+    return Math.max(20, Math.min(180, n));
+}
+
+function clampPdfStarrySpeed(value) {
+    const n = Number.parseInt(String(value), 10);
+    if (Number.isNaN(n)) return DEFAULT_PDF_STARRY_SPEED;
+    return Math.max(30, Math.min(220, n));
+}
+
+function clampPdfStarryDensity(value) {
+    const n = Number.parseInt(String(value), 10);
+    if (Number.isNaN(n)) return DEFAULT_PDF_STARRY_DENSITY;
+    return Math.max(50, Math.min(160, n));
+}
+
+function clampPdfStarryStraightness(value) {
+    const n = Number.parseInt(String(value), 10);
+    if (Number.isNaN(n)) return DEFAULT_PDF_STARRY_STRAIGHTNESS;
+    return Math.max(0, Math.min(100, n));
+}
+
+function applyPdfStarryBackgroundSettings() {
+    const stage = dom.pdfStage;
+    if (!stage) return;
+
+    const brightness = clampPdfStarryBrightness(state.pdfStarryBrightness);
+    const speed = clampPdfStarrySpeed(state.pdfStarrySpeed);
+    const density = clampPdfStarryDensity(state.pdfStarryDensity);
+    const straightness = clampPdfStarryStraightness(state.pdfStarryStraightness);
+    state.pdfStarryBrightness = brightness;
+    state.pdfStarrySpeed = speed;
+    state.pdfStarryDensity = density;
+    state.pdfStarryStraightness = straightness;
+
+    const brightnessScale = brightness / 100;
+    const speedScale = speed / 100;
+    const densityScale = 100 / density;
+    const curveScale = 1 - (straightness / 100);
+    const majorDriftX = -960 * densityScale;
+    const majorDriftY = 640 * densityScale;
+    const minorDriftX = -1280 * densityScale;
+    const minorDriftY = -960 * densityScale;
+    const buildCurvedMidpoint = (driftX, driftY, curveFactor) => {
+        const length = Math.hypot(driftX, driftY) || 1;
+        const perpendicularX = -driftY / length;
+        const perpendicularY = driftX / length;
+        const curveAmount = length * curveFactor * curveScale;
+        return {
+            x: (driftX * 0.5) + (perpendicularX * curveAmount),
+            y: (driftY * 0.5) + (perpendicularY * curveAmount),
+        };
+    };
+    const majorMidpoint = buildCurvedMidpoint(majorDriftX, majorDriftY, 0.22);
+    const minorMidpoint = buildCurvedMidpoint(minorDriftX, minorDriftY, -0.18);
+
+    stage.style.setProperty("--pdf-starfield-brightness", brightnessScale.toFixed(3));
+    stage.style.setProperty("--pdf-starfield-speed-major", `${(82 / speedScale).toFixed(2)}s`);
+    stage.style.setProperty("--pdf-starfield-speed-minor", `${(118 / speedScale).toFixed(2)}s`);
+    stage.style.setProperty("--pdf-starfield-major-size-x", `${(960 * densityScale).toFixed(1)}px`);
+    stage.style.setProperty("--pdf-starfield-major-size-y", `${(640 * densityScale).toFixed(1)}px`);
+    stage.style.setProperty("--pdf-starfield-minor-size-x", `${(1280 * densityScale).toFixed(1)}px`);
+    stage.style.setProperty("--pdf-starfield-minor-size-y", `${(960 * densityScale).toFixed(1)}px`);
+    stage.style.setProperty("--pdf-starfield-major-drift-x", `${majorDriftX.toFixed(1)}px`);
+    stage.style.setProperty("--pdf-starfield-major-drift-y", `${majorDriftY.toFixed(1)}px`);
+    stage.style.setProperty("--pdf-starfield-major-mid-x", `${majorMidpoint.x.toFixed(1)}px`);
+    stage.style.setProperty("--pdf-starfield-major-mid-y", `${majorMidpoint.y.toFixed(1)}px`);
+    stage.style.setProperty("--pdf-starfield-minor-drift-x", `${minorDriftX.toFixed(1)}px`);
+    stage.style.setProperty("--pdf-starfield-minor-drift-y", `${minorDriftY.toFixed(1)}px`);
+    stage.style.setProperty("--pdf-starfield-minor-mid-x", `${minorMidpoint.x.toFixed(1)}px`);
+    stage.style.setProperty("--pdf-starfield-minor-mid-y", `${minorMidpoint.y.toFixed(1)}px`);
+
+    if (dom.pdfStarryBrightnessSlider) dom.pdfStarryBrightnessSlider.value = String(brightness);
+    if (dom.pdfStarryBrightnessValue) dom.pdfStarryBrightnessValue.textContent = String(brightness);
+    if (dom.pdfStarrySpeedSlider) dom.pdfStarrySpeedSlider.value = String(speed);
+    if (dom.pdfStarrySpeedValue) dom.pdfStarrySpeedValue.textContent = String(speed);
+    if (dom.pdfStarryDensitySlider) dom.pdfStarryDensitySlider.value = String(density);
+    if (dom.pdfStarryDensityValue) dom.pdfStarryDensityValue.textContent = String(density);
+    if (dom.pdfStarryStraightnessSlider) dom.pdfStarryStraightnessSlider.value = String(straightness);
+    if (dom.pdfStarryStraightnessValue) dom.pdfStarryStraightnessValue.textContent = String(straightness);
+}
+
 const NIGHT_FILTER_MODES = new Set([
     "warm",
     "scalar_dimming",
-    "gamma_remap",
-    "luminance_remap",
-    "sigmoid_contrast",
     "soft_knee",
 ]);
 
 const IDENTITY_COLOR_MATRIX = "1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0";
-const LUMA_PRE_MATRIX = "0.2126 0.7152 0.0722 0 0  -0.1063 -0.3576 0.4639 0 0.5  0.3937 -0.3576 -0.0361 0 0.5  0 0 0 1 0";
-const LUMA_POST_MATRIX = "1 0 2 0 -1  1 -0.2019 -0.5945 0 0.3982  1 2 0 0 -1  0 0 0 1 0";
 const NIGHT_FILTER_TARGET_SELECTOR = [
     "#topbar",
     "main",
@@ -1247,38 +1390,6 @@ function applyNightFilter(modeValue, strengthValue) {
             mapR = (x) => x * dim;
             mapG = (x) => x * dim;
             mapB = (x) => x * dim;
-            break;
-        }
-        case "gamma_remap": {
-            const gamma = 1 + (2.8 * s);
-            mapR = (x) => Math.pow(x, gamma);
-            mapG = (x) => Math.pow(x, gamma);
-            mapB = (x) => Math.pow(x, gamma);
-            break;
-        }
-        case "luminance_remap": {
-            const gamma = 1 + (2.2 * s);
-            const dim = 1 - (0.25 * s);
-            preMatrix = LUMA_PRE_MATRIX;
-            postMatrix = LUMA_POST_MATRIX;
-            mapR = (y) => Math.pow(y, gamma) * dim;
-            mapG = (u) => u; // Preserve chroma U' channel.
-            mapB = (v) => v; // Preserve chroma V' channel.
-            break;
-        }
-        case "sigmoid_contrast": {
-            const k = 2 + (12 * s);
-            const low = 1 / (1 + Math.exp(k * 0.5));
-            const high = 1 / (1 + Math.exp(-k * 0.5));
-            const span = Math.max(1e-6, high - low);
-            const dim = 1 - (0.45 * s);
-            const shape = (x) => {
-                const sig = 1 / (1 + Math.exp(-k * (x - 0.5)));
-                return ((sig - low) / span) * dim;
-            };
-            mapR = shape;
-            mapG = shape;
-            mapB = shape;
             break;
         }
         case "soft_knee": {
@@ -1418,6 +1529,25 @@ function wireSliderToggles(container) {
     });
 }
 
+function wireRangeDoubleClickResets(container = document) {
+    if (!container) return;
+    const rangeInputs = Array.from(container.querySelectorAll('input[type="range"]'));
+    rangeInputs.forEach((input) => {
+        if (!(input instanceof HTMLInputElement) || input.dataset.dblclickResetBound === "true") return;
+        input.dataset.dblclickResetBound = "true";
+        input.addEventListener("dblclick", (evt) => {
+            evt.preventDefault();
+            evt.stopPropagation();
+
+            const fallbackValue = input.getAttribute("value") || input.defaultValue || input.min || "0";
+            if (!fallbackValue) return;
+            input.value = fallbackValue;
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+        });
+    });
+}
+
 function trimErrorLogListToLimit() {
     if (!dom.errorLogList) return;
     const limit = getDebugLogEntryLimit();
@@ -1428,6 +1558,9 @@ function trimErrorLogListToLimit() {
 }
 
 function syncExperimentalNestedOptions() {
+    if (dom.longParseWrap) {
+        dom.longParseWrap.classList.toggle("hidden", !dom.parsePdfs?.checked);
+    }
     if (dom.pdfCopyPreviewToggleWrap) {
         dom.pdfCopyPreviewToggleWrap.classList.toggle("hidden", !state.enablePdfCopyTool);
     }
@@ -1443,6 +1576,19 @@ function syncExperimentalNestedOptions() {
     if (dom.pdfCopyPreviewDurationValue) {
         dom.pdfCopyPreviewDurationValue.textContent = formatInfiniteDurationLabel(state.pdfCopyPreviewDurationSetting);
     }
+    if (dom.pdfStarryBrightnessField) {
+        dom.pdfStarryBrightnessField.classList.toggle("hidden", !state.enablePdfStarryBackground);
+    }
+    if (dom.pdfStarrySpeedField) {
+        dom.pdfStarrySpeedField.classList.toggle("hidden", !state.enablePdfStarryBackground);
+    }
+    if (dom.pdfStarryDensityField) {
+        dom.pdfStarryDensityField.classList.toggle("hidden", !state.enablePdfStarryBackground);
+    }
+    if (dom.pdfStarryStraightnessField) {
+        dom.pdfStarryStraightnessField.classList.toggle("hidden", !state.enablePdfStarryBackground);
+    }
+    applyPdfStarryBackgroundSettings();
     if (dom.debugModeOptions) {
         dom.debugModeOptions.classList.toggle("hidden", !state.debugMode);
     }
@@ -1710,7 +1856,7 @@ function buildMetadataSnapshotKey(snapshot) {
 function updateMetadataDirtyIndicator() {
     if (!dom.metadataDirtyIndicator) return;
     const previousMode = state.metadataIndicatorMode;
-    dom.metadataDirtyIndicator.classList.remove("is-dirty", "is-saving", "is-saved", "is-newly-saved");
+    dom.metadataDirtyIndicator.classList.remove("is-idle", "is-dirty", "is-saving", "is-saved", "is-newly-saved");
 
     if (state.metadataSaving) {
         state.metadataIndicatorMode = "saving";
@@ -1723,6 +1869,13 @@ function updateMetadataDirtyIndicator() {
         state.metadataIndicatorMode = "dirty";
         dom.metadataDirtyIndicator.textContent = "Unsaved changes";
         dom.metadataDirtyIndicator.classList.add("is-dirty");
+        return;
+    }
+
+    if (!state.metadataSavedSinceOpen) {
+        state.metadataIndicatorMode = "idle";
+        dom.metadataDirtyIndicator.textContent = "";
+        dom.metadataDirtyIndicator.classList.add("is-idle");
         return;
     }
 
@@ -1747,14 +1900,18 @@ function updateMetadataDirtyIndicator() {
 function clearMetadataChangeTracking() {
     state.metadataDirty = false;
     state.metadataSaving = false;
+    state.metadataSavedSinceOpen = false;
     state.metadataBaselineKey = "";
     updateMetadataDirtyIndicator();
 }
 
-function setMetadataBaselineFromArticle(article) {
+function setMetadataBaselineFromArticle(article, { markSaved = false } = {}) {
     state.metadataBaselineKey = buildMetadataSnapshotKey(buildArticleMetadataSnapshot(article));
     state.metadataDirty = false;
     state.metadataSaving = false;
+    if (markSaved) {
+        state.metadataSavedSinceOpen = true;
+    }
     updateMetadataDirtyIndicator();
 }
 
@@ -3447,7 +3604,7 @@ function syncPdfToolPanel() {
         dom.pdfCopyRegionToggle.classList.toggle("is-active", pdfViewer.toolMode === "copy-region");
     }
     if (dom.pdfCaptureThumbnailToggle) {
-        dom.pdfCaptureThumbnailToggle.classList.toggle("hidden", !state.enablePdfThumbnailCapture || pdfViewer.toolMode === "capture-thumbnail");
+        dom.pdfCaptureThumbnailToggle.classList.toggle("hidden", pdfViewer.toolMode === "capture-thumbnail");
         dom.pdfCaptureThumbnailToggle.classList.toggle("is-active", pdfViewer.toolMode === "capture-thumbnail");
     }
     if (dom.pdfCapturePreset) {
@@ -3486,9 +3643,6 @@ function syncPdfExperimentalToolVisibility() {
     if (dom.enablePdfCopyToolCheckbox) {
         dom.enablePdfCopyToolCheckbox.checked = state.enablePdfCopyTool;
     }
-    if (dom.enablePdfThumbnailCaptureCheckbox) {
-        dom.enablePdfThumbnailCaptureCheckbox.checked = state.enablePdfThumbnailCapture;
-    }
     if (dom.downscalePdfCaptureImagesCheckbox) {
         dom.downscalePdfCaptureImagesCheckbox.checked = state.downscalePdfCaptureImages;
     }
@@ -3501,6 +3655,7 @@ function syncPdfExperimentalToolVisibility() {
     if (dom.pdfStage) {
         dom.pdfStage.classList.toggle("pdf-stage-starry", state.enablePdfStarryBackground);
     }
+    applyPdfStarryBackgroundSettings();
     const viewerCard = getPdfViewerModalCard();
     if (viewerCard) {
         viewerCard.classList.toggle("is-width-unlocked", state.unlockPdfViewerWidth);
@@ -3509,20 +3664,13 @@ function syncPdfExperimentalToolVisibility() {
         dom.pdfCopyRegionToggle.classList.toggle("hidden", !state.enablePdfCopyTool || pdfViewer.toolMode === "capture-thumbnail");
     }
     if (dom.pdfCaptureThumbnailToggle) {
-        dom.pdfCaptureThumbnailToggle.classList.toggle("hidden", !state.enablePdfThumbnailCapture);
+        dom.pdfCaptureThumbnailToggle.classList.toggle("hidden", pdfViewer.toolMode === "capture-thumbnail");
     }
     if (!state.enablePdfCopyTool && pdfViewer.toolMode === "copy-region") {
         pdfViewer.toolMode = "none";
         pdfViewer.copyRegionPageNumber = 0;
         pdfViewer.copyRegionRect = null;
         clearPdfCopyRegionDebugMatches();
-        clearPdfToolSession();
-    }
-    if (!state.enablePdfThumbnailCapture && pdfViewer.toolMode === "capture-thumbnail") {
-        pdfViewer.toolMode = "none";
-        pdfViewer.capturePageNumber = 0;
-        pdfViewer.captureRect = null;
-        clearPdfCapturePreview();
         clearPdfToolSession();
     }
     syncExperimentalNestedOptions();
@@ -3701,7 +3849,7 @@ function syncPdfViewerControls() {
     if (dom.pdfOpenExternal) dom.pdfOpenExternal.disabled = !pdfViewer.article;
     if (dom.pdfToggleHeaderFold) dom.pdfToggleHeaderFold.disabled = !pdfViewer.article;
     if (dom.pdfCopyRegionToggle) dom.pdfCopyRegionToggle.disabled = !hasDoc || !state.enablePdfCopyTool;
-    if (dom.pdfCaptureThumbnailToggle) dom.pdfCaptureThumbnailToggle.disabled = !hasDoc || !state.enablePdfThumbnailCapture;
+    if (dom.pdfCaptureThumbnailToggle) dom.pdfCaptureThumbnailToggle.disabled = !hasDoc;
     if (dom.pdfCaptureSave) dom.pdfCaptureSave.disabled = !hasDoc || !pdfViewer.captureRect || pdfViewer.toolMode !== "capture-thumbnail";
     if (dom.pdfCapturePreset) dom.pdfCapturePreset.disabled = !hasDoc || pdfViewer.toolMode !== "capture-thumbnail";
 
@@ -5172,7 +5320,7 @@ function togglePdfCopyRegionTool() {
 }
 
 function togglePdfThumbnailCaptureTool() {
-    if (!isPdfViewerOpen() || !state.enablePdfThumbnailCapture) return false;
+    if (!isPdfViewerOpen()) return false;
     if (pdfViewer.toolMode === "capture-thumbnail") {
         setPdfToolMode("none");
         syncPdfViewerControls();
@@ -5973,12 +6121,12 @@ function resolveClickAction(evt, article) {
 }
 
 const CLICK_ACTIONS = [
-    { key: "openPdfExternal", label: "Open PDF Externally" },
-    { key: "openPdfInternal", label: "Open PDF Internally" },
-    { key: "editMetadata", label: "Edit Metadata" },
-    { key: "openAbstract", label: "Preview Abstract" },
-    { key: "copyBibtex", label: "Copy BibTeX" },
-    { key: "openLocation", label: "Open File Location" },
+    { key: "openPdfExternal", label: "open PDF externally" },
+    { key: "openPdfInternal", label: "open PDF internally" },
+    { key: "editMetadata", label: "edit metadata" },
+    { key: "openAbstract", label: "preview abstract" },
+    { key: "copyBibtex", label: "copy BibTeX" },
+    { key: "openLocation", label: "open file location" },
 ];
 const KEYBOARD_SHORTCUTS = [
     { label: "paste thumbnail", key: "pasteThumb" },
@@ -7079,9 +7227,13 @@ function refreshPreferenceStateFromStorage() {
         window.localStorage.getItem(PDF_COPY_PREVIEW_DURATION_KEY),
         DEFAULT_PDF_COPY_PREVIEW_DURATION_SETTING,
     );
-    state.enablePdfThumbnailCapture = window.localStorage.getItem(PDF_THUMBNAIL_CAPTURE_ENABLED_KEY) === "true";
+    state.enablePdfThumbnailCapture = true;
     state.downscalePdfCaptureImages = window.localStorage.getItem(PDF_CAPTURE_DOWNSCALE_ENABLED_KEY) !== "false";
     state.enablePdfStarryBackground = window.localStorage.getItem(PDF_STARRY_BACKGROUND_ENABLED_KEY) === "true";
+    state.pdfStarryBrightness = clampPdfStarryBrightness(window.localStorage.getItem(PDF_STARRY_BRIGHTNESS_KEY));
+    state.pdfStarrySpeed = clampPdfStarrySpeed(window.localStorage.getItem(PDF_STARRY_SPEED_KEY));
+    state.pdfStarryDensity = clampPdfStarryDensity(window.localStorage.getItem(PDF_STARRY_DENSITY_KEY));
+    state.pdfStarryStraightness = clampPdfStarryStraightness(window.localStorage.getItem(PDF_STARRY_STRAIGHTNESS_KEY));
     state.unlockPdfViewerWidth = window.localStorage.getItem(PDF_VIEWER_WIDTH_UNLOCKED_KEY) === "true";
     state.showAbstractPreviewNotes = window.localStorage.getItem(ABSTRACT_PREVIEW_NOTES_ENABLED_KEY) === "true";
     state.tagColors = JSON.parse(window.localStorage.getItem("article-tag-colors") || "{}");
@@ -7277,6 +7429,7 @@ async function loadArticles() {
 function openEditor(article) {
     markArticleSelected(article);
     state.current = article;
+    state.metadataSavedSinceOpen = false;
     debugLog(`Opened metadata editor for article ${article.id}.`);
     const md = article.metadata || {};
     dom.title.value = md.title || "";
@@ -7320,13 +7473,17 @@ async function saveMetadata(evt) {
     if (!state.current) return;
     const currentId = state.current.id;
     const trigger = evt?.type || "manual";
+    const markSavedWhenUnchanged = evt?.markSavedWhenUnchanged === true;
     const previousTags = dedupeTagsCaseInsensitive(state.current.metadata?.tags || []);
     const snapshot = buildEditorMetadataSnapshot();
     const snapshotKey = buildMetadataSnapshotKey(snapshot);
     if (snapshotKey === state.metadataBaselineKey) {
         state.metadataDirty = false;
+        if (markSavedWhenUnchanged) {
+            state.metadataSavedSinceOpen = true;
+        }
         updateMetadataDirtyIndicator();
-        return;
+        return "unchanged";
     }
 
     const payload = {
@@ -7378,17 +7535,19 @@ async function saveMetadata(evt) {
         }
         if (state.current?.id === currentId && !dom.modal.classList.contains("hidden")) {
             state.current = resolveArticleById(currentId) || savedArticle;
-            setMetadataBaselineFromArticle(state.current);
+            setMetadataBaselineFromArticle(state.current, { markSaved: true });
         } else {
-            setMetadataBaselineFromArticle(savedArticle);
+            setMetadataBaselineFromArticle(savedArticle, { markSaved: true });
         }
         refreshTagSuggestions({ allowCorpusLoad: false });
         setStatus("Metadata saved.");
+        return "saved";
     } catch (err) {
         setMetadataSavingState(false);
         const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
         setStatus(`Save failed: ${message}`, true);
         refreshMetadataDirtyState();
+        return "failed";
     }
 }
 
@@ -7725,6 +7884,8 @@ function wireEvents() {
     setFilesMenuOpen(false);
     wireSliderToggles(dom.displayMenu);
     wireSliderToggles(dom.filesMenu);
+    wireSliderToggles(dom.pdfNightFilterControls);
+    wireRangeDoubleClickResets();
 
     dom.searchInput.addEventListener("input", debouncedSearch);
     if (dom.form) {
@@ -7939,6 +8100,12 @@ function wireEvents() {
         });
     }
 
+    if (dom.parsePdfs) {
+        dom.parsePdfs.addEventListener("change", () => {
+            syncExperimentalNestedOptions();
+        });
+    }
+
     if (dom.enablePdfCopyToolCheckbox) {
         dom.enablePdfCopyToolCheckbox.checked = state.enablePdfCopyTool;
         dom.enablePdfCopyToolCheckbox.addEventListener("change", () => {
@@ -7976,16 +8143,6 @@ function wireEvents() {
         dom.pdfCopyPreviewDurationSlider.addEventListener("change", commitPdfCopyPreviewDuration);
     }
 
-    if (dom.enablePdfThumbnailCaptureCheckbox) {
-        dom.enablePdfThumbnailCaptureCheckbox.checked = state.enablePdfThumbnailCapture;
-        dom.enablePdfThumbnailCaptureCheckbox.addEventListener("change", () => {
-            state.enablePdfThumbnailCapture = dom.enablePdfThumbnailCaptureCheckbox.checked;
-            window.localStorage.setItem(PDF_THUMBNAIL_CAPTURE_ENABLED_KEY, state.enablePdfThumbnailCapture ? "true" : "false");
-            syncPdfExperimentalToolVisibility();
-            syncPdfViewerControls();
-        });
-    }
-
     if (dom.downscalePdfCaptureImagesCheckbox) {
         dom.downscalePdfCaptureImagesCheckbox.checked = state.downscalePdfCaptureImages;
         dom.downscalePdfCaptureImagesCheckbox.addEventListener("change", () => {
@@ -7999,8 +8156,49 @@ function wireEvents() {
         dom.enablePdfStarryBackgroundCheckbox.addEventListener("change", () => {
             state.enablePdfStarryBackground = dom.enablePdfStarryBackgroundCheckbox.checked;
             window.localStorage.setItem(PDF_STARRY_BACKGROUND_ENABLED_KEY, state.enablePdfStarryBackground ? "true" : "false");
+            syncExperimentalNestedOptions();
             syncPdfExperimentalToolVisibility();
         });
+    }
+
+    if (dom.pdfStarryBrightnessSlider) {
+        const commitPdfStarryBrightness = () => {
+            state.pdfStarryBrightness = clampPdfStarryBrightness(dom.pdfStarryBrightnessSlider.value);
+            window.localStorage.setItem(PDF_STARRY_BRIGHTNESS_KEY, String(state.pdfStarryBrightness));
+            applyPdfStarryBackgroundSettings();
+        };
+        dom.pdfStarryBrightnessSlider.addEventListener("input", commitPdfStarryBrightness);
+        dom.pdfStarryBrightnessSlider.addEventListener("change", commitPdfStarryBrightness);
+    }
+
+    if (dom.pdfStarrySpeedSlider) {
+        const commitPdfStarrySpeed = () => {
+            state.pdfStarrySpeed = clampPdfStarrySpeed(dom.pdfStarrySpeedSlider.value);
+            window.localStorage.setItem(PDF_STARRY_SPEED_KEY, String(state.pdfStarrySpeed));
+            applyPdfStarryBackgroundSettings();
+        };
+        dom.pdfStarrySpeedSlider.addEventListener("input", commitPdfStarrySpeed);
+        dom.pdfStarrySpeedSlider.addEventListener("change", commitPdfStarrySpeed);
+    }
+
+    if (dom.pdfStarryDensitySlider) {
+        const commitPdfStarryDensity = () => {
+            state.pdfStarryDensity = clampPdfStarryDensity(dom.pdfStarryDensitySlider.value);
+            window.localStorage.setItem(PDF_STARRY_DENSITY_KEY, String(state.pdfStarryDensity));
+            applyPdfStarryBackgroundSettings();
+        };
+        dom.pdfStarryDensitySlider.addEventListener("input", commitPdfStarryDensity);
+        dom.pdfStarryDensitySlider.addEventListener("change", commitPdfStarryDensity);
+    }
+
+    if (dom.pdfStarryStraightnessSlider) {
+        const commitPdfStarryStraightness = () => {
+            state.pdfStarryStraightness = clampPdfStarryStraightness(dom.pdfStarryStraightnessSlider.value);
+            window.localStorage.setItem(PDF_STARRY_STRAIGHTNESS_KEY, String(state.pdfStarryStraightness));
+            applyPdfStarryBackgroundSettings();
+        };
+        dom.pdfStarryStraightnessSlider.addEventListener("input", commitPdfStarryStraightness);
+        dom.pdfStarryStraightnessSlider.addEventListener("change", commitPdfStarryStraightness);
     }
 
     if (dom.unlockPdfViewerWidthCheckbox) {
@@ -8583,7 +8781,7 @@ function wireEvents() {
     }
     if (dom.surfaceOpacitySlider) {
         dom.surfaceOpacitySlider.addEventListener("input", () => {
-            applySurfaceOpacity(dom.surfaceOpacitySlider.value);
+            applySurfaceOpacity(dom.surfaceOpacitySlider.value, { displayScale: true });
             window.localStorage.setItem("article-surface-opacity", String(state.surfaceOpacity));
         });
     }
@@ -8947,7 +9145,15 @@ function wireEvents() {
 
             debugLog(`Crossref metadata fetched for DOI ${doiStr}.`);
             refreshMetadataDirtyState();
-            setStatus("Metadata successfully fetched from Crossref.");
+            const saveResult = await saveMetadata({
+                type: "doi-fetch-success",
+                markSavedWhenUnchanged: true,
+            });
+            if (saveResult === "saved") {
+                setStatus("Metadata fetched from Crossref and saved.");
+            } else if (saveResult === "unchanged") {
+                setStatus("Metadata fetched from Crossref.");
+            }
         } catch (err) {
             const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
             alert(`Failed to fetch DOI metadata from Crossref: ${message}`);

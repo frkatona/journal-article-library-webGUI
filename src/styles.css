@@ -1,4 +1,6 @@
 /* ── Theme definitions ── */
+@import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Roboto+Slab:wght@400;500;700&family=Merriweather:wght@400;700&family=Cormorant+Garamond:wght@400;500;600;700&family=Roboto+Mono:wght@400;500;700&family=Fira+Code:wght@400;500;600;700&display=swap");
+
 :root,
 [data-theme="ocean"] {
   --bg: #0d1a26;
@@ -467,7 +469,7 @@ main {
   gap: 6px;
 }
 
-.experimental-nested-control>span {
+.experimental-nested-control>[data-slider-toggle] {
   font-size: 0.78rem;
   color: var(--muted);
 }
@@ -819,6 +821,10 @@ main {
   font-weight: 700;
   letter-spacing: 0.02em;
   white-space: nowrap;
+}
+
+.metadata-dirty-indicator.is-idle {
+  display: none;
 }
 
 .metadata-dirty-indicator::before {
@@ -1534,33 +1540,75 @@ main {
   z-index: 1;
 }
 
-.pdf-stage::before {
+.pdf-stage::before,
+.pdf-stage::after {
   content: "";
   position: absolute;
   inset: 0;
   opacity: 0;
   pointer-events: none;
-  background-image:
-    radial-gradient(1px 1px at 20px 30px, #ffffff, rgba(0, 0, 0, 0)),
-    radial-gradient(2px 2px at 40px 70px, rgba(255, 255, 255, 0.8), rgba(0, 0, 0, 0)),
-    radial-gradient(1px 1px at 50px 160px, #ffffff, rgba(0, 0, 0, 0)),
-    radial-gradient(1.5px 1.5px at 90px 40px, rgba(200, 220, 255, 0.9), rgba(0, 0, 0, 0)),
-    radial-gradient(2px 2px at 130px 80px, #ffffff, rgba(0, 0, 0, 0)),
-    radial-gradient(1px 1px at 160px 120px, rgba(255, 255, 255, 0.8), rgba(0, 0, 0, 0)),
-    radial-gradient(2.5px 2.5px at 180px 30px, rgba(255, 230, 200, 1), rgba(0, 0, 0, 0)),
-    radial-gradient(1px 1px at 200px 110px, #ffffff, rgba(0, 0, 0, 0)),
-    radial-gradient(1.5px 1.5px at 250px 70px, rgba(255, 255, 255, 0.7), rgba(0, 0, 0, 0)),
-    radial-gradient(1px 1px at 280px 160px, #ffffff, rgba(0, 0, 0, 0)),
-    radial-gradient(2px 2px at 320px 40px, rgba(220, 240, 255, 0.9), rgba(0, 0, 0, 0)),
-    radial-gradient(1px 1px at 360px 100px, #ffffff, rgba(0, 0, 0, 0)),
-    radial-gradient(1.5px 1.5px at 400px 150px, rgba(255, 255, 255, 0.8), rgba(0, 0, 0, 0));
-  background-size: 400px 200px;
-  animation: panStars 40s linear infinite;
+  background-repeat: repeat;
+  will-change: background-position, opacity;
   transition: opacity 0.25s ease;
 }
 
+.pdf-stage::before {
+  background-image:
+    radial-gradient(1.4px 1.4px at 34px 58px, rgba(255, 255, 255, 0.96), rgba(0, 0, 0, 0)),
+    radial-gradient(1.9px 1.9px at 108px 184px, rgba(214, 232, 255, 0.78), rgba(0, 0, 0, 0)),
+    radial-gradient(2.8px 2.8px at 192px 82px, rgba(255, 255, 255, 0.88), rgba(0, 0, 0, 0)),
+    radial-gradient(1.6px 1.6px at 258px 312px, rgba(255, 255, 255, 0.72), rgba(0, 0, 0, 0)),
+    radial-gradient(2.4px 2.4px at 344px 146px, rgba(196, 223, 255, 0.9), rgba(0, 0, 0, 0)),
+    radial-gradient(1.5px 1.5px at 428px 398px, rgba(255, 255, 255, 0.7), rgba(0, 0, 0, 0)),
+    radial-gradient(3.5px 3.5px at 506px 96px, rgba(255, 229, 196, 0.96), rgba(0, 0, 0, 0)),
+    radial-gradient(2px 2px at 612px 214px, rgba(255, 255, 255, 0.76), rgba(0, 0, 0, 0)),
+    radial-gradient(1.6px 1.6px at 684px 486px, rgba(215, 231, 255, 0.7), rgba(0, 0, 0, 0)),
+    radial-gradient(2.6px 2.6px at 772px 132px, rgba(255, 255, 255, 0.84), rgba(0, 0, 0, 0)),
+    radial-gradient(1.8px 1.8px at 846px 286px, rgba(255, 255, 255, 0.74), rgba(0, 0, 0, 0)),
+    radial-gradient(2.7px 2.7px at 926px 532px, rgba(230, 240, 255, 0.8), rgba(0, 0, 0, 0)),
+    radial-gradient(1.5px 1.5px at 142px 548px, rgba(255, 255, 255, 0.7), rgba(0, 0, 0, 0)),
+    radial-gradient(2.2px 2.2px at 274px 604px, rgba(255, 255, 255, 0.78), rgba(0, 0, 0, 0)),
+    radial-gradient(1.6px 1.6px at 396px 26px, rgba(208, 228, 255, 0.76), rgba(0, 0, 0, 0)),
+    radial-gradient(2.4px 2.4px at 552px 566px, rgba(255, 255, 255, 0.82), rgba(0, 0, 0, 0)),
+    radial-gradient(1.4px 1.4px at 638px 362px, rgba(255, 255, 255, 0.68), rgba(0, 0, 0, 0)),
+    radial-gradient(1.9px 1.9px at 734px 24px, rgba(255, 255, 255, 0.74), rgba(0, 0, 0, 0)),
+    radial-gradient(2.3px 2.3px at 882px 428px, rgba(208, 226, 255, 0.84), rgba(0, 0, 0, 0));
+  background-size: var(--pdf-starfield-major-size-x, 960px) var(--pdf-starfield-major-size-y, 640px);
+  animation: starfieldDriftFar var(--pdf-starfield-speed-major, 82s) linear infinite;
+}
+
+.pdf-stage::after {
+  background-image:
+    radial-gradient(1.2px 1.2px at 72px 112px, rgba(255, 255, 255, 0.7), rgba(0, 0, 0, 0)),
+    radial-gradient(2px 2px at 164px 420px, rgba(255, 255, 255, 0.72), rgba(0, 0, 0, 0)),
+    radial-gradient(1.6px 1.6px at 268px 208px, rgba(205, 225, 255, 0.68), rgba(0, 0, 0, 0)),
+    radial-gradient(3px 3px at 382px 674px, rgba(255, 255, 255, 0.82), rgba(0, 0, 0, 0)),
+    radial-gradient(1.5px 1.5px at 514px 124px, rgba(255, 255, 255, 0.66), rgba(0, 0, 0, 0)),
+    radial-gradient(1.9px 1.9px at 648px 518px, rgba(255, 255, 255, 0.72), rgba(0, 0, 0, 0)),
+    radial-gradient(3.2px 3.2px at 742px 318px, rgba(255, 234, 204, 0.88), rgba(0, 0, 0, 0)),
+    radial-gradient(1.6px 1.6px at 868px 794px, rgba(198, 222, 255, 0.7), rgba(0, 0, 0, 0)),
+    radial-gradient(2.4px 2.4px at 994px 180px, rgba(255, 255, 255, 0.8), rgba(0, 0, 0, 0)),
+    radial-gradient(1.8px 1.8px at 1116px 458px, rgba(255, 255, 255, 0.68), rgba(0, 0, 0, 0)),
+    radial-gradient(2.3px 2.3px at 1214px 702px, rgba(216, 232, 255, 0.78), rgba(0, 0, 0, 0)),
+    radial-gradient(1.6px 1.6px at 214px 858px, rgba(255, 255, 255, 0.66), rgba(0, 0, 0, 0)),
+    radial-gradient(2.2px 2.2px at 466px 888px, rgba(255, 255, 255, 0.74), rgba(0, 0, 0, 0)),
+    radial-gradient(1.4px 1.4px at 598px 26px, rgba(208, 224, 255, 0.62), rgba(0, 0, 0, 0)),
+    radial-gradient(2px 2px at 836px 58px, rgba(255, 255, 255, 0.7), rgba(0, 0, 0, 0)),
+    radial-gradient(1.5px 1.5px at 1028px 906px, rgba(255, 255, 255, 0.64), rgba(0, 0, 0, 0)),
+    radial-gradient(1.9px 1.9px at 1180px 316px, rgba(255, 255, 255, 0.72), rgba(0, 0, 0, 0)),
+    radial-gradient(1.4px 1.4px at 332px 554px, rgba(255, 255, 255, 0.62), rgba(0, 0, 0, 0)),
+    radial-gradient(2px 2px at 926px 620px, rgba(210, 228, 255, 0.72), rgba(0, 0, 0, 0)),
+    radial-gradient(2.8px 2.8px at 64px 742px, rgba(201, 224, 255, 0.86), rgba(0, 0, 0, 0));
+  background-size: var(--pdf-starfield-minor-size-x, 1280px) var(--pdf-starfield-minor-size-y, 960px);
+  animation: starfieldDriftNear var(--pdf-starfield-speed-minor, 118s) linear infinite;
+}
+
 .pdf-stage.pdf-stage-starry::before {
-  opacity: 0.62;
+  opacity: calc(0.42 * var(--pdf-starfield-brightness, 1));
+}
+
+.pdf-stage.pdf-stage-starry::after {
+  opacity: calc(0.26 * var(--pdf-starfield-brightness, 1));
 }
 
 .pdf-viewer-status {
@@ -2672,36 +2720,111 @@ button.secondary {
 }
 
 /* Starry Night Animation */
-@keyframes panStars {
+@keyframes starfieldDriftFar {
   0% {
     background-position: 0 0;
   }
 
+  50% {
+    background-position: var(--pdf-starfield-major-mid-x, -480px) var(--pdf-starfield-major-mid-y, 320px);
+  }
+
   100% {
-    background-position: -1000px 500px;
+    background-position: var(--pdf-starfield-major-drift-x, -960px) var(--pdf-starfield-major-drift-y, 640px);
+  }
+}
+
+@keyframes starfieldDriftNear {
+  0% {
+    background-position: 0 0;
+  }
+
+  50% {
+    background-position: var(--pdf-starfield-minor-mid-x, -640px) var(--pdf-starfield-minor-mid-y, -480px);
+  }
+
+  100% {
+    background-position: var(--pdf-starfield-minor-drift-x, -1280px) var(--pdf-starfield-minor-drift-y, -960px);
   }
 }
 
 .starry-bg {
-  /* Creating a starry background effect using radial gradients */
-  background-color: var(--bg);
+  position: relative;
+  isolation: isolate;
+  background:
+    linear-gradient(0deg, rgba(var(--menu-rgb, 13, 27, 40), calc(var(--menu-alpha-base, 0.97) * var(--surface-opacity-factor, 1))), rgba(var(--menu-rgb, 13, 27, 40), calc(var(--menu-alpha-base, 0.97) * var(--surface-opacity-factor, 1)))),
+    radial-gradient(circle at top, rgba(82, 208, 163, 0.045), transparent 36%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018), rgba(0, 0, 0, 0.11));
+}
+
+.starry-bg > * {
+  position: relative;
+  z-index: 1;
+}
+
+.starry-bg::before,
+.starry-bg::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-repeat: repeat;
+  will-change: background-position;
+  transition: opacity 0.25s ease;
+}
+
+.starry-bg::before {
+  opacity: 0.48;
   background-image:
-    radial-gradient(1px 1px at 20px 30px, #ffffff, rgba(0, 0, 0, 0)),
-    radial-gradient(2px 2px at 40px 70px, rgba(255, 255, 255, 0.8), rgba(0, 0, 0, 0)),
-    radial-gradient(1px 1px at 50px 160px, #ffffff, rgba(0, 0, 0, 0)),
-    radial-gradient(1.5px 1.5px at 90px 40px, rgba(200, 220, 255, 0.9), rgba(0, 0, 0, 0)),
-    radial-gradient(2px 2px at 130px 80px, #ffffff, rgba(0, 0, 0, 0)),
-    radial-gradient(1px 1px at 160px 120px, rgba(255, 255, 255, 0.8), rgba(0, 0, 0, 0)),
-    radial-gradient(2.5px 2.5px at 180px 30px, rgba(255, 230, 200, 1), rgba(0, 0, 0, 0)),
-    radial-gradient(1px 1px at 200px 110px, #ffffff, rgba(0, 0, 0, 0)),
-    radial-gradient(1.5px 1.5px at 250px 70px, rgba(255, 255, 255, 0.7), rgba(0, 0, 0, 0)),
-    radial-gradient(1px 1px at 280px 160px, #ffffff, rgba(0, 0, 0, 0)),
-    radial-gradient(2px 2px at 320px 40px, rgba(220, 240, 255, 0.9), rgba(0, 0, 0, 0)),
-    radial-gradient(1px 1px at 360px 100px, #ffffff, rgba(0, 0, 0, 0)),
-    radial-gradient(1.5px 1.5px at 400px 150px, rgba(255, 255, 255, 0.8), rgba(0, 0, 0, 0));
-  background-size: 400px 200px;
-  animation: panStars 40s linear infinite;
-  transition: background 2s ease-in-out;
+    radial-gradient(1px 1px at 34px 58px, rgba(255, 255, 255, 0.96), rgba(0, 0, 0, 0)),
+    radial-gradient(1.4px 1.4px at 108px 184px, rgba(214, 232, 255, 0.78), rgba(0, 0, 0, 0)),
+    radial-gradient(2.1px 2.1px at 192px 82px, rgba(255, 255, 255, 0.88), rgba(0, 0, 0, 0)),
+    radial-gradient(1.2px 1.2px at 258px 312px, rgba(255, 255, 255, 0.72), rgba(0, 0, 0, 0)),
+    radial-gradient(1.8px 1.8px at 344px 146px, rgba(196, 223, 255, 0.9), rgba(0, 0, 0, 0)),
+    radial-gradient(1.1px 1.1px at 428px 398px, rgba(255, 255, 255, 0.7), rgba(0, 0, 0, 0)),
+    radial-gradient(2.6px 2.6px at 506px 96px, rgba(255, 229, 196, 0.96), rgba(0, 0, 0, 0)),
+    radial-gradient(1.5px 1.5px at 612px 214px, rgba(255, 255, 255, 0.76), rgba(0, 0, 0, 0)),
+    radial-gradient(1.2px 1.2px at 684px 486px, rgba(215, 231, 255, 0.7), rgba(0, 0, 0, 0)),
+    radial-gradient(1.9px 1.9px at 772px 132px, rgba(255, 255, 255, 0.84), rgba(0, 0, 0, 0)),
+    radial-gradient(1.3px 1.3px at 846px 286px, rgba(255, 255, 255, 0.74), rgba(0, 0, 0, 0)),
+    radial-gradient(2px 2px at 926px 532px, rgba(230, 240, 255, 0.8), rgba(0, 0, 0, 0)),
+    radial-gradient(1.1px 1.1px at 142px 548px, rgba(255, 255, 255, 0.7), rgba(0, 0, 0, 0)),
+    radial-gradient(1.6px 1.6px at 274px 604px, rgba(255, 255, 255, 0.78), rgba(0, 0, 0, 0)),
+    radial-gradient(1.2px 1.2px at 396px 26px, rgba(208, 228, 255, 0.76), rgba(0, 0, 0, 0)),
+    radial-gradient(1.8px 1.8px at 552px 566px, rgba(255, 255, 255, 0.82), rgba(0, 0, 0, 0)),
+    radial-gradient(1px 1px at 638px 362px, rgba(255, 255, 255, 0.68), rgba(0, 0, 0, 0)),
+    radial-gradient(1.4px 1.4px at 734px 24px, rgba(255, 255, 255, 0.74), rgba(0, 0, 0, 0)),
+    radial-gradient(1.7px 1.7px at 882px 428px, rgba(208, 226, 255, 0.84), rgba(0, 0, 0, 0));
+  background-size: 960px 640px;
+  animation: starfieldDriftFar 82s linear infinite;
+}
+
+.starry-bg::after {
+  opacity: 0.3;
+  background-image:
+    radial-gradient(0.9px 0.9px at 72px 112px, rgba(255, 255, 255, 0.7), rgba(0, 0, 0, 0)),
+    radial-gradient(1.5px 1.5px at 164px 420px, rgba(255, 255, 255, 0.72), rgba(0, 0, 0, 0)),
+    radial-gradient(1.2px 1.2px at 268px 208px, rgba(205, 225, 255, 0.68), rgba(0, 0, 0, 0)),
+    radial-gradient(2.2px 2.2px at 382px 674px, rgba(255, 255, 255, 0.82), rgba(0, 0, 0, 0)),
+    radial-gradient(1.1px 1.1px at 514px 124px, rgba(255, 255, 255, 0.66), rgba(0, 0, 0, 0)),
+    radial-gradient(1.4px 1.4px at 648px 518px, rgba(255, 255, 255, 0.72), rgba(0, 0, 0, 0)),
+    radial-gradient(2.4px 2.4px at 742px 318px, rgba(255, 234, 204, 0.88), rgba(0, 0, 0, 0)),
+    radial-gradient(1.2px 1.2px at 868px 794px, rgba(198, 222, 255, 0.7), rgba(0, 0, 0, 0)),
+    radial-gradient(1.8px 1.8px at 994px 180px, rgba(255, 255, 255, 0.8), rgba(0, 0, 0, 0)),
+    radial-gradient(1.3px 1.3px at 1116px 458px, rgba(255, 255, 255, 0.68), rgba(0, 0, 0, 0)),
+    radial-gradient(1.7px 1.7px at 1214px 702px, rgba(216, 232, 255, 0.78), rgba(0, 0, 0, 0)),
+    radial-gradient(1.2px 1.2px at 214px 858px, rgba(255, 255, 255, 0.66), rgba(0, 0, 0, 0)),
+    radial-gradient(1.6px 1.6px at 466px 888px, rgba(255, 255, 255, 0.74), rgba(0, 0, 0, 0)),
+    radial-gradient(1px 1px at 598px 26px, rgba(208, 224, 255, 0.62), rgba(0, 0, 0, 0)),
+    radial-gradient(1.5px 1.5px at 836px 58px, rgba(255, 255, 255, 0.7), rgba(0, 0, 0, 0)),
+    radial-gradient(1.1px 1.1px at 1028px 906px, rgba(255, 255, 255, 0.64), rgba(0, 0, 0, 0)),
+    radial-gradient(1.4px 1.4px at 1180px 316px, rgba(255, 255, 255, 0.72), rgba(0, 0, 0, 0)),
+    radial-gradient(1px 1px at 332px 554px, rgba(255, 255, 255, 0.62), rgba(0, 0, 0, 0)),
+    radial-gradient(1.5px 1.5px at 926px 620px, rgba(210, 228, 255, 0.72), rgba(0, 0, 0, 0)),
+    radial-gradient(2.1px 2.1px at 64px 742px, rgba(201, 224, 255, 0.86), rgba(0, 0, 0, 0));
+  background-size: 1280px 960px;
+  animation: starfieldDriftNear 118s linear infinite;
 }
 
 .hotkeys-modal-card {
