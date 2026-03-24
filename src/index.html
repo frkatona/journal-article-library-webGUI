@@ -15,7 +15,7 @@
                 <span>Search</span>
                 <input id="search-input" type="search" placeholder="title, author, abstract, DOI, tags, notes..." />
             </label>
-            <label class="field" style="position:relative;" id="tag-filter-container">
+            <div class="field" style="position:relative;" id="tag-filter-container">
                 <span>Tag Filter</span>
                 <div id="tag-filter-btn" class="custom-select-btn">All tags (<span id="tag-filter-count">0</span>)</div>
                 <div id="tag-filter-menu" class="custom-select-menu hidden">
@@ -63,7 +63,7 @@
                         <span>Incomplete metadata only</span>
                     </label>
                 </div>
-            </label>
+            </div>
 
             <label class="field compact sort-field">
                 <span>Primary Sort</span>
@@ -211,28 +211,28 @@
                                         <input id="enable-pdf-starry-background" type="checkbox" />
                                         <span style="font-size:0.82rem;">Enable PDF starry background</span>
                                     </label>
-                                    <div id="pdf-starry-brightness-field" class="field experimental-nested-control slider-collapsible expanded hidden" data-slider-field>
+                                    <div id="pdf-starry-brightness-field" class="field experimental-nested-control slider-collapsible hidden" data-slider-field>
                                         <span data-slider-toggle style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
                                             <span>Star brightness <strong id="pdf-starry-brightness-value">100</strong>%</span>
                                             <span class="slider-caret" aria-hidden="true">&#9656;</span>
                                         </span>
                                         <input id="pdf-starry-brightness-slider" type="range" min="20" max="180" step="1" value="100" />
                                     </div>
-                                    <div id="pdf-starry-speed-field" class="field experimental-nested-control slider-collapsible expanded hidden" data-slider-field>
+                                    <div id="pdf-starry-speed-field" class="field experimental-nested-control slider-collapsible hidden" data-slider-field>
                                         <span data-slider-toggle style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
                                             <span>Drift speed <strong id="pdf-starry-speed-value">100</strong>%</span>
                                             <span class="slider-caret" aria-hidden="true">&#9656;</span>
                                         </span>
                                         <input id="pdf-starry-speed-slider" type="range" min="30" max="220" step="1" value="100" />
                                     </div>
-                                    <div id="pdf-starry-density-field" class="field experimental-nested-control slider-collapsible expanded hidden" data-slider-field>
+                                    <div id="pdf-starry-density-field" class="field experimental-nested-control slider-collapsible hidden" data-slider-field>
                                         <span data-slider-toggle style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
                                             <span>Star density <strong id="pdf-starry-density-value">100</strong>%</span>
                                             <span class="slider-caret" aria-hidden="true">&#9656;</span>
                                         </span>
                                         <input id="pdf-starry-density-slider" type="range" min="50" max="160" step="1" value="100" />
                                     </div>
-                                    <div id="pdf-starry-straightness-field" class="field experimental-nested-control slider-collapsible expanded hidden" data-slider-field>
+                                    <div id="pdf-starry-straightness-field" class="field experimental-nested-control slider-collapsible hidden" data-slider-field>
                                         <span data-slider-toggle style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
                                             <span>Line straightness <strong id="pdf-starry-straightness-value">100</strong>%</span>
                                             <span class="slider-caret" aria-hidden="true">&#9656;</span>
