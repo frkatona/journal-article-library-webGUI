@@ -6228,12 +6228,12 @@ const KEYBOARD_SHORTCUTS = [
 ];
 const WELLNESS_TIPS = [
     {
-        text: "20/20/20 rule! — every 20 minutes, look 20 feet away for 20 seconds!",
+        text: "20/20/20 rule! — every 20 minutes, look 20 feet away for 20 seconds to reduce eye strain!",
         // sourceLabel: "Source: Mayo Clinic",
         // sourceUrl: "https://www.mayoclinic.org/diseases-conditions/eyestrain/diagnosis-treatment/drc-20372403",
     },
     {
-        text: "blink! — screen time can lower blink rate by 80%.  Try 5 blinks after each paragraph.",
+        text: "blink! — screen time can lower blink rate by 80%.  Try 5 blinks after each paragraph!",
         // sourceLabel: "Source: Mayo Clinic",
         // sourceUrl: "https://www.mayoclinic.org/diseases-conditions/eyestrain/diagnosis-treatment/drc-20372403",
     },
@@ -6244,16 +6244,25 @@ const WELLNESS_TIPS = [
         text: "deep breath! — inhale 4s, hold 7s, exhale 8s!",
     },
     {
-        text: "posture reset! — squeeze shoulder blades for 5 seconds, repeat 5 times!",
+        text: "posture check! — are you tensing your shoulders, neck, back, wrists?  Take a minute to stretch and reset each of them!",
+    },
+    {   
+        text: "meditate! — quickly note where you are in your work and set a timer for a few minutes.  Then close your eyes, sit back, and still your mind!"
     },
     {
-        text: "mouth check! — relax your jaw and rest your tongue lightly on the roof of your mouth!",
+        text: "clench check! — try relaxing your jaw and resting your tongue lightly on the roof of your mouth!  Pop some gum if it helps you!",
     },
     {
         text: "'name it to tame it'! — reduce distress by identifying your feelings in words!",
         // sourceLabel: "Source: DOI 10.1371/journal.pone.0279303",
         // sourceUrl: "https://doi.org/10.1371/journal.pone.0279303",
     },
+    {
+        text: "sleep!  water!  healthy snack!  fresh air!  send a joke to a friend!"
+    },
+    {
+        text: "upgrade to the PDF Manager+ Subscription Plan now for full access!  Just kidding!"
+    }
 ];
 
 // Hotkey capture state

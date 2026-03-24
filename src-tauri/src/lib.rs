@@ -24,6 +24,7 @@ use walkdir::WalkDir;
 const THUMBNAIL_W: u32 = 420;
 const THUMBNAIL_H: u32 = 260;
 const DEMO_MODE_DIRNAME: &str = "demo_mode";
+const CROSSREF_TIMEOUT_SECS: u64 = 5;
 
 // ── Types ───────────────────────────────────────────────────────────────────
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1907,7 +1908,7 @@ async fn fetch_doi_metadata(state: tauri::State<'_, Mutex<AppState>>, doi: Strin
         .clone();
 
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(15))
+        .timeout(Duration::from_secs(CROSSREF_TIMEOUT_SECS))
         .user_agent("LiteratureLibrary/0.8 (mailto:user@localhost)")
         .build()
         .map_err(|e| {
@@ -2035,7 +2036,7 @@ fn fetch_doi_metadata_sync(state: &AppState, doi: &str) -> Result<Metadata, Stri
     let data_dir = state.data_dir.clone();
 
     let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(15))
+        .timeout(Duration::from_secs(CROSSREF_TIMEOUT_SECS))
         .user_agent("LiteratureLibrary/0.8 (mailto:user@localhost)")
         .build()
         .map_err(|e| {

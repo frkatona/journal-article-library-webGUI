@@ -122,44 +122,11 @@
                         <div class="menu-section-header"
                             style="font-size: 0.75rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; padding: 4px 8px; margin-bottom: 4px;">
                             File Management</div>
-                        <button id="open-articles-btn" type="button" class="ghost">Open Articles Folder</button>
-
-                        <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
-                            <input id="show-ref-dois" type="checkbox" />
-                            <span style="font-size:0.82rem;">Show reference DOIs in abstract</span>
-                        </label>
-                        <div class="field slider-collapsible" data-slider-field>
-                            <span data-slider-toggle
-                                style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-                                <span>Abstract Partitioning Strength <strong id="abstract-section-count-value">4</strong></span>
-                                <span class="slider-caret" aria-hidden="true">&#9656;</span>
-                            </span>
-                            <input id="abstract-section-count" type="range" min="1" max="7" step="1" value="4" />
-                        </div>
-                        <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
-                            <input id="show-dupe-warnings" type="checkbox" />
-                            <span style="font-size:0.82rem;">Warn on duplicate DOIs</span>
-                        </label>
-                        <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
-                            <input id="enable-niche" type="checkbox" />
-                            <span style="font-size:0.82rem;">Enable niche</span>
-                        </label>
-                        <label id="niche-tags-field" class="field hidden">
-                            <span style="font-size:0.82rem; color:var(--muted);">Niche Tags <em
-                                    style="font-weight:400;">(hidden by default)</em></span>
-                            <div id="niche-tag-chip-container" class="tag-chip-container" style="min-height:40px;">
-                                <input id="niche-tags-input" type="text" class="tag-chip-input"
-                                    placeholder="Add niche tag..." autocomplete="off" />
-                                <div id="niche-tag-autocomplete" class="tag-autocomplete hidden"></div>
-                            </div>
-                        </label>
-                        <button id="rename-tag-btn" type="button" class="ghost">Rename Tag...</button>
-                        <button id="remove-tag-btn" type="button" class="ghost" style="color:var(--accent-2);">Remove Tag...</button>
                         <details id="experimental-section" style="margin-top: 2px;">
                             <summary
                                 style="cursor: pointer; font-size: 0.75rem; font-weight: 700; color: var(--accent-2); text-transform: uppercase; letter-spacing: 0.05em; padding: 6px 4px; list-style: none; display: flex; align-items: center; gap: 5px; user-select: none;">
                                 <span id="experimental-arrow"
-                                    style="display:inline-block; transition: transform 0.2s;">▶</span> Experimental
+                                    style="display:inline-block; transition: transform 0.2s;">â–¶</span> Experimental
                             </summary>
                             <div
                                 style="display: flex; flex-direction: column; gap: 8px; padding: 6px 4px 2px 12px; border-left: 2px solid rgba(245,179,77,0.3);">
@@ -262,6 +229,37 @@
                                     Backup</button>
                             </div>
                         </details>
+                        <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                            <input id="show-ref-dois" type="checkbox" />
+                            <span style="font-size:0.82rem;">Show reference DOIs in abstract</span>
+                        </label>
+                        <div class="field slider-collapsible" data-slider-field>
+                            <span data-slider-toggle
+                                style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                                <span>Abstract Partitioning Strength <strong id="abstract-section-count-value">4</strong></span>
+                                <span class="slider-caret" aria-hidden="true">&#9656;</span>
+                            </span>
+                            <input id="abstract-section-count" type="range" min="1" max="7" step="1" value="4" />
+                        </div>
+                        <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                            <input id="show-dupe-warnings" type="checkbox" />
+                            <span style="font-size:0.82rem;">Warn on duplicate DOIs</span>
+                        </label>
+                        <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                            <input id="enable-niche" type="checkbox" />
+                            <span style="font-size:0.82rem;">Enable niche</span>
+                        </label>
+                        <label id="niche-tags-field" class="field hidden">
+                            <span style="font-size:0.82rem; color:var(--muted);">Niche Tags <em
+                                    style="font-weight:400;">(hidden by default)</em></span>
+                            <div id="niche-tag-chip-container" class="tag-chip-container" style="min-height:40px;">
+                                <input id="niche-tags-input" type="text" class="tag-chip-input"
+                                    placeholder="Add niche tag..." autocomplete="off" />
+                                <div id="niche-tag-autocomplete" class="tag-autocomplete hidden"></div>
+                            </div>
+                        </label>
+                        <button id="rename-tag-btn" type="button" class="ghost">Rename Tag...</button>
+                        <button id="remove-tag-btn" type="button" class="ghost" style="color:var(--accent-2);">Remove Tag...</button>
                         <button id="crash-log-btn" type="button" class="ghost"
                             style="font-size:0.78rem; padding:4px 8px;">View Crash Log</button>
                         <pre id="crash-log-content"
@@ -269,6 +267,7 @@
 
                         <hr style="border: none; border-top: 1px dashed var(--danger); margin: 8px 0; opacity: 0.5;" />
 
+                        <button id="open-articles-btn" type="button" class="ghost">Open Articles Folder</button>
                         <button id="reindex-btn" type="button">Reindex</button>
                     </div>
                 </div>
@@ -407,6 +406,7 @@
                             </span>
                             <input id="surface-opacity-slider" type="range" min="30" max="95" step="1" value="95" />
                         </div>
+                        <hr style="border:none; border-top:1px solid var(--line); margin:6px 0; opacity:0.6;" />
                         <div class="field slider-collapsible" data-slider-field>
                             <span data-slider-toggle
                                 style="display:flex; justify-content:space-between; align-items:center; gap:8px;">

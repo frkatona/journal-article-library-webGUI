@@ -1192,11 +1192,14 @@ forgot about 0.9.5 LOL
 
 - [x] starry night background: de-tiled the pattern and de-seamed the loop
 
+- [x] save metadata on successful DOI pull
+
+- [x] fixed niche tags
+
 **push v0.9.9**
 
 ---
 
-- [ ] interrupt with the 'duplicate DOI' warning as soon as DOI is saved
 
 *next: v1.0.0*
 

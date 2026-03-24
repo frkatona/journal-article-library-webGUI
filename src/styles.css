@@ -1,5 +1,29 @@
 /* ── Theme definitions ── */
-@import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Roboto+Slab:wght@400;500;700&family=Merriweather:wght@400;700&family=Cormorant+Garamond:wght@400;500;600;700&family=Roboto+Mono:wght@400;500;700&family=Fira+Code:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Roboto+Mono:wght@400;500;700&family=Fira+Code:wght@400;500;600;700&display=swap");
+
+@font-face {
+  font-family: "Roboto Slab";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("./assets/fonts/roboto-slab-latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Merriweather";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("./assets/fonts/merriweather-latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Cormorant Garamond";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("./assets/fonts/cormorant-garamond-latin.woff2") format("woff2");
+}
 
 :root,
 [data-theme="ocean"] {
@@ -745,6 +769,10 @@ main {
   display: flex;
   gap: 6px;
   white-space: nowrap;
+}
+
+.table-actions .card-btn {
+  font-size: inherit;
 }
 
 .doi-copy {

@@ -43,10 +43,6 @@
 
 ### flesh out
 
-- [ ] native PDF reader
-
-- [ ] include a resizing/cropping feature to the 'paste thumbnail image' to encourage getting large screenshots and cropping in
-  - allow dragging the thumbnail image around and scrolling in and out in the preview to
   - maybe basic image editing, like masking 
   - dedicated screenshot button that maintains an ideal aspect ratio for the thumbnail?
     - scroll makes it bigger or smaller and when it's below a certain pixel size, an enlarged preview window follows it around like a magnifying glass
