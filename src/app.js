@@ -657,6 +657,7 @@ const state = {
     showNiche: initShowNichePreference(),
     showRefDois: initShowRefDoisPreference(),
     acIndex: -1,
+    nicheAcIndex: -1,
     isEscaping: false,
     abstractPreviewArticle: null,
     wellnessTipIndex: Number.parseInt(window.localStorage.getItem("article-wellness-tip-index") || "0", 10),
@@ -913,6 +914,7 @@ const dom = {
     nicheTagsField: document.getElementById("niche-tags-field"),
     nicheTagChipContainer: document.getElementById("niche-tag-chip-container"),
     nicheTagsInput: document.getElementById("niche-tags-input"),
+    nicheTagAutocomplete: document.getElementById("niche-tag-autocomplete"),
     showRefDoisCheckbox: document.getElementById("show-ref-dois"),
     abstractSectionCountValue: document.getElementById("abstract-section-count-value"),
     abstractSectionCountInput: document.getElementById("abstract-section-count"),
@@ -2764,6 +2766,88 @@ function updateTagAutocomplete(query) {
     dom.tagAutocomplete.classList.remove("hidden");
 }
 
+function updateNicheTagAutocomplete(query) {
+    if (!dom.nicheTagAutocomplete) return;
+    clearNode(dom.nicheTagAutocomplete);
+    const normalizedQuery = normalizeWhitespace(query);
+    if (!normalizedQuery || !state.enableNiche || !state.showNiche) {
+        dom.nicheTagAutocomplete.classList.add("hidden");
+        state.nicheAcIndex = -1;
+        return;
+    }
+    const currentTags = new Set(getNicheTagChips().map(normalizeTagKey));
+    const allTags = getAllKnownTags().filter((t) => !currentTags.has(normalizeTagKey(t)));
+    const matches = allTags
+        .map((t) => fuzzyMatch(t, normalizedQuery))
+        .filter((m) => m.match)
+        .sort((a, b) => b.score - a.score);
+    const queryKey = normalizeTagKey(normalizedQuery);
+    const exactKnownMatch = allTags.some((tag) => normalizeTagKey(tag) === queryKey);
+    const canCreateNew = !currentTags.has(queryKey) && !exactKnownMatch;
+    if (matches.length === 0 && !canCreateNew) {
+        dom.nicheTagAutocomplete.classList.add("hidden");
+        state.nicheAcIndex = -1;
+        return;
+    }
+
+    state.nicheAcIndex = 0;
+    const q = normalizedQuery.toLowerCase();
+
+    if (canCreateNew) {
+        const item = document.createElement("div");
+        item.className = "ac-item new-tag active";
+        item.dataset.tag = normalizedQuery;
+        const label = document.createElement("span");
+        label.className = "ac-label";
+        label.textContent = normalizedQuery;
+        const badge = document.createElement("span");
+        badge.className = "ac-kind";
+        badge.textContent = "new";
+        item.appendChild(label);
+        item.appendChild(badge);
+        item.addEventListener("mousedown", (evt) => {
+            evt.preventDefault();
+            addNicheTagChip(normalizedQuery);
+            dom.nicheTagsInput.value = "";
+            dom.nicheTagAutocomplete.classList.add("hidden");
+        });
+        dom.nicheTagAutocomplete.appendChild(item);
+    }
+
+    const maxExistingItems = canCreateNew ? 7 : 8;
+    for (let i = 0; i < matches.length && i < maxExistingItems; i += 1) {
+        const item = document.createElement("div");
+        item.className = `ac-item existing-tag${!canCreateNew && i === 0 ? " active" : ""}`;
+        const tag = matches[i].tag;
+        const idx = tag.toLowerCase().indexOf(q);
+        const label = document.createElement("span");
+        label.className = "ac-label";
+        if (idx >= 0) {
+            label.innerHTML =
+                escapeHtml(tag.slice(0, idx)) +
+                `<span class="ac-match">${escapeHtml(tag.slice(idx, idx + q.length))}</span>` +
+                escapeHtml(tag.slice(idx + q.length));
+        } else {
+            label.textContent = tag;
+        }
+        const badge = document.createElement("span");
+        badge.className = "ac-kind";
+        badge.textContent = "known";
+        item.appendChild(label);
+        item.appendChild(badge);
+        item.dataset.tag = tag;
+        item.addEventListener("mousedown", (evt) => {
+            evt.preventDefault();
+            addNicheTagChip(tag);
+            dom.nicheTagsInput.value = "";
+            dom.nicheTagAutocomplete.classList.add("hidden");
+        });
+        dom.nicheTagAutocomplete.appendChild(item);
+    }
+
+    dom.nicheTagAutocomplete.classList.remove("hidden");
+}
+
 function escapeHtml(str) {
     return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
@@ -3074,6 +3158,10 @@ function updateNicheUiVisibility() {
     }
     if (dom.enableNicheCheckbox) {
         dom.enableNicheCheckbox.checked = enabled;
+    }
+    if (!enabled && dom.nicheTagAutocomplete) {
+        dom.nicheTagAutocomplete.classList.add("hidden");
+        state.nicheAcIndex = -1;
     }
 }
 
@@ -8336,11 +8424,41 @@ function wireEvents() {
             if (!value) return;
             addNicheTagChip(value);
             dom.nicheTagsInput.value = "";
+            if (dom.nicheTagAutocomplete) dom.nicheTagAutocomplete.classList.add("hidden");
         };
+        dom.nicheTagsInput.addEventListener("input", () => {
+            updateNicheTagAutocomplete(dom.nicheTagsInput.value);
+        });
         dom.nicheTagsInput.addEventListener("keydown", (evt) => {
+            const items = dom.nicheTagAutocomplete?.querySelectorAll(".ac-item") || [];
+            if (evt.key === "Tab" || (evt.key === "Enter" && items.length > 0)) {
+                evt.preventDefault();
+                const activeIdx = Math.max(0, state.nicheAcIndex);
+                const active = items[activeIdx];
+                if (active) {
+                    addNicheTagChip(active.dataset.tag || "");
+                    dom.nicheTagsInput.value = "";
+                    dom.nicheTagAutocomplete?.classList.add("hidden");
+                }
+                return;
+            }
             if (evt.key === "Enter" || evt.key === ",") {
                 evt.preventDefault();
                 commitNicheInput();
+                return;
+            }
+            if (evt.key === "ArrowDown") {
+                evt.preventDefault();
+                if (items.length === 0) return;
+                state.nicheAcIndex = Math.min(state.nicheAcIndex + 1, items.length - 1);
+                items.forEach((it, i) => it.classList.toggle("active", i === state.nicheAcIndex));
+                return;
+            }
+            if (evt.key === "ArrowUp") {
+                evt.preventDefault();
+                if (items.length === 0) return;
+                state.nicheAcIndex = Math.max(state.nicheAcIndex - 1, 0);
+                items.forEach((it, i) => it.classList.toggle("active", i === state.nicheAcIndex));
                 return;
             }
             if (evt.key === "Backspace" && dom.nicheTagsInput.value === "") {
@@ -8351,7 +8469,10 @@ function wireEvents() {
                 }
             }
         });
-        dom.nicheTagsInput.addEventListener("blur", commitNicheInput);
+        dom.nicheTagsInput.addEventListener("blur", () => {
+            commitNicheInput();
+            window.setTimeout(() => dom.nicheTagAutocomplete?.classList.add("hidden"), 150);
+        });
         dom.nicheTagChipContainer.addEventListener("click", () => dom.nicheTagsInput.focus());
     }
 
@@ -8370,6 +8491,7 @@ function wireEvents() {
         dom.showNicheCheckbox.addEventListener("change", () => {
             state.showNiche = dom.showNicheCheckbox.checked;
             window.localStorage.setItem(SHOW_NICHE_KEY, state.showNiche ? "true" : "false");
+            updateNicheUiVisibility();
             renderArticles();
         });
     }

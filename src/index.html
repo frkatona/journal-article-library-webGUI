@@ -136,6 +136,25 @@
                             </span>
                             <input id="abstract-section-count" type="range" min="1" max="7" step="1" value="4" />
                         </div>
+                        <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                            <input id="show-dupe-warnings" type="checkbox" />
+                            <span style="font-size:0.82rem;">Warn on duplicate DOIs</span>
+                        </label>
+                        <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                            <input id="enable-niche" type="checkbox" />
+                            <span style="font-size:0.82rem;">Enable niche</span>
+                        </label>
+                        <label id="niche-tags-field" class="field hidden">
+                            <span style="font-size:0.82rem; color:var(--muted);">Niche Tags <em
+                                    style="font-weight:400;">(hidden by default)</em></span>
+                            <div id="niche-tag-chip-container" class="tag-chip-container" style="min-height:40px;">
+                                <input id="niche-tags-input" type="text" class="tag-chip-input"
+                                    placeholder="Add niche tag..." autocomplete="off" />
+                                <div id="niche-tag-autocomplete" class="tag-autocomplete hidden"></div>
+                            </div>
+                        </label>
+                        <button id="rename-tag-btn" type="button" class="ghost">Rename Tag...</button>
+                        <button id="remove-tag-btn" type="button" class="ghost" style="color:var(--accent-2);">Remove Tag...</button>
                         <details id="experimental-section" style="margin-top: 2px;">
                             <summary
                                 style="cursor: pointer; font-size: 0.75rem; font-weight: 700; color: var(--accent-2); text-transform: uppercase; letter-spacing: 0.05em; padding: 6px 4px; list-style: none; display: flex; align-items: center; gap: 5px; user-select: none;">
@@ -151,10 +170,6 @@
                                 <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
                                     <input id="auto-ref-compile" type="checkbox" />
                                     <span style="font-size:0.82rem;">Auto references compilation</span>
-                                </label>
-                                <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
-                                    <input id="show-dupe-warnings" type="checkbox" />
-                                    <span style="font-size:0.82rem;">Warn on duplicate DOIs</span>
                                 </label>
                                 <div class="experimental-option-stack">
                                     <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
@@ -240,20 +255,6 @@
                                         <input id="pdf-starry-straightness-slider" type="range" min="0" max="100" step="1" value="100" />
                                     </div>
                                 </div>
-                                <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
-                                    <input id="enable-niche" type="checkbox" />
-                                    <span style="font-size:0.82rem;">Enable niche</span>
-                                </label>
-                                <label id="niche-tags-field" class="field hidden">
-                                    <span style="font-size:0.82rem; color:var(--muted);">Niche Tags <em
-                                            style="font-weight:400;">(hidden by default)</em></span>
-                                    <div id="niche-tag-chip-container" class="tag-chip-container" style="min-height:40px;">
-                                        <input id="niche-tags-input" type="text" class="tag-chip-input"
-                                            placeholder="Add niche tag..." autocomplete="off" />
-                                    </div>
-                                </label>
-                                <button id="rename-tag-btn" type="button" class="ghost">Rename Tag...</button>
-                                <button id="remove-tag-btn" type="button" class="ghost" style="color:var(--accent-2);">Remove Tag...</button>
                                 <button id="storage-report-btn" type="button" class="ghost">Show Storage Report</button>
                                 <pre id="storage-report-content"
                                     style="display:none; margin:0; padding:8px; background:var(--bg); border:1px solid rgba(245,179,77,0.45); border-radius:6px; font-size:0.72rem; max-height:260px; overflow:auto; white-space:pre-wrap; word-break:break-word; color:var(--text);"></pre>
