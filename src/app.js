@@ -64,6 +64,7 @@ const AUDIO_VOLUME_KEY = "article-audio-volume";
 const DEFAULT_AUDIO_VOLUME = 35;
 const AUDIO_FADE_IN_MS = 1000;
 const AUDIO_CROSSFADE_MS = 10000;
+const PDF_READER_NOTES_AUTOSAVE_MS = 900;
 const PDF_CAPTURE_THUMBNAIL_W = 420;
 const PDF_CAPTURE_THUMBNAIL_H = 260;
 const PDF_CAPTURE_MAX_DIMENSION = 2400;
@@ -726,6 +727,8 @@ const dom = {
     pdfNightFilterStrengthSlider: document.getElementById("pdf-night-filter-strength-slider"),
     pdfNightFilterStrengthValue: document.getElementById("pdf-night-filter-strength-value"),
     pdfCopyRegionToggle: document.getElementById("pdf-copy-region-toggle"),
+    pdfReaderNotesToggleWrap: document.getElementById("pdf-reader-notes-toggle-wrap"),
+    pdfReaderNotesToggle: document.getElementById("pdf-reader-notes-toggle"),
     pdfTextSelectToggle: document.getElementById("pdf-text-select-toggle"),
     pdfCaptureThumbnailToggle: document.getElementById("pdf-capture-thumbnail-toggle"),
     pdfToolPanel: document.getElementById("pdf-tool-panel"),
@@ -838,6 +841,10 @@ const dom = {
     pdfStage: document.getElementById("pdf-stage"),
     pdfCanvasWrap: document.getElementById("pdf-canvas-wrap"),
     pdfCanvas: document.getElementById("pdf-canvas"),
+    pdfReaderNotesPanel: document.getElementById("pdf-reader-notes-panel"),
+    pdfReaderNotesStatus: document.getElementById("pdf-reader-notes-status"),
+    pdfReaderNotesLines: document.getElementById("pdf-reader-notes-lines"),
+    pdfReaderNotesAddLine: document.getElementById("pdf-reader-notes-add-line"),
     duplicateModal: document.getElementById("duplicate-modal"),
     duplicateClose: document.getElementById("duplicate-close"),
     duplicateList: document.getElementById("duplicate-list"),
@@ -979,6 +986,16 @@ const pdfViewer = {
     captureRect: null,
     previewFramePending: false,
     headerFolded: false,
+    notesVisible: false,
+    notesText: "",
+    notesLines: [""],
+    notesLastSavedText: "",
+    notesDirty: false,
+    notesSaving: false,
+    notesActiveLineIndex: -1,
+    notesPendingFocusLineIndex: -1,
+    notesPendingFocusOffset: 0,
+    notesSaveTimer: null,
 };
 
 let pdfJsLibPromise = null;
@@ -2218,6 +2235,10 @@ function setMetadataBaselineFromArticle(article, { markSaved = false } = {}) {
     updateMetadataDirtyIndicator();
 }
 
+function updateMetadataBaselineKeyFromArticle(article) {
+    state.metadataBaselineKey = buildMetadataSnapshotKey(buildArticleMetadataSnapshot(article));
+}
+
 function refreshMetadataDirtyState() {
     if (!state.current || dom.modal.classList.contains("hidden")) {
         state.metadataDirty = false;
@@ -3344,6 +3365,382 @@ function renderMarkdownToHtml(markdown) {
     return blocks.join("");
 }
 
+function normalizePdfReaderNotesText(value) {
+    return String(value || "").replace(/\r\n?/g, "\n");
+}
+
+function splitPdfReaderNotesLines(text) {
+    const normalized = normalizePdfReaderNotesText(text);
+    return normalized === "" ? [""] : normalized.split("\n");
+}
+
+function composePdfReaderNotesText(lines) {
+    return (Array.isArray(lines) && lines.length > 0 ? lines : [""]).join("\n");
+}
+
+function clearPdfReaderNotesAutosaveTimer() {
+    if (pdfViewer.notesSaveTimer) {
+        window.clearTimeout(pdfViewer.notesSaveTimer);
+        pdfViewer.notesSaveTimer = null;
+    }
+}
+
+function isMetadataEditorOpenForArticle(articleId) {
+    return Boolean(articleId && state.current?.id === articleId && dom.modal && !dom.modal.classList.contains("hidden"));
+}
+
+function getSharedNotesDraftForArticle(article) {
+    if (!article?.id) return "";
+    if (pdfViewer.article?.id === article.id) {
+        return normalizePdfReaderNotesText(pdfViewer.notesText);
+    }
+    if (isMetadataEditorOpenForArticle(article.id)) {
+        return normalizePdfReaderNotesText(dom.notes.value);
+    }
+    return normalizePdfReaderNotesText(article.metadata?.notes);
+}
+
+function updatePdfReaderNotesStatus() {
+    if (!dom.pdfReaderNotesStatus) return;
+    if (!pdfViewer.article) {
+        dom.pdfReaderNotesStatus.textContent = "Shared with metadata notes.";
+        return;
+    }
+    if (pdfViewer.notesSaving) {
+        dom.pdfReaderNotesStatus.textContent = "Saving...";
+        return;
+    }
+    if (pdfViewer.notesDirty) {
+        dom.pdfReaderNotesStatus.textContent = "Unsaved changes.";
+        return;
+    }
+    dom.pdfReaderNotesStatus.textContent = "Saved to article notes.";
+}
+
+function syncPdfReaderNotesPanelVisibility({ render = false } = {}) {
+    const hasArticle = Boolean(getResolvedPdfViewerArticle());
+    if (dom.pdfReaderNotesToggle) {
+        dom.pdfReaderNotesToggle.checked = pdfViewer.notesVisible && hasArticle;
+        dom.pdfReaderNotesToggle.disabled = !hasArticle;
+    }
+    if (dom.pdfReaderNotesToggleWrap) {
+        dom.pdfReaderNotesToggleWrap.classList.toggle("is-disabled", !hasArticle);
+    }
+    if (dom.pdfReaderNotesAddLine) {
+        dom.pdfReaderNotesAddLine.disabled = !hasArticle;
+    }
+    if (dom.pdfReaderNotesPanel) {
+        dom.pdfReaderNotesPanel.classList.toggle("hidden", !(pdfViewer.notesVisible && hasArticle));
+    }
+    const body = dom.pdfViewerBody || dom.pdfViewerModal?.querySelector(".pdf-viewer-body");
+    if (body) {
+        body.classList.toggle("has-reader-notes", pdfViewer.notesVisible && hasArticle);
+    }
+    updatePdfReaderNotesStatus();
+    if (render && pdfViewer.notesVisible && hasArticle) {
+        renderPdfReaderNotes();
+    }
+}
+
+function loadPdfReaderNotesForArticle(article, draftOverride = null) {
+    clearPdfReaderNotesAutosaveTimer();
+    const savedText = normalizePdfReaderNotesText(article?.metadata?.notes);
+    const draftText = draftOverride == null ? getSharedNotesDraftForArticle(article) : normalizePdfReaderNotesText(draftOverride);
+    pdfViewer.notesText = draftText;
+    pdfViewer.notesLines = splitPdfReaderNotesLines(draftText);
+    pdfViewer.notesLastSavedText = savedText;
+    pdfViewer.notesDirty = draftText !== savedText;
+    pdfViewer.notesSaving = false;
+    pdfViewer.notesActiveLineIndex = -1;
+    pdfViewer.notesPendingFocusLineIndex = -1;
+    pdfViewer.notesPendingFocusOffset = 0;
+    syncPdfReaderNotesPanelVisibility({ render: true });
+}
+
+function autosizePdfReaderNotesEditor(textarea) {
+    if (!(textarea instanceof HTMLTextAreaElement)) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.max(44, textarea.scrollHeight)}px`;
+}
+
+function syncMetadataNotesFromPdfReader() {
+    const articleId = pdfViewer.article?.id;
+    if (!isMetadataEditorOpenForArticle(articleId)) return;
+    if (dom.notes.value !== pdfViewer.notesText) {
+        dom.notes.value = pdfViewer.notesText;
+    }
+    refreshMetadataDirtyState();
+    debouncedTagSuggestionRefresh();
+}
+
+async function persistPdfReaderNotes(articleId, notesText, { showError = true } = {}) {
+    if (!articleId) return;
+    const normalized = normalizePdfReaderNotesText(notesText);
+    const isCurrentArticle = pdfViewer.article?.id === articleId;
+    if (isCurrentArticle) {
+        pdfViewer.notesSaving = true;
+        updatePdfReaderNotesStatus();
+    }
+
+    try {
+        const result = await invoke("save_metadata", {
+            articleId,
+            payload: { notes: normalized },
+        });
+        const savedArticle = result?.article || null;
+        if (!savedArticle) {
+            if (pdfViewer.article?.id === articleId) {
+                pdfViewer.notesSaving = false;
+                updatePdfReaderNotesStatus();
+            }
+            return;
+        }
+
+        const idx = state.articles.findIndex((article) => article.id === articleId);
+        if (idx >= 0) {
+            state.articles[idx] = savedArticle;
+        }
+        if (state.current?.id === articleId) {
+            state.current = savedArticle;
+            if (isMetadataEditorOpenForArticle(articleId)) {
+                updateMetadataBaselineKeyFromArticle(savedArticle);
+                refreshMetadataDirtyState();
+            }
+        }
+        if (pdfViewer.article?.id === articleId) {
+            pdfViewer.article = savedArticle;
+            pdfViewer.notesLastSavedText = normalizePdfReaderNotesText(savedArticle.metadata?.notes);
+            pdfViewer.notesDirty = pdfViewer.notesText !== pdfViewer.notesLastSavedText;
+            pdfViewer.notesSaving = false;
+            updatePdfReaderNotesStatus();
+        }
+    } catch (err) {
+        if (pdfViewer.article?.id === articleId) {
+            pdfViewer.notesSaving = false;
+            updatePdfReaderNotesStatus();
+        }
+        if (showError) {
+            const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
+            setStatus(`Reader notes save failed: ${message}`, true);
+        }
+    }
+}
+
+function schedulePdfReaderNotesAutosave() {
+    clearPdfReaderNotesAutosaveTimer();
+    if (!pdfViewer.article?.id || !pdfViewer.notesDirty) return;
+    const articleId = pdfViewer.article.id;
+    const notesText = pdfViewer.notesText;
+    pdfViewer.notesSaveTimer = window.setTimeout(() => {
+        pdfViewer.notesSaveTimer = null;
+        void persistPdfReaderNotes(articleId, notesText);
+    }, PDF_READER_NOTES_AUTOSAVE_MS);
+}
+
+function applyPdfReaderNotesText(text, {
+    render = true,
+    syncMetadata = false,
+    scheduleSave = true,
+    resetActiveLine = false,
+} = {}) {
+    const normalized = normalizePdfReaderNotesText(text);
+    pdfViewer.notesText = normalized;
+    pdfViewer.notesLines = splitPdfReaderNotesLines(normalized);
+    if (resetActiveLine) {
+        pdfViewer.notesActiveLineIndex = -1;
+    } else if (pdfViewer.notesActiveLineIndex >= pdfViewer.notesLines.length) {
+        pdfViewer.notesActiveLineIndex = pdfViewer.notesLines.length - 1;
+    }
+    pdfViewer.notesDirty = pdfViewer.notesText !== pdfViewer.notesLastSavedText;
+    updatePdfReaderNotesStatus();
+    if (syncMetadata) {
+        syncMetadataNotesFromPdfReader();
+    }
+    if (scheduleSave) {
+        schedulePdfReaderNotesAutosave();
+    }
+    if (render) {
+        renderPdfReaderNotes();
+    }
+}
+
+function focusPendingPdfReaderNotesEditor() {
+    if (!dom.pdfReaderNotesLines || pdfViewer.notesPendingFocusLineIndex < 0) return;
+    const target = dom.pdfReaderNotesLines.querySelector(`.pdf-reader-note-editor[data-line-index="${pdfViewer.notesPendingFocusLineIndex}"]`);
+    if (!(target instanceof HTMLTextAreaElement)) return;
+    const offset = Math.max(0, Math.min(target.value.length, pdfViewer.notesPendingFocusOffset));
+    target.focus();
+    target.setSelectionRange(offset, offset);
+    autosizePdfReaderNotesEditor(target);
+    pdfViewer.notesPendingFocusLineIndex = -1;
+}
+
+function activatePdfReaderNotesLine(index, caretOffset = null) {
+    const clampedIndex = Math.max(0, Math.min(index, Math.max(0, pdfViewer.notesLines.length - 1)));
+    pdfViewer.notesActiveLineIndex = clampedIndex;
+    pdfViewer.notesPendingFocusLineIndex = clampedIndex;
+    pdfViewer.notesPendingFocusOffset = caretOffset == null
+        ? pdfViewer.notesLines[clampedIndex]?.length || 0
+        : caretOffset;
+    renderPdfReaderNotes();
+}
+
+function finishPdfReaderNotesEditing() {
+    if (pdfViewer.notesActiveLineIndex < 0) return;
+    pdfViewer.notesActiveLineIndex = -1;
+    pdfViewer.notesPendingFocusLineIndex = -1;
+    renderPdfReaderNotes();
+}
+
+function insertPdfReaderNotesLine(afterIndex) {
+    const lines = [...pdfViewer.notesLines];
+    const insertIndex = Math.max(0, Math.min(afterIndex + 1, lines.length));
+    lines.splice(insertIndex, 0, "");
+    applyPdfReaderNotesText(composePdfReaderNotesText(lines), {
+        render: false,
+        syncMetadata: true,
+        scheduleSave: true,
+    });
+    activatePdfReaderNotesLine(insertIndex, 0);
+}
+
+function handlePdfReaderNotesEditorInput(evt) {
+    const textarea = evt.target;
+    if (!(textarea instanceof HTMLTextAreaElement)) return;
+    const lineIndex = Number.parseInt(textarea.dataset.lineIndex || "", 10);
+    if (!Number.isFinite(lineIndex) || lineIndex < 0) return;
+    const lines = [...pdfViewer.notesLines];
+    lines[lineIndex] = textarea.value;
+    autosizePdfReaderNotesEditor(textarea);
+    applyPdfReaderNotesText(composePdfReaderNotesText(lines), {
+        render: false,
+        syncMetadata: true,
+        scheduleSave: true,
+    });
+}
+
+function handlePdfReaderNotesEditorKeydown(evt) {
+    const textarea = evt.target;
+    if (!(textarea instanceof HTMLTextAreaElement)) return;
+    const lineIndex = Number.parseInt(textarea.dataset.lineIndex || "", 10);
+    if (!Number.isFinite(lineIndex) || lineIndex < 0) return;
+
+    const selectionStart = textarea.selectionStart ?? 0;
+    const selectionEnd = textarea.selectionEnd ?? selectionStart;
+    const currentValue = textarea.value;
+    const lines = [...pdfViewer.notesLines];
+
+    if (evt.key === "Escape") {
+        evt.preventDefault();
+        finishPdfReaderNotesEditing();
+        return;
+    }
+
+    if (evt.key === "Enter") {
+        evt.preventDefault();
+        const before = currentValue.slice(0, selectionStart);
+        const after = currentValue.slice(selectionEnd);
+        lines[lineIndex] = before;
+        lines.splice(lineIndex + 1, 0, after);
+        applyPdfReaderNotesText(composePdfReaderNotesText(lines), {
+            render: false,
+            syncMetadata: true,
+            scheduleSave: true,
+        });
+        activatePdfReaderNotesLine(lineIndex + 1, 0);
+        return;
+    }
+
+    if (evt.key === "Backspace" && selectionStart === selectionEnd && selectionStart === 0 && lineIndex > 0) {
+        evt.preventDefault();
+        const previous = lines[lineIndex - 1] || "";
+        lines[lineIndex - 1] = previous + currentValue;
+        lines.splice(lineIndex, 1);
+        applyPdfReaderNotesText(composePdfReaderNotesText(lines), {
+            render: false,
+            syncMetadata: true,
+            scheduleSave: true,
+        });
+        activatePdfReaderNotesLine(lineIndex - 1, previous.length);
+        return;
+    }
+
+    if (evt.key === "Delete" && selectionStart === selectionEnd && selectionStart === currentValue.length && lineIndex < lines.length - 1) {
+        evt.preventDefault();
+        const next = lines[lineIndex + 1] || "";
+        lines[lineIndex] = currentValue + next;
+        lines.splice(lineIndex + 1, 1);
+        applyPdfReaderNotesText(composePdfReaderNotesText(lines), {
+            render: false,
+            syncMetadata: true,
+            scheduleSave: true,
+        });
+        activatePdfReaderNotesLine(lineIndex, currentValue.length);
+    }
+}
+
+function handlePdfReaderNotesEditorBlur() {
+    window.setTimeout(() => {
+        if (dom.pdfReaderNotesLines?.contains(document.activeElement)) return;
+        finishPdfReaderNotesEditing();
+    }, 0);
+}
+
+function renderPdfReaderNotes() {
+    if (!dom.pdfReaderNotesLines) return;
+    const hasArticle = Boolean(getResolvedPdfViewerArticle());
+    clearNode(dom.pdfReaderNotesLines);
+    if (!(pdfViewer.notesVisible && hasArticle)) return;
+
+    const lines = pdfViewer.notesLines.length > 0 ? pdfViewer.notesLines : [""];
+    lines.forEach((line, index) => {
+        const row = document.createElement("div");
+        row.className = "pdf-reader-note-row";
+        if (index === pdfViewer.notesActiveLineIndex) {
+            row.classList.add("is-active");
+            const textarea = document.createElement("textarea");
+            textarea.className = "pdf-reader-note-editor";
+            textarea.dataset.lineIndex = String(index);
+            textarea.value = line;
+            textarea.rows = 1;
+            textarea.placeholder = "Write notes...";
+            textarea.addEventListener("input", handlePdfReaderNotesEditorInput);
+            textarea.addEventListener("keydown", handlePdfReaderNotesEditorKeydown);
+            textarea.addEventListener("blur", handlePdfReaderNotesEditorBlur);
+            row.appendChild(textarea);
+        } else {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "pdf-reader-note-preview";
+            button.addEventListener("click", () => {
+                activatePdfReaderNotesLine(index);
+            });
+
+            if (line.trim()) {
+                const preview = document.createElement("div");
+                preview.className = "abstract-notes-text pdf-reader-note-markdown";
+                preview.innerHTML = renderMarkdownToHtml(line);
+                button.appendChild(preview);
+            } else {
+                button.classList.add("is-empty");
+                button.innerHTML = '<span class="pdf-reader-note-blank">Blank line</span>';
+            }
+            row.appendChild(button);
+        }
+        dom.pdfReaderNotesLines.appendChild(row);
+    });
+
+    window.requestAnimationFrame(focusPendingPdfReaderNotesEditor);
+}
+
+function setPdfReaderNotesVisible(enabled) {
+    pdfViewer.notesVisible = Boolean(enabled);
+    if (!pdfViewer.notesVisible) {
+        pdfViewer.notesActiveLineIndex = -1;
+    }
+    syncPdfReaderNotesPanelVisibility({ render: true });
+}
+
 async function getThumbDataUrl(relPath) {
     if (!relPath) return "";
     if (thumbCache.has(relPath)) return thumbCache.get(relPath);
@@ -4262,6 +4659,8 @@ function syncPdfViewerControls() {
     if (dom.pdfOpenExternal) dom.pdfOpenExternal.disabled = !pdfViewer.article;
     if (dom.pdfCopyBibtex) dom.pdfCopyBibtex.disabled = !pdfViewer.article;
     if (dom.pdfToggleHeaderFold) dom.pdfToggleHeaderFold.disabled = !pdfViewer.article;
+    if (dom.pdfReaderNotesToggle) dom.pdfReaderNotesToggle.disabled = !pdfViewer.article;
+    if (dom.pdfReaderNotesAddLine) dom.pdfReaderNotesAddLine.disabled = !pdfViewer.article;
     if (dom.pdfCopyRegionToggle) dom.pdfCopyRegionToggle.disabled = !hasDoc || !state.enablePdfCopyTool;
     if (dom.pdfTextSelectToggle) dom.pdfTextSelectToggle.disabled = !hasDoc || !state.enablePdfTextSelectTool;
     if (dom.pdfCaptureThumbnailToggle) dom.pdfCaptureThumbnailToggle.disabled = !hasDoc;
@@ -4270,6 +4669,7 @@ function syncPdfViewerControls() {
 
     syncPdfPageListSelection();
     syncPdfExperimentalToolVisibility();
+    syncPdfReaderNotesPanelVisibility();
     updatePdfViewerHeader();
 }
 
@@ -5789,6 +6189,11 @@ function togglePdfThumbnailCaptureTool() {
 
 async function openPdfInternal(article) {
     if (!article?.id) return;
+    const previousArticleId = pdfViewer.article?.id;
+    const previousNotesText = pdfViewer.notesText;
+    if (previousArticleId && pdfViewer.notesDirty) {
+        void persistPdfReaderNotes(previousArticleId, previousNotesText, { showError: false });
+    }
     markArticleSelected(article);
     pdfViewer.loadRequestId += 1;
     pdfViewer.renderRequestId += 1;
@@ -5805,7 +6210,11 @@ async function openPdfInternal(article) {
         dom.pdfCanvasWrap.scrollLeft = 0;
         dom.pdfCanvasWrap.classList.add("hidden");
     }
+    const carriedNotesDraft = previousArticleId === article.id
+        ? previousNotesText
+        : (isMetadataEditorOpenForArticle(article.id) ? dom.notes.value : article.metadata?.notes);
     pdfViewer.article = article;
+    loadPdfReaderNotesForArticle(article, carriedNotesDraft);
     const savedState = readSavedPdfViewerState(article.id);
     if (savedState) {
         pdfViewer.page = savedState.page || 1;
@@ -5880,6 +6289,12 @@ function openPdfViewerAbstract() {
 }
 
 function closePdfViewer() {
+    const articleId = pdfViewer.article?.id;
+    const notesText = pdfViewer.notesText;
+    if (articleId && pdfViewer.notesDirty) {
+        void persistPdfReaderNotes(articleId, notesText, { showError: false });
+    }
+    clearPdfReaderNotesAutosaveTimer();
     pdfViewer.loadRequestId += 1;
     pdfViewer.renderRequestId += 1;
     disposePdfDocument();
@@ -5890,6 +6305,14 @@ function closePdfViewer() {
     pdfViewer.zoomMode = "custom";
     pdfViewer.zoomScale = clampPdfZoomScale(state.defaultPdfZoom / 100);
     resetPdfSearchState({ clearInput: true });
+    pdfViewer.notesText = "";
+    pdfViewer.notesLines = [""];
+    pdfViewer.notesLastSavedText = "";
+    pdfViewer.notesDirty = false;
+    pdfViewer.notesSaving = false;
+    pdfViewer.notesActiveLineIndex = -1;
+    pdfViewer.notesPendingFocusLineIndex = -1;
+    pdfViewer.notesPendingFocusOffset = 0;
     clearNode(dom.pdfPageList);
     clearPdfCanvas();
     if (dom.pdfCanvasWrap) {
@@ -7910,7 +8333,7 @@ function openEditor(article) {
     setTagChips(md.tags || [], { silent: true });
     dom.tagInput.value = "";
     dom.tagAutocomplete.classList.add("hidden");
-    dom.notes.value = md.notes || "";
+    dom.notes.value = getSharedNotesDraftForArticle(article);
 
     // Load thumbnail into modal
     const thumbPath = articleThumbPath(article);
@@ -8003,6 +8426,21 @@ async function saveMetadata(evt) {
             setMetadataBaselineFromArticle(state.current, { markSaved: true });
         } else {
             setMetadataBaselineFromArticle(savedArticle, { markSaved: true });
+        }
+        if (pdfViewer.article?.id === currentId) {
+            clearPdfReaderNotesAutosaveTimer();
+            pdfViewer.article = savedArticle;
+            pdfViewer.notesLastSavedText = normalizePdfReaderNotesText(savedArticle.metadata?.notes);
+            if (!pdfViewer.notesText) {
+                pdfViewer.notesText = normalizePdfReaderNotesText(savedArticle.metadata?.notes);
+                pdfViewer.notesLines = splitPdfReaderNotesLines(pdfViewer.notesText);
+            }
+            pdfViewer.notesDirty = pdfViewer.notesText !== pdfViewer.notesLastSavedText;
+            pdfViewer.notesSaving = false;
+            updatePdfReaderNotesStatus();
+            if (pdfViewer.notesVisible) {
+                renderPdfReaderNotes();
+            }
         }
         refreshTagSuggestions({ allowCorpusLoad: false });
         setStatus("Metadata saved.");
@@ -9016,6 +9454,17 @@ function wireEvents() {
     [dom.title, dom.authors, dom.journal, dom.doi, dom.abstract, dom.notes].forEach((field) => {
         field.addEventListener("input", debouncedTagSuggestionRefresh);
     });
+    if (dom.notes) {
+        dom.notes.addEventListener("input", () => {
+            if (pdfViewer.article?.id !== state.current?.id) return;
+            applyPdfReaderNotesText(dom.notes.value, {
+                render: pdfViewer.notesVisible,
+                syncMetadata: false,
+                scheduleSave: true,
+                resetActiveLine: true,
+            });
+        });
+    }
 
     // Ctrl+scroll to resize cards
     document.addEventListener("wheel", (evt) => {
@@ -9452,6 +9901,20 @@ function wireEvents() {
     if (dom.pdfCopyRegionToggle) {
         dom.pdfCopyRegionToggle.addEventListener("click", () => {
             togglePdfCopyRegionTool();
+        });
+    }
+    if (dom.pdfReaderNotesToggle) {
+        dom.pdfReaderNotesToggle.addEventListener("change", () => {
+            setPdfReaderNotesVisible(dom.pdfReaderNotesToggle.checked);
+        });
+    }
+    if (dom.pdfReaderNotesAddLine) {
+        dom.pdfReaderNotesAddLine.addEventListener("click", () => {
+            if (!pdfViewer.article) return;
+            if (!pdfViewer.notesVisible) {
+                setPdfReaderNotesVisible(true);
+            }
+            insertPdfReaderNotesLine(pdfViewer.notesActiveLineIndex >= 0 ? pdfViewer.notesActiveLineIndex : (pdfViewer.notesLines.length - 1));
         });
     }
     if (dom.pdfTextSelectToggle) {

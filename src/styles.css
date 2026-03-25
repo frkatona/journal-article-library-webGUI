@@ -1405,6 +1405,31 @@ main {
   margin-left: auto;
 }
 
+.pdf-reader-notes-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(82, 208, 163, 0.18);
+  background: rgba(15, 29, 42, 0.42);
+  color: var(--muted);
+  font-size: 0.79rem;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+
+.pdf-reader-notes-toggle input {
+  margin: 0;
+}
+
+.pdf-reader-notes-toggle.is-disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .pdf-viewer-tool-actions button.is-active {
   border-color: rgba(82, 208, 163, 0.65);
   background: linear-gradient(135deg, rgba(82, 208, 163, 0.18), rgba(27, 49, 69, 0.9));
@@ -1533,6 +1558,10 @@ main {
   grid-template-columns: minmax(0, 1fr);
 }
 
+.pdf-viewer-body.has-reader-notes {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+}
+
 .pdf-page-list-panel {
   display: none;
 }
@@ -1590,6 +1619,143 @@ main {
     radial-gradient(circle at top, rgba(82, 208, 163, 0.05), transparent 34%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(0, 0, 0, 0.1));
   overflow: hidden;
+}
+
+.pdf-reader-notes-panel {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(0, 0, 0, 0.12)),
+    radial-gradient(circle at top, rgba(82, 208, 163, 0.08), transparent 38%);
+}
+
+.pdf-reader-notes-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.pdf-reader-notes-title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.pdf-reader-notes-lines {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pdf-reader-note-row {
+  display: flex;
+}
+
+.pdf-reader-note-preview,
+.pdf-reader-note-editor {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgba(82, 208, 163, 0.16);
+  background: rgba(14, 28, 40, 0.5);
+  color: var(--text);
+}
+
+.pdf-reader-note-preview {
+  padding: 10px 12px;
+  text-align: left;
+  cursor: text;
+  transition: border-color 0.16s ease, background 0.16s ease, transform 0.16s ease;
+}
+
+.pdf-reader-note-preview:hover {
+  border-color: rgba(82, 208, 163, 0.3);
+  background: rgba(21, 39, 56, 0.68);
+  transform: translateY(-1px);
+}
+
+.pdf-reader-note-preview.is-empty {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.pdf-reader-note-markdown {
+  font-size: 0.89rem;
+  line-height: 1.5;
+}
+
+.pdf-reader-note-markdown > :first-child {
+  margin-top: 0;
+}
+
+.pdf-reader-note-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.pdf-reader-note-markdown p,
+.pdf-reader-note-markdown ul,
+.pdf-reader-note-markdown ol,
+.pdf-reader-note-markdown blockquote,
+.pdf-reader-note-markdown pre,
+.pdf-reader-note-markdown hr,
+.pdf-reader-note-markdown h1,
+.pdf-reader-note-markdown h2,
+.pdf-reader-note-markdown h3,
+.pdf-reader-note-markdown h4,
+.pdf-reader-note-markdown h5,
+.pdf-reader-note-markdown h6 {
+  margin: 0;
+}
+
+.pdf-reader-note-editor {
+  min-height: 44px;
+  padding: 10px 12px;
+  resize: none;
+  overflow: hidden;
+  line-height: 1.5;
+}
+
+.pdf-reader-note-editor:focus {
+  outline: none;
+  border-color: rgba(82, 208, 163, 0.52);
+  box-shadow: 0 0 0 1px rgba(82, 208, 163, 0.18);
+  background: rgba(18, 35, 50, 0.78);
+}
+
+.pdf-reader-note-blank {
+  display: inline-flex;
+  min-height: 1.1em;
+}
+
+.pdf-reader-note-add {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px dashed rgba(82, 208, 163, 0.3);
+  background: rgba(15, 29, 42, 0.24);
+  color: var(--muted);
+  padding: 9px 12px;
+  text-align: center;
+}
+
+.pdf-reader-note-add:hover {
+  border-color: rgba(82, 208, 163, 0.48);
+  color: var(--text);
+}
+
+.pdf-reader-notes-footer {
+  padding: 10px 14px 12px;
+  border-top: 1px solid var(--line);
+  line-height: 1.45;
 }
 
 .pdf-stage > * {
@@ -2001,6 +2167,16 @@ main {
 
   #pdf-viewer-modal {
     padding-inline: clamp(20px, 4vw, 48px);
+  }
+
+  .pdf-viewer-body.has-reader-notes {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) minmax(220px, 34%);
+  }
+
+  .pdf-reader-notes-panel {
+    border-left: 0;
+    border-top: 1px solid var(--line);
   }
 }
 

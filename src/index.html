@@ -670,6 +670,10 @@
                 </div>
                 <div class="pdf-viewer-tool-actions">
                     <button id="pdf-copy-region-toggle" type="button" class="ghost hidden">Copy Region</button>
+                    <label id="pdf-reader-notes-toggle-wrap" class="pdf-reader-notes-toggle">
+                        <input id="pdf-reader-notes-toggle" type="checkbox" />
+                        <span>Reader Notes</span>
+                    </label>
                     <button id="pdf-text-select-toggle" type="button" class="ghost hidden">Select Text</button>
                     <button id="pdf-capture-thumbnail-toggle" type="button" class="ghost hidden">Capture Thumbnail</button>
                 </div>
@@ -711,6 +715,19 @@
                         <canvas id="pdf-canvas"></canvas>
                     </div>
                 </section>
+                <aside id="pdf-reader-notes-panel" class="pdf-reader-notes-panel hidden" aria-label="Reader notes">
+                    <div class="pdf-reader-notes-header">
+                        <div class="pdf-reader-notes-title-wrap">
+                            <strong>Reader Notes</strong>
+                            <span id="pdf-reader-notes-status" class="meta">Shared with metadata notes.</span>
+                        </div>
+                        <button id="pdf-reader-notes-add-line" type="button" class="ghost">New Line</button>
+                    </div>
+                    <div id="pdf-reader-notes-lines" class="pdf-reader-notes-lines"></div>
+                    <div class="pdf-reader-notes-footer meta">
+                        Markdown preview stays visible for non-active lines.
+                    </div>
+                </aside>
             </div>
         </div>
     </div>
