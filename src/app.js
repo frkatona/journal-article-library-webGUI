@@ -819,6 +819,7 @@ const dom = {
     pdfOpenMetadata: document.getElementById("pdf-open-metadata"),
     pdfOpenAbstract: document.getElementById("pdf-open-abstract"),
     pdfOpenExternal: document.getElementById("pdf-open-external"),
+    pdfCopyBibtex: document.getElementById("pdf-copy-bibtex"),
     pdfPrevPage: document.getElementById("pdf-prev-page"),
     pdfPageNumber: document.getElementById("pdf-page-number"),
     pdfPageCount: document.getElementById("pdf-page-count"),
@@ -1751,11 +1752,25 @@ function setDisplayMenuOpen(isOpen) {
     if (isOpen && state.filesMenuOpen) setFilesMenuOpen(false);
 }
 
+function updateFilesMenuViewportBounds() {
+    if (!dom.filesMenu || dom.filesMenu.classList.contains("hidden")) return;
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+    const boundaryGap = 18;
+    const menuRect = dom.filesMenu.getBoundingClientRect();
+    const availableHeight = Math.max(220, Math.floor(viewportHeight - menuRect.top - boundaryGap));
+    dom.filesMenu.style.maxHeight = `${availableHeight}px`;
+}
+
 function setFilesMenuOpen(isOpen) {
     state.filesMenuOpen = Boolean(isOpen);
     dom.filesMenu.classList.toggle("hidden", !state.filesMenuOpen);
     dom.filesMenuToggle.setAttribute("aria-expanded", state.filesMenuOpen ? "true" : "false");
     if (isOpen && state.displayMenuOpen) setDisplayMenuOpen(false);
+    if (state.filesMenuOpen) {
+        updateFilesMenuViewportBounds();
+    } else {
+        dom.filesMenu.style.removeProperty("max-height");
+    }
 }
 
 function wireSliderToggles(container) {
@@ -4245,6 +4260,7 @@ function syncPdfViewerControls() {
     if (dom.pdfSearchPrev) dom.pdfSearchPrev.disabled = !hasMatches;
     if (dom.pdfSearchNext) dom.pdfSearchNext.disabled = !hasMatches;
     if (dom.pdfOpenExternal) dom.pdfOpenExternal.disabled = !pdfViewer.article;
+    if (dom.pdfCopyBibtex) dom.pdfCopyBibtex.disabled = !pdfViewer.article;
     if (dom.pdfToggleHeaderFold) dom.pdfToggleHeaderFold.disabled = !pdfViewer.article;
     if (dom.pdfCopyRegionToggle) dom.pdfCopyRegionToggle.disabled = !hasDoc || !state.enablePdfCopyTool;
     if (dom.pdfTextSelectToggle) dom.pdfTextSelectToggle.disabled = !hasDoc || !state.enablePdfTextSelectTool;
@@ -5723,6 +5739,16 @@ async function openPdf(article) {
         return;
     }
     await openPdfExternal(article);
+}
+
+function handleArticleOpenClick(evt, article) {
+    if (!article) return;
+    if (evt && resolveClickAction(evt, article)) {
+        return;
+    }
+    if (evt && typeof evt.preventDefault === "function") evt.preventDefault();
+    if (evt && typeof evt.stopPropagation === "function") evt.stopPropagation();
+    void openPdf(article);
 }
 
 function togglePdfCopyRegionTool() {
@@ -9394,9 +9420,9 @@ function wireEvents() {
         });
     }
     if (dom.abstractTitle) {
-        dom.abstractTitle.addEventListener("click", () => {
+        dom.abstractTitle.addEventListener("click", (evt) => {
             if (state.abstractPreviewArticle) {
-                openPdf(state.abstractPreviewArticle);
+                handleArticleOpenClick(evt, state.abstractPreviewArticle);
             }
         });
     }
@@ -9412,6 +9438,15 @@ function wireEvents() {
             if (article) {
                 openPdfExternal(article);
             }
+        });
+    }
+    if (dom.pdfCopyBibtex) {
+        dom.pdfCopyBibtex.addEventListener("click", async () => {
+            const article = getResolvedPdfViewerArticle();
+            if (!article) return;
+            const bib = generateBibtex(article);
+            const ok = await copyToClipboard(bib);
+            showToast(ok ? "BibTeX copied to clipboard" : "Failed to copy BibTeX");
         });
     }
     if (dom.pdfCopyRegionToggle) {
@@ -9540,6 +9575,7 @@ function wireEvents() {
     window.addEventListener("pointercancel", handlePdfToolPointerUp, { passive: false });
     document.addEventListener("wheel", handlePdfViewerGlobalWheel, { passive: false, capture: true });
     window.addEventListener("resize", debouncedPdfViewerResize);
+    window.addEventListener("resize", updateFilesMenuViewportBounds);
     dom.form.addEventListener("submit", saveMetadata);
     dom.metaRemove.addEventListener("click", async () => {
         if (!state.current) return;
@@ -9592,8 +9628,8 @@ function wireEvents() {
     }
 
     if (dom.editorOpenBtn) {
-        dom.editorOpenBtn.addEventListener("click", () => {
-            if (state.current) openPdf(state.current);
+        dom.editorOpenBtn.addEventListener("click", (evt) => {
+            if (state.current) handleArticleOpenClick(evt, state.current);
         });
     }
     if (dom.editorLocateBtn) {
@@ -9641,7 +9677,7 @@ function wireEvents() {
             if (meta.volume) dom.volume.value = meta.volume;
             if (meta.number) dom.issue.value = meta.number;
             if (meta.pages) dom.pages.value = meta.pages;
-            if (meta.abstract) dom.abstract.value = meta.abstract;
+            if (meta.abstract) dom.abstract.value = cleanAbstract(meta.abstract, state.abstractSectionCount);
             if (meta.doi) dom.doi.value = meta.doi;
             debouncedTagSuggestionRefresh();
             // Store ref DOIs on the current article's metadata in memory
@@ -10155,7 +10191,22 @@ window.addEventListener("unhandledrejection", (e) => {
     logGlobalError(e.reason?.message || String(e.reason));
 });
 
+function applyLaunchDisabledToggles() {
+    state.nightFilterEnabled = false;
+    state.audioEnabled = false;
+    window.localStorage.setItem(NIGHT_FILTER_ENABLED_KEY, "false");
+    window.localStorage.setItem(AUDIO_ENABLED_KEY, "false");
+}
+
+function reorderFilesMenuSections() {
+    if (!dom.filesMenu || !dom.experimentalSection || !dom.nicheTagsField) return;
+    if (dom.nicheTagsField.parentElement !== dom.filesMenu) return;
+    dom.nicheTagsField.insertAdjacentElement("afterend", dom.experimentalSection);
+}
+
 async function init() {
+    applyLaunchDisabledToggles();
+    reorderFilesMenuSections();
     wireEvents();
     try {
         await setDemoModeEnabled(state.demoMode, { startup: true });

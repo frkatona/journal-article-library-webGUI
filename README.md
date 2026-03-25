@@ -1210,19 +1210,25 @@ forgot about 0.9.5 LOL
 
 - [x] added FRK ambient loop
 
+- [x] applied the abstract 'clean' function from the metadta modal when the abstract is successfully fetched from the DOI API
+
+- [x] prevented the "Files" dropdown from extending too close to the lower application window boundary, introducing a scroll bar when needed
+
 **push : v1.0.0 and v1.0.1 immediate bugfix**
 
 ### think about more first
 
-- [ ] include a resizing/cropping feature to the 'paste thumbnail image' to encourage getting large screenshots and cropping in
+  - [ ] basic image editing on the thumbnail, like masking
 
-  - allow dragging the thumbnail image around and scrolling in and out in the preview to
+- statistics report on article collection
+  - bar graphs 
+    - n_papers vs tag
+    - n_papers vs publication year
+  - which tags have the highest correlation (useful for cleaning redundant tags?)
+  - total number of papers added vs time
+  - which papers struggled for text recognition or DOI API metadata extraction?
 
-  - maybe basic image editing, like masking
-
-  - dedicated screenshot button that maintains an ideal aspect ratio for the thumbnail?
-
-    - scroll makes it bigger or smaller and when it's below a certain pixel size, an enlarged preview window follows it around like a magnifying glass
+- [ ] checkbox for enabled a new auto-markdown notes (a la obsidian) section next to the paper?  Collect all paper notes as .md files so that they can be used with Obsidian?  
 
 - [ ] auto-rescale stored image when resolution is unecessarily high
 
@@ -1259,6 +1265,10 @@ forgot about 0.9.5 LOL
   - network mode to cluster based on shared tags, a la obsidian
 
   - make a video showing the features (hotkeys, colors, thumbnail replacement, drag-and-drop)
+
+#### what things might other people hope to be more automated or seamless?
+
+- [ ] add checkbox for automatically using a scaled down version of the first figure of a paper
 
 ### global version updating
 

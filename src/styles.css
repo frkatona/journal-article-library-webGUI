@@ -379,6 +379,13 @@ main {
   z-index: 25;
 }
 
+#files-menu {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  max-height: min(70vh, calc(100dvh - 120px));
+}
+
 .settings-menu .field {
   min-width: 0;
 }
