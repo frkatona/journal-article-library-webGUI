@@ -1210,7 +1210,7 @@ forgot about 0.9.5 LOL
 
 - [x] added FRK ambient loop
 
-*next: v1.0.0*
+**push : v1.0.0 and v1.0.1 immediate bugfix**
 
 ### think about more first
 
