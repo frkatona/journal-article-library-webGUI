@@ -126,7 +126,7 @@
                             <summary
                                 style="cursor: pointer; font-size: 0.75rem; font-weight: 700; color: var(--accent-2); text-transform: uppercase; letter-spacing: 0.05em; padding: 6px 4px; list-style: none; display: flex; align-items: center; gap: 5px; user-select: none;">
                                 <span id="experimental-arrow"
-                                    style="display:inline-block; transition: transform 0.2s;">â–¶</span> Experimental
+                                    style="display:inline-block; transition: transform 0.2s;">&#9656;</span> Experimental
                             </summary>
                             <div
                                 style="display: flex; flex-direction: column; gap: 8px; padding: 6px 4px 2px 12px; border-left: 2px solid rgba(245,179,77,0.3);">
@@ -170,6 +170,10 @@
                                     <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
                                         <input id="enable-pdf-copy-tool" type="checkbox" />
                                         <span style="font-size:0.82rem;">Enable PDF copy tool</span>
+                                    </label>
+                                    <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                                        <input id="enable-pdf-text-select" type="checkbox" />
+                                        <span style="font-size:0.82rem;">Enable PDF text select</span>
                                     </label>
                                     <label id="pdf-copy-preview-toggle-wrap" class="field experimental-nested-check hidden"
                                         style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
@@ -220,6 +224,19 @@
                                             <span class="slider-caret" aria-hidden="true">&#9656;</span>
                                         </span>
                                         <input id="pdf-starry-straightness-slider" type="range" min="0" max="100" step="1" value="100" />
+                                    </div>
+                                </div>
+                                <div class="experimental-option-stack">
+                                    <label class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                                        <input id="enable-audio" type="checkbox" />
+                                        <span style="font-size:0.82rem;">FRK ambient loop</span>
+                                    </label>
+                                    <div id="audio-volume-field" class="field experimental-nested-control slider-collapsible expanded hidden" data-slider-field>
+                                        <span data-slider-toggle style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                                            <span>Volume <strong id="audio-volume-value">35</strong>%</span>
+                                            <span class="slider-caret" aria-hidden="true">&#9656;</span>
+                                        </span>
+                                        <input id="audio-volume-slider" type="range" min="0" max="100" step="1" value="35" />
                                     </div>
                                 </div>
                                 <button id="storage-report-btn" type="button" class="ghost">Show Storage Report</button>
@@ -652,12 +669,16 @@
                 </div>
                 <div class="pdf-viewer-tool-actions">
                     <button id="pdf-copy-region-toggle" type="button" class="ghost hidden">Copy Region</button>
+                    <button id="pdf-text-select-toggle" type="button" class="ghost hidden">Select Text</button>
                     <button id="pdf-capture-thumbnail-toggle" type="button" class="ghost hidden">Capture Thumbnail</button>
                 </div>
             </div>
             <div id="pdf-tool-panel" class="pdf-tool-panel hidden">
                 <div id="pdf-copy-region-hint" class="meta pdf-tool-hint hidden">
                     Drag a box on a single page to copy text from that region.
+                </div>
+                <div id="pdf-text-select-hint" class="meta pdf-tool-hint hidden">
+                    Drag across PDF text to highlight it, then use Ctrl+C to copy.
                 </div>
                 <div id="pdf-capture-panel" class="pdf-capture-panel hidden">
                     <label class="field compact pdf-capture-preset-field">
@@ -858,7 +879,7 @@
                 <div class="hotkeys-modal-footer-separator"></div>
                 <a id="version-link" href="https://github.com/frkatona/journal-article-library-webGUI/releases"
                     target="_blank" rel="noopener noreferrer"
-                    class="hotkeys-version-link">v0.9.9</a>
+                    class="hotkeys-version-link">v1.0.0</a>
             </div>
         </div>
     </div>

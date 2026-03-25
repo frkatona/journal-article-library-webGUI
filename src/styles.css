@@ -1694,6 +1694,11 @@ main {
   cursor: crosshair;
 }
 
+.pdf-page-shell.is-text-select-active,
+.pdf-page-shell.is-text-select-active .pdf-page-canvas {
+  cursor: text;
+}
+
 .pdf-page-shell:last-child {
   margin-bottom: 0;
 }
@@ -1884,6 +1889,18 @@ main {
   forced-color-adjust: none;
   transform-origin: 0 0;
   cursor: text;
+}
+
+.pdf-page-shell:not(.is-text-select-active) .pdf-text-layer {
+  display: none;
+  pointer-events: none;
+  user-select: none;
+}
+
+.pdf-page-shell.is-text-select-active .pdf-text-layer {
+  display: block;
+  pointer-events: auto;
+  user-select: text;
 }
 
 .pdf-text-layer :is(span, br) {

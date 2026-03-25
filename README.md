@@ -1200,6 +1200,15 @@ forgot about 0.9.5 LOL
 
 ---
 
+- [x] fixed broken production build's serif fonts
+
+- [x] moved experimental dropdown for accessibility on small screens
+
+- [x] minor formatting clean-up (simplified to 'abstract' and 'edit', normalized button sizes, etc.)
+
+- [x] 5s DOI fetch timeout
+
+- [x] added FRK ambient loop
 
 *next: v1.0.0*
 
@@ -1232,8 +1241,6 @@ forgot about 0.9.5 LOL
   - non-PDF-based sources for inspiration? (design, UX, hotkeys, optimizations, etc.)?
 
   - is there a length limit on titles?  what about filenames?  should I process drag-and-drop pdfs to change the file name?  should I conduct references to the PDFs through some extracted hash in case files get renamed (and handle duplicates on index)?
-
-  - [x] where are these thumbnail images going?  they're not populating the folder
 
   - when does scaling become a concern?  what is involved in implementing a database?
 

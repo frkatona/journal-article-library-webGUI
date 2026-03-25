@@ -35,6 +35,7 @@ const SHOW_REF_DOIS_PREF_TOUCHED_KEY = "article-show-ref-dois-pref-touched";
 const ABSTRACT_PREVIEW_NOTES_ENABLED_KEY = "article-abstract-preview-notes-enabled";
 const NIGHT_FILTER_ENABLED_KEY = "article-night-filter-enabled";
 const PDF_COPY_TOOL_ENABLED_KEY = "article-pdf-copy-tool-enabled";
+const PDF_TEXT_SELECT_TOOL_ENABLED_KEY = "article-pdf-text-select-tool-enabled";
 const PDF_COPY_PREVIEW_ENABLED_KEY = "article-pdf-copy-preview-enabled";
 const PDF_COPY_PREVIEW_DURATION_KEY = "article-pdf-copy-preview-duration";
 const PDF_CAPTURE_DOWNSCALE_ENABLED_KEY = "article-pdf-capture-downscale-enabled";
@@ -47,7 +48,7 @@ const PDF_VIEWER_WIDTH_UNLOCKED_KEY = "article-pdf-viewer-width-unlocked";
 const DEBUG_LOG_RETENTION_KEY = "article-debug-log-retention";
 const DEFAULT_PDF_ZOOM_KEY = "article-default-pdf-zoom";
 const PDF_VIEWER_STATE_KEY = "article-pdf-viewer-state-v1";
-const ENABLE_PDF_TEXT_SELECTION = false;
+const PDF_TEXT_SELECT_TOOL_MODE = "text-select";
 const CROSSREF_ESTIMATED_POLITE_LIMIT_PER_SECOND = 10;
 const DOI_RATE_MONITOR_WINDOW_MS = 60_000;
 const DOI_RATE_WARNING_THRESHOLD_RATIO = 0.8;
@@ -58,6 +59,11 @@ const PDF_CAPTURE_PRESET_KEYS = new Set(["thumbnail", "square", "tall", "free"])
 const INFINITE_SLIDER_VALUE = 10;
 const DEFAULT_PDF_COPY_PREVIEW_DURATION_SETTING = 3;
 const DEFAULT_DEBUG_LOG_RETENTION_SETTING = 9;
+const AUDIO_ENABLED_KEY = "article-audio-enabled";
+const AUDIO_VOLUME_KEY = "article-audio-volume";
+const DEFAULT_AUDIO_VOLUME = 35;
+const AUDIO_FADE_IN_MS = 1000;
+const AUDIO_CROSSFADE_MS = 10000;
 const PDF_CAPTURE_THUMBNAIL_W = 420;
 const PDF_CAPTURE_THUMBNAIL_H = 260;
 const PDF_CAPTURE_MAX_DIMENSION = 2400;
@@ -635,6 +641,7 @@ const state = {
     nightFilterMode: window.localStorage.getItem("article-night-filter-mode") || "warm",
     nightFilterStrength: Number.parseInt(window.localStorage.getItem("article-night-filter-strength") || "0", 10),
     enablePdfCopyTool: window.localStorage.getItem(PDF_COPY_TOOL_ENABLED_KEY) === "true",
+    enablePdfTextSelectTool: window.localStorage.getItem(PDF_TEXT_SELECT_TOOL_ENABLED_KEY) === "true",
     previewCopiedText: window.localStorage.getItem(PDF_COPY_PREVIEW_ENABLED_KEY) !== "false",
     pdfCopyPreviewDurationSetting: clampInfiniteSliderSetting(
         window.localStorage.getItem(PDF_COPY_PREVIEW_DURATION_KEY),
@@ -643,6 +650,8 @@ const state = {
     enablePdfThumbnailCapture: true,
     downscalePdfCaptureImages: window.localStorage.getItem(PDF_CAPTURE_DOWNSCALE_ENABLED_KEY) !== "false",
     enablePdfStarryBackground: window.localStorage.getItem(PDF_STARRY_BACKGROUND_ENABLED_KEY) === "true",
+    audioEnabled: window.localStorage.getItem(AUDIO_ENABLED_KEY) === "true",
+    audioVolume: clampAmbientAudioVolume(window.localStorage.getItem(AUDIO_VOLUME_KEY) || String(DEFAULT_AUDIO_VOLUME)),
     pdfStarryBrightness: clampPdfStarryBrightness(window.localStorage.getItem(PDF_STARRY_BRIGHTNESS_KEY)),
     pdfStarrySpeed: clampPdfStarrySpeed(window.localStorage.getItem(PDF_STARRY_SPEED_KEY)),
     pdfStarryDensity: clampPdfStarryDensity(window.localStorage.getItem(PDF_STARRY_DENSITY_KEY)),
@@ -717,9 +726,11 @@ const dom = {
     pdfNightFilterStrengthSlider: document.getElementById("pdf-night-filter-strength-slider"),
     pdfNightFilterStrengthValue: document.getElementById("pdf-night-filter-strength-value"),
     pdfCopyRegionToggle: document.getElementById("pdf-copy-region-toggle"),
+    pdfTextSelectToggle: document.getElementById("pdf-text-select-toggle"),
     pdfCaptureThumbnailToggle: document.getElementById("pdf-capture-thumbnail-toggle"),
     pdfToolPanel: document.getElementById("pdf-tool-panel"),
     pdfCopyRegionHint: document.getElementById("pdf-copy-region-hint"),
+    pdfTextSelectHint: document.getElementById("pdf-text-select-hint"),
     pdfCapturePanel: document.getElementById("pdf-capture-panel"),
     pdfCapturePreset: document.getElementById("pdf-capture-preset"),
     pdfCapturePreview: document.getElementById("pdf-capture-preview"),
@@ -873,6 +884,7 @@ const dom = {
     autoRefCompile: document.getElementById("auto-ref-compile"),
     showDupeWarnings: document.getElementById("show-dupe-warnings"),
     enablePdfCopyToolCheckbox: document.getElementById("enable-pdf-copy-tool"),
+    enablePdfTextSelectCheckbox: document.getElementById("enable-pdf-text-select"),
     pdfCopyPreviewToggleWrap: document.getElementById("pdf-copy-preview-toggle-wrap"),
     previewCopiedTextCheckbox: document.getElementById("preview-copied-text"),
     pdfCopyPreviewDurationField: document.getElementById("pdf-copy-preview-duration-field"),
@@ -880,6 +892,10 @@ const dom = {
     pdfCopyPreviewDurationSlider: document.getElementById("pdf-copy-preview-duration-slider"),
     downscalePdfCaptureImagesCheckbox: document.getElementById("downscale-pdf-capture-images"),
     enablePdfStarryBackgroundCheckbox: document.getElementById("enable-pdf-starry-background"),
+    enableAudioCheckbox: document.getElementById("enable-audio"),
+    audioVolumeField: document.getElementById("audio-volume-field"),
+    audioVolumeSlider: document.getElementById("audio-volume-slider"),
+    audioVolumeValue: document.getElementById("audio-volume-value"),
     pdfStarryBrightnessField: document.getElementById("pdf-starry-brightness-field"),
     pdfStarryBrightnessSlider: document.getElementById("pdf-starry-brightness-slider"),
     pdfStarryBrightnessValue: document.getElementById("pdf-starry-brightness-value"),
@@ -965,6 +981,261 @@ const pdfViewer = {
 };
 
 let pdfJsLibPromise = null;
+const ambientAudio = {
+    context: null,
+    masterGain: null,
+    buffer: null,
+    bufferPromise: null,
+    sessionId: 0,
+    nextScheduleTimer: null,
+    layers: new Set(),
+    currentLayer: null,
+};
+
+function isPdfTextSelectToolActive() {
+    return pdfViewer.toolMode === PDF_TEXT_SELECT_TOOL_MODE;
+}
+
+function clearPdfTextSelection() {
+    const selection = window.getSelection ? window.getSelection() : null;
+    if (!selection || selection.rangeCount === 0 || !dom.pdfViewerModal) return;
+    for (let i = 0; i < selection.rangeCount; i += 1) {
+        const range = selection.getRangeAt(i);
+        if (dom.pdfViewerModal.contains(range.commonAncestorContainer)) {
+            selection.removeAllRanges();
+            return;
+        }
+    }
+}
+
+function clampAmbientAudioVolume(value) {
+    const parsed = Number.parseInt(String(value), 10);
+    if (Number.isNaN(parsed)) return DEFAULT_AUDIO_VOLUME;
+    return Math.max(0, Math.min(100, parsed));
+}
+
+function getAmbientAudioTargetVolume() {
+    return clampAmbientAudioVolume(state.audioVolume) / 100;
+}
+
+function evaluateSplineFade(progress) {
+    const t = Math.max(0, Math.min(1, progress));
+    return t * t * (3 - (2 * t));
+}
+
+function buildSplineGainCurve(fromValue, toValue, steps = 128) {
+    const curve = new Float32Array(steps);
+    for (let i = 0; i < steps; i += 1) {
+        const progress = steps === 1 ? 1 : (i / (steps - 1));
+        const eased = evaluateSplineFade(progress);
+        curve[i] = fromValue + ((toValue - fromValue) * eased);
+    }
+    return curve;
+}
+
+function clearAmbientAudioScheduleTimer() {
+    if (ambientAudio.nextScheduleTimer) {
+        window.clearTimeout(ambientAudio.nextScheduleTimer);
+        ambientAudio.nextScheduleTimer = null;
+    }
+}
+
+function ensureAmbientAudioContext() {
+    if (ambientAudio.context && ambientAudio.masterGain) {
+        return ambientAudio.context;
+    }
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextCtor) {
+        throw new Error("Web Audio API is not available in this environment.");
+    }
+    const context = new AudioContextCtor();
+    const masterGain = context.createGain();
+    masterGain.gain.value = getAmbientAudioTargetVolume();
+    masterGain.connect(context.destination);
+    ambientAudio.context = context;
+    ambientAudio.masterGain = masterGain;
+    return context;
+}
+
+async function ensureAmbientAudioReady() {
+    const context = ensureAmbientAudioContext();
+    if (!ambientAudio.bufferPromise) {
+        const sourceUrl = new URL("./assets/audio/greensleep-short.mp3", window.location.href).href;
+        ambientAudio.bufferPromise = fetch(sourceUrl)
+            .then((response) => {
+                if (!response.ok) {
+                    throw new Error(`Audio fetch failed with status ${response.status}`);
+                }
+                return response.arrayBuffer();
+            })
+            .then((bufferData) => context.decodeAudioData(bufferData.slice(0)))
+            .then((decodedBuffer) => {
+                ambientAudio.buffer = decodedBuffer;
+                return decodedBuffer;
+            })
+            .catch((err) => {
+                ambientAudio.bufferPromise = null;
+                throw err;
+            });
+    }
+    const buffer = ambientAudio.buffer || await ambientAudio.bufferPromise;
+    if (context.state === "suspended") {
+        await context.resume();
+    }
+    return { context, buffer };
+}
+
+function getAmbientLayerGainAtTime(layer, time) {
+    if (!layer) return 0;
+    if (time <= layer.startTime) return 0;
+    if (layer.fadeInDuration > 0 && time < (layer.startTime + layer.fadeInDuration)) {
+        const progress = (time - layer.startTime) / layer.fadeInDuration;
+        return evaluateSplineFade(progress);
+    }
+    return 1;
+}
+
+function getAmbientAudioOverlapSeconds(buffer) {
+    const duration = buffer?.duration || 0;
+    if (!(duration > 0)) return 0;
+    return Math.min(AUDIO_CROSSFADE_MS / 1000, Math.max(0.25, duration - 0.1));
+}
+
+function stopAmbientAudioLayer(layer) {
+    if (!layer) return;
+    try {
+        layer.source.stop();
+    } catch { }
+    try {
+        layer.source.disconnect();
+    } catch { }
+    try {
+        layer.gain.disconnect();
+    } catch { }
+    ambientAudio.layers.delete(layer);
+    if (ambientAudio.currentLayer === layer) {
+        ambientAudio.currentLayer = null;
+    }
+}
+
+function scheduleAmbientLayer(sessionId, startTime, fadeInDuration, previousLayer = null) {
+    const context = ambientAudio.context;
+    const buffer = ambientAudio.buffer;
+    const masterGain = ambientAudio.masterGain;
+    if (!context || !buffer || !masterGain) return null;
+    if (sessionId !== ambientAudio.sessionId || !state.audioEnabled) return null;
+
+    const actualStartTime = Math.max(startTime, context.currentTime + 0.02);
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+
+    const gain = context.createGain();
+    gain.gain.setValueAtTime(0, actualStartTime);
+
+    source.connect(gain);
+    gain.connect(masterGain);
+
+    const layer = {
+        source,
+        gain,
+        startTime: actualStartTime,
+        fadeInDuration,
+    };
+    ambientAudio.layers.add(layer);
+    ambientAudio.currentLayer = layer;
+
+    if (fadeInDuration > 0) {
+        gain.gain.setValueCurveAtTime(buildSplineGainCurve(0, 1), actualStartTime, fadeInDuration);
+        gain.gain.setValueAtTime(1, actualStartTime + fadeInDuration);
+    } else {
+        gain.gain.setValueAtTime(1, actualStartTime);
+    }
+
+    if (previousLayer) {
+        const overlapDuration = Math.max(0.05, fadeInDuration);
+        const previousGainAtStart = getAmbientLayerGainAtTime(previousLayer, actualStartTime);
+        previousLayer.gain.gain.cancelScheduledValues(actualStartTime);
+        previousLayer.gain.gain.setValueAtTime(previousGainAtStart, actualStartTime);
+        previousLayer.gain.gain.setValueCurveAtTime(
+            buildSplineGainCurve(previousGainAtStart, 0),
+            actualStartTime,
+            overlapDuration,
+        );
+        previousLayer.gain.gain.setValueAtTime(0, actualStartTime + overlapDuration);
+        try {
+            previousLayer.source.stop(actualStartTime + overlapDuration + 0.05);
+        } catch { }
+    }
+
+    source.onended = () => {
+        stopAmbientAudioLayer(layer);
+    };
+    source.start(actualStartTime);
+
+    const overlapSeconds = getAmbientAudioOverlapSeconds(buffer);
+    const nextStartTime = actualStartTime + Math.max(0.1, buffer.duration - overlapSeconds);
+    const lookAheadSeconds = 0.35;
+    const scheduleDelayMs = Math.max(0, ((nextStartTime - context.currentTime) - lookAheadSeconds) * 1000);
+    clearAmbientAudioScheduleTimer();
+    ambientAudio.nextScheduleTimer = window.setTimeout(() => {
+        ambientAudio.nextScheduleTimer = null;
+        if (sessionId !== ambientAudio.sessionId || !state.audioEnabled) return;
+        scheduleAmbientLayer(sessionId, nextStartTime, overlapSeconds, layer);
+    }, scheduleDelayMs);
+
+    return layer;
+}
+
+async function startAmbientAudioLoop() {
+    ambientAudio.sessionId += 1;
+    const sessionId = ambientAudio.sessionId;
+    stopAmbientAudioLoop();
+    const { context, buffer } = await ensureAmbientAudioReady();
+    if (sessionId !== ambientAudio.sessionId || !state.audioEnabled) return;
+    const initialStartTime = context.currentTime + 0.05;
+    scheduleAmbientLayer(sessionId, initialStartTime, AUDIO_FADE_IN_MS / 1000, null);
+}
+
+function stopAmbientAudioLoop() {
+    clearAmbientAudioScheduleTimer();
+    ambientAudio.currentLayer = null;
+    Array.from(ambientAudio.layers).forEach((layer) => {
+        stopAmbientAudioLayer(layer);
+    });
+}
+
+function applyAmbientAudioVolume() {
+    if (!ambientAudio.context || !ambientAudio.masterGain) return;
+    const now = ambientAudio.context.currentTime;
+    const targetVolume = getAmbientAudioTargetVolume();
+    ambientAudio.masterGain.gain.cancelScheduledValues(now);
+    ambientAudio.masterGain.gain.setTargetAtTime(targetVolume, now, 0.08);
+}
+
+async function setAmbientAudioEnabled(enabled, { showError = true } = {}) {
+    state.audioEnabled = Boolean(enabled);
+    window.localStorage.setItem(AUDIO_ENABLED_KEY, state.audioEnabled ? "true" : "false");
+    syncExperimentalNestedOptions();
+    if (!state.audioEnabled) {
+        stopAmbientAudioLoop();
+        return true;
+    }
+    try {
+        await startAmbientAudioLoop();
+        return true;
+    } catch (err) {
+        stopAmbientAudioLoop();
+        state.audioEnabled = false;
+        window.localStorage.setItem(AUDIO_ENABLED_KEY, "false");
+        syncExperimentalNestedOptions();
+        const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
+        if (showError) {
+            setStatus(`Failed to start audio: ${message}`, true);
+        }
+        return false;
+    }
+}
+
 const SORT_KEYS = new Set([
     "year_desc",
     "year_asc",
@@ -1562,6 +1833,21 @@ function trimErrorLogListToLimit() {
 function syncExperimentalNestedOptions() {
     if (dom.longParseWrap) {
         dom.longParseWrap.classList.toggle("hidden", !dom.parsePdfs?.checked);
+    }
+    if (dom.enableAudioCheckbox) {
+        dom.enableAudioCheckbox.checked = state.audioEnabled;
+    }
+    if (dom.audioVolumeField) {
+        dom.audioVolumeField.classList.toggle("hidden", !state.audioEnabled);
+    }
+    if (dom.audioVolumeSlider) {
+        dom.audioVolumeSlider.value = String(state.audioVolume);
+    }
+    if (dom.audioVolumeValue) {
+        dom.audioVolumeValue.textContent = String(state.audioVolume);
+    }
+    if (dom.enablePdfTextSelectCheckbox) {
+        dom.enablePdfTextSelectCheckbox.checked = state.enablePdfTextSelectTool;
     }
     if (dom.pdfCopyPreviewToggleWrap) {
         dom.pdfCopyPreviewToggleWrap.classList.toggle("hidden", !state.enablePdfCopyTool);
@@ -3677,12 +3963,16 @@ function requestPdfCapturePreviewRender() {
 }
 
 function syncPdfToolPanel() {
+    const textSelectActive = isPdfTextSelectToolActive();
     if (dom.pdfToolPanel) {
-        const showPanel = pdfViewer.toolMode === "copy-region" || pdfViewer.toolMode === "capture-thumbnail";
+        const showPanel = pdfViewer.toolMode === "copy-region" || pdfViewer.toolMode === "capture-thumbnail" || textSelectActive;
         dom.pdfToolPanel.classList.toggle("hidden", !showPanel);
     }
     if (dom.pdfCopyRegionHint) {
         dom.pdfCopyRegionHint.classList.toggle("hidden", pdfViewer.toolMode !== "copy-region");
+    }
+    if (dom.pdfTextSelectHint) {
+        dom.pdfTextSelectHint.classList.toggle("hidden", !textSelectActive);
     }
     if (dom.pdfCapturePanel) {
         dom.pdfCapturePanel.classList.toggle("hidden", pdfViewer.toolMode !== "capture-thumbnail");
@@ -3690,6 +3980,10 @@ function syncPdfToolPanel() {
     if (dom.pdfCopyRegionToggle) {
         dom.pdfCopyRegionToggle.classList.toggle("hidden", !state.enablePdfCopyTool || pdfViewer.toolMode === "capture-thumbnail");
         dom.pdfCopyRegionToggle.classList.toggle("is-active", pdfViewer.toolMode === "copy-region");
+    }
+    if (dom.pdfTextSelectToggle) {
+        dom.pdfTextSelectToggle.classList.toggle("hidden", !state.enablePdfTextSelectTool || pdfViewer.toolMode === "capture-thumbnail");
+        dom.pdfTextSelectToggle.classList.toggle("is-active", textSelectActive);
     }
     if (dom.pdfCaptureThumbnailToggle) {
         dom.pdfCaptureThumbnailToggle.classList.toggle("hidden", pdfViewer.toolMode === "capture-thumbnail");
@@ -3703,6 +3997,7 @@ function syncPdfToolPanel() {
     }
     pdfViewer.pageShells.forEach((shell) => {
         shell.classList.toggle("is-tool-active", pdfViewer.toolMode === "copy-region" || (pdfViewer.toolMode === "capture-thumbnail" && Number.parseInt(shell.dataset.pageNumber || "", 10) === pdfViewer.capturePageNumber));
+        shell.classList.toggle("is-text-select-active", textSelectActive);
     });
 }
 
@@ -3731,6 +4026,9 @@ function syncPdfExperimentalToolVisibility() {
     if (dom.enablePdfCopyToolCheckbox) {
         dom.enablePdfCopyToolCheckbox.checked = state.enablePdfCopyTool;
     }
+    if (dom.enablePdfTextSelectCheckbox) {
+        dom.enablePdfTextSelectCheckbox.checked = state.enablePdfTextSelectTool;
+    }
     if (dom.downscalePdfCaptureImagesCheckbox) {
         dom.downscalePdfCaptureImagesCheckbox.checked = state.downscalePdfCaptureImages;
     }
@@ -3751,6 +4049,9 @@ function syncPdfExperimentalToolVisibility() {
     if (dom.pdfCopyRegionToggle) {
         dom.pdfCopyRegionToggle.classList.toggle("hidden", !state.enablePdfCopyTool || pdfViewer.toolMode === "capture-thumbnail");
     }
+    if (dom.pdfTextSelectToggle) {
+        dom.pdfTextSelectToggle.classList.toggle("hidden", !state.enablePdfTextSelectTool || pdfViewer.toolMode === "capture-thumbnail");
+    }
     if (dom.pdfCaptureThumbnailToggle) {
         dom.pdfCaptureThumbnailToggle.classList.toggle("hidden", pdfViewer.toolMode === "capture-thumbnail");
     }
@@ -3760,6 +4061,12 @@ function syncPdfExperimentalToolVisibility() {
         pdfViewer.copyRegionRect = null;
         clearPdfCopyRegionDebugMatches();
         clearPdfToolSession();
+        clearPdfTextSelection();
+    }
+    if (!state.enablePdfTextSelectTool && isPdfTextSelectToolActive()) {
+        pdfViewer.toolMode = "none";
+        clearPdfToolSession();
+        clearPdfTextSelection();
     }
     syncExperimentalNestedOptions();
     syncPdfToolPanel();
@@ -3773,7 +4080,7 @@ function stopPdfCaptureTool() {
 }
 
 function setPdfToolMode(mode) {
-    const nextMode = mode === "copy-region" || mode === "capture-thumbnail" ? mode : "none";
+    const nextMode = mode === "copy-region" || mode === "capture-thumbnail" || mode === PDF_TEXT_SELECT_TOOL_MODE ? mode : "none";
     pdfViewer.toolMode = nextMode;
     clearPdfToolSession();
 
@@ -3784,6 +4091,9 @@ function setPdfToolMode(mode) {
     }
     if (nextMode !== "capture-thumbnail") {
         stopPdfCaptureTool();
+    }
+    if (nextMode !== PDF_TEXT_SELECT_TOOL_MODE) {
+        clearPdfTextSelection();
     }
 
     if (nextMode === "capture-thumbnail") {
@@ -3937,6 +4247,7 @@ function syncPdfViewerControls() {
     if (dom.pdfOpenExternal) dom.pdfOpenExternal.disabled = !pdfViewer.article;
     if (dom.pdfToggleHeaderFold) dom.pdfToggleHeaderFold.disabled = !pdfViewer.article;
     if (dom.pdfCopyRegionToggle) dom.pdfCopyRegionToggle.disabled = !hasDoc || !state.enablePdfCopyTool;
+    if (dom.pdfTextSelectToggle) dom.pdfTextSelectToggle.disabled = !hasDoc || !state.enablePdfTextSelectTool;
     if (dom.pdfCaptureThumbnailToggle) dom.pdfCaptureThumbnailToggle.disabled = !hasDoc;
     if (dom.pdfCaptureSave) dom.pdfCaptureSave.disabled = !hasDoc || !pdfViewer.captureRect || pdfViewer.toolMode !== "capture-thumbnail";
     if (dom.pdfCapturePreset) dom.pdfCapturePreset.disabled = !hasDoc || pdfViewer.toolMode !== "capture-thumbnail";
@@ -4040,12 +4351,26 @@ function restorePdfViewportAnchor(anchor) {
 }
 
 function ensurePdfPageSurface(pageNumber) {
-    const hasTextLayer = !ENABLE_PDF_TEXT_SELECTION || pdfViewer.pageTextLayers.has(pageNumber);
-    if (pdfViewer.pageShells.has(pageNumber) && pdfViewer.pageCanvases.has(pageNumber) && hasTextLayer && pdfViewer.pageOverlayLayers.has(pageNumber)) {
+    if (pdfViewer.pageShells.has(pageNumber) && pdfViewer.pageCanvases.has(pageNumber) && pdfViewer.pageOverlayLayers.has(pageNumber)) {
+        const shell = pdfViewer.pageShells.get(pageNumber);
+        let textLayer = pdfViewer.pageTextLayers.get(pageNumber) || null;
+        if (!textLayer && isPdfTextSelectToolActive()) {
+            textLayer = document.createElement("div");
+            textLayer.className = "textLayer pdf-text-layer";
+            textLayer.dataset.pageNumber = String(pageNumber);
+            const overlay = pdfViewer.pageOverlayLayers.get(pageNumber);
+            if (overlay && shell) {
+                shell.insertBefore(textLayer, overlay);
+            } else if (shell) {
+                shell.appendChild(textLayer);
+            }
+            pdfViewer.pageTextLayers.set(pageNumber, textLayer);
+            delete shell.dataset.renderKey;
+        }
         return {
-            shell: pdfViewer.pageShells.get(pageNumber),
+            shell,
             canvas: pdfViewer.pageCanvases.get(pageNumber),
-            textLayer: pdfViewer.pageTextLayers.get(pageNumber) || null,
+            textLayer,
             overlay: pdfViewer.pageOverlayLayers.get(pageNumber),
         };
     }
@@ -4059,7 +4384,7 @@ function ensurePdfPageSurface(pageNumber) {
     canvas.dataset.pageNumber = String(pageNumber);
 
     let textLayer = null;
-    if (ENABLE_PDF_TEXT_SELECTION) {
+    if (isPdfTextSelectToolActive()) {
         textLayer = document.createElement("div");
         textLayer.className = "textLayer pdf-text-layer";
         textLayer.dataset.pageNumber = String(pageNumber);
@@ -4202,7 +4527,7 @@ async function renderPdfPageSurface(pageNumber) {
     let renderTask = null;
     let textLayerTask = null;
     try {
-        const pdfjsLib = ENABLE_PDF_TEXT_SELECTION ? await loadPdfJsLib() : null;
+        const pdfjsLib = isPdfTextSelectToolActive() ? await loadPdfJsLib() : null;
         const page = await pdfViewer.doc.getPage(pageNumber);
         if (generation !== pdfViewer.renderGeneration || !pdfViewer.doc) return;
 
@@ -4234,7 +4559,7 @@ async function renderPdfPageSurface(pageNumber) {
             background: "rgba(255,255,255,1)",
         });
         pdfViewer.pageRenderTasks.set(pageNumber, renderTask);
-        if (ENABLE_PDF_TEXT_SELECTION && pdfjsLib && textLayer) {
+        if (isPdfTextSelectToolActive() && pdfjsLib && textLayer) {
             const textContent = await page.getTextContent();
             textLayer.replaceChildren();
             textLayer.style.width = `${Math.floor(viewport.width)}px`;
@@ -5065,7 +5390,7 @@ function handlePdfToolPointerUp(evt) {
 
 function handlePdfViewerDoubleClick(evt) {
     if (!isPdfViewerOpen()) return;
-    if (pdfViewer.toolMode === "copy-region" || pdfViewer.toolMode === "capture-thumbnail") return;
+    if (pdfViewer.toolMode === "copy-region" || pdfViewer.toolMode === "capture-thumbnail" || isPdfTextSelectToolActive()) return;
     if (!(evt.target instanceof HTMLElement)) return;
     if (!evt.target.closest(".pdf-page-shell, .pdf-canvas-wrap")) return;
     evt.preventDefault();
@@ -5404,6 +5729,19 @@ function togglePdfCopyRegionTool() {
     if (!isPdfViewerOpen() || !state.enablePdfCopyTool) return false;
     setPdfToolMode(pdfViewer.toolMode === "copy-region" ? "none" : "copy-region");
     syncPdfViewerControls();
+    return true;
+}
+
+function togglePdfTextSelectTool() {
+    if (!isPdfViewerOpen() || !state.enablePdfTextSelectTool) return false;
+    const enableTextSelect = !isPdfTextSelectToolActive();
+    setPdfToolMode(enableTextSelect ? PDF_TEXT_SELECT_TOOL_MODE : "none");
+    syncPdfViewerControls();
+    if (!enableTextSelect) return true;
+    renderActivePdfPage({ scrollToTop: false, anchor: capturePdfViewportAnchor() }).catch((err) => {
+        const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
+        setStatus(`Failed to enable PDF text selection: ${message}`, true);
+    });
     return true;
 }
 
@@ -7319,6 +7657,7 @@ function refreshPreferenceStateFromStorage() {
     state.nightFilterMode = normalizeNightFilterMode(window.localStorage.getItem("article-night-filter-mode") || "warm");
     state.nightFilterStrength = clampNightFilterStrength(window.localStorage.getItem("article-night-filter-strength") || "0");
     state.enablePdfCopyTool = window.localStorage.getItem(PDF_COPY_TOOL_ENABLED_KEY) === "true";
+    state.enablePdfTextSelectTool = window.localStorage.getItem(PDF_TEXT_SELECT_TOOL_ENABLED_KEY) === "true";
     state.previewCopiedText = window.localStorage.getItem(PDF_COPY_PREVIEW_ENABLED_KEY) !== "false";
     state.pdfCopyPreviewDurationSetting = clampInfiniteSliderSetting(
         window.localStorage.getItem(PDF_COPY_PREVIEW_DURATION_KEY),
@@ -7327,6 +7666,8 @@ function refreshPreferenceStateFromStorage() {
     state.enablePdfThumbnailCapture = true;
     state.downscalePdfCaptureImages = window.localStorage.getItem(PDF_CAPTURE_DOWNSCALE_ENABLED_KEY) !== "false";
     state.enablePdfStarryBackground = window.localStorage.getItem(PDF_STARRY_BACKGROUND_ENABLED_KEY) === "true";
+    state.audioEnabled = window.localStorage.getItem(AUDIO_ENABLED_KEY) === "true";
+    state.audioVolume = clampAmbientAudioVolume(window.localStorage.getItem(AUDIO_VOLUME_KEY) || String(DEFAULT_AUDIO_VOLUME));
     state.pdfStarryBrightness = clampPdfStarryBrightness(window.localStorage.getItem(PDF_STARRY_BRIGHTNESS_KEY));
     state.pdfStarrySpeed = clampPdfStarrySpeed(window.localStorage.getItem(PDF_STARRY_SPEED_KEY));
     state.pdfStarryDensity = clampPdfStarryDensity(window.localStorage.getItem(PDF_STARRY_DENSITY_KEY));
@@ -7390,6 +7731,7 @@ function refreshPreferenceStateFromStorage() {
     syncPdfExperimentalToolVisibility();
     syncPdfViewerControls();
     syncPdfViewerChromeState();
+    void setAmbientAudioEnabled(state.audioEnabled, { showError: false });
     if (dom.colorIntensitySlider) dom.colorIntensitySlider.value = String(state.colorIntensity);
     if (dom.colorIntensityValue) dom.colorIntensityValue.textContent = String(state.colorIntensity);
     if (!state.showErrorsGlobally) {
@@ -8212,6 +8554,36 @@ function wireEvents() {
             syncPdfExperimentalToolVisibility();
             syncPdfViewerControls();
         });
+    }
+
+    if (dom.enablePdfTextSelectCheckbox) {
+        dom.enablePdfTextSelectCheckbox.checked = state.enablePdfTextSelectTool;
+        dom.enablePdfTextSelectCheckbox.addEventListener("change", () => {
+            state.enablePdfTextSelectTool = dom.enablePdfTextSelectCheckbox.checked;
+            window.localStorage.setItem(PDF_TEXT_SELECT_TOOL_ENABLED_KEY, state.enablePdfTextSelectTool ? "true" : "false");
+            syncExperimentalNestedOptions();
+            syncPdfExperimentalToolVisibility();
+            syncPdfViewerControls();
+        });
+    }
+
+    if (dom.enableAudioCheckbox) {
+        dom.enableAudioCheckbox.checked = state.audioEnabled;
+        dom.enableAudioCheckbox.addEventListener("change", () => {
+            void setAmbientAudioEnabled(dom.enableAudioCheckbox.checked, { showError: true });
+        });
+    }
+
+    if (dom.audioVolumeSlider) {
+        dom.audioVolumeSlider.value = String(state.audioVolume);
+        const commitAudioVolume = () => {
+            state.audioVolume = clampAmbientAudioVolume(dom.audioVolumeSlider.value);
+            window.localStorage.setItem(AUDIO_VOLUME_KEY, String(state.audioVolume));
+            syncExperimentalNestedOptions();
+            applyAmbientAudioVolume();
+        };
+        dom.audioVolumeSlider.addEventListener("input", commitAudioVolume);
+        dom.audioVolumeSlider.addEventListener("change", commitAudioVolume);
     }
 
     if (dom.previewCopiedTextCheckbox) {
@@ -9045,6 +9417,11 @@ function wireEvents() {
     if (dom.pdfCopyRegionToggle) {
         dom.pdfCopyRegionToggle.addEventListener("click", () => {
             togglePdfCopyRegionTool();
+        });
+    }
+    if (dom.pdfTextSelectToggle) {
+        dom.pdfTextSelectToggle.addEventListener("click", () => {
+            togglePdfTextSelectTool();
         });
     }
     if (dom.pdfCaptureThumbnailToggle) {
