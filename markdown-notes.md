@@ -1,18 +1,16 @@
-# Reader Notes Thoughts
+# Notes Panel Thoughts
 
 ## Current first pass
 
-- A `Reader Notes` panel sits to the right of the internal PDF reader when enabled.
+- A `Notes` panel sits to the right of the internal PDF reader when enabled.
 - It shares the article's existing `notes` field rather than creating a second storage location.
-- The panel uses a lightweight mixed mode:
-  - non-active lines render as Markdown preview
-  - the active line shows raw Markdown for editing
+- The panel is now a straightforward multiline text editor rather than a mixed Markdown-preview editor.
 - Notes use a debounced partial save path so they do not require the full metadata modal save button every time.
 
 ## Desirable low-hanging follow-ups
 
 - Add a tiny saved/unsaved/saving indicator inside the notes panel itself.
-- Remember whether `Reader Notes` was open last time the reader was used.
+- Remember whether `Notes` was open last time the reader was used.
 - Add keyboard shortcuts for:
   - new line
   - next/previous note line
@@ -24,12 +22,11 @@
 
 ## Lightweight but worthwhile improvements
 
-- Better line-navigation behavior:
-  - arrow-up and arrow-down between note lines
-  - better caret-column preservation
+- Optional rendered Markdown preview mode as a second view, rather than mixing preview and editing in the same surface.
+- Better plain-text editing comfort:
   - tab indentation
-- Better blank-line affordances so empty spacing feels more intentional.
-- Smarter Markdown line rendering for lists so consecutive list items feel like one list visually instead of isolated list rows.
+  - optional soft wrap toggle
+  - line numbers or paragraph guides
 - Small page-reference helpers like:
   - `p. 4`
   - `pp. 4-5`
@@ -53,8 +50,8 @@
 ## Difficult or architecture-heavy ideas
 
 - A truly Obsidian-like live Markdown editor where multi-line blocks render correctly while only the current line stays raw.
-  - The current first pass is intentionally line-oriented.
-  - That keeps editing manageable, but it is weaker for fenced code blocks, multi-line blockquotes, and long lists.
+  - That likely needs a more specialized editor model than a plain textarea.
+  - It becomes especially tricky for fenced code blocks, multi-line blockquotes, and long lists.
 - Rich block editing with drag-reorder, embeds, and slash commands.
 - Persistent per-note links to PDF regions or text anchors that survive layout/zoom changes robustly.
 - Conflict-safe editing if the same article notes are opened in multiple windows or processes at once.

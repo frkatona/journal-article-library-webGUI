@@ -1214,7 +1214,27 @@ forgot about 0.9.5 LOL
 
 - [x] prevented the "Files" dropdown from extending too close to the lower application window boundary, introducing a scroll bar when needed
 
-**push : v1.0.0 and v1.0.1 immediate bugfix**
+**push : v1.0.0**
+
+---
+
+- [x] minor bugfixes with the files menu
+
+**push v1.0.1**
+
+---
+
+- [x] notes panel
+ - [ ] real time markdown formatting
+ - [ ] maybe first just 'convert to markdown when the field becomes inactive' 
+
+- [x] migrated metadata modal to bottom of notes panel
+
+- [ ] limit the speed of moving through articles by holding down left/right arrows to prevent crashing
+
+*next push: v1.1.0*
+
+---
 
 ### think about more first
 
@@ -1227,6 +1247,8 @@ forgot about 0.9.5 LOL
   - which tags have the highest correlation (useful for cleaning redundant tags?)
   - total number of papers added vs time
   - which papers struggled for text recognition or DOI API metadata extraction?
+
+- [ ] is 'cited by' accessible through the API?  Is that worth showing?
 
 - [ ] checkbox for enabled a new auto-markdown notes (a la obsidian) section next to the paper?  Collect all paper notes as .md files so that they can be used with Obsidian?  
 

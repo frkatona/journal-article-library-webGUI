@@ -477,97 +477,98 @@
                 </div>
                 <button id="modal-close" type="button" title="Escape">Close</button>
             </div>
-            <div class="modal-layout">
-                <div id="modal-thumb-wrap" class="modal-thumb-wrap">
-                    <img id="modal-thumb" src="" alt="Article thumbnail" />
-                    <p class="drop-hint">Drag and drop an image here to replace thumbnail.</p>
-                    <div class="thumb-tools">
-                        <button id="thumb-paste" type="button" title="paste image">Paste from Clipboard</button>
-                        <button id="thumb-reset" type="button" class="ghost hidden">Extract Image from File</button>
-                        <hr style="border: none; border-top: 1px dashed var(--line); margin: 4px 0; width: 100%;" />
-                        <button id="editor-open-btn" type="button" class="ghost" style="color:var(--accent);">Open
-                            Article</button>
-                        <button id="editor-locate-btn" type="button" class="ghost">Open File Location</button>
+            <div id="metadata-editor-modal-host">
+                <div id="metadata-editor-layout" class="modal-layout">
+                    <div id="modal-thumb-wrap" class="modal-thumb-wrap">
+                        <img id="modal-thumb" src="" alt="Article thumbnail" />
+                        <p class="drop-hint">Drag and drop an image here to replace thumbnail.</p>
+                        <div class="thumb-tools">
+                            <button id="thumb-paste" type="button" title="paste image">Paste from Clipboard</button>
+                            <button id="thumb-reset" type="button" class="ghost hidden">Extract Image from File</button>
+                            <hr style="border: none; border-top: 1px dashed var(--line); margin: 4px 0; width: 100%;" />
+                            <button id="editor-open-btn" type="button" class="ghost" style="color:var(--accent);">Open
+                                Article</button>
+                            <button id="editor-locate-btn" type="button" class="ghost">Open File Location</button>
+                        </div>
                     </div>
+                    <form id="metadata-form">
+                        <label class="field">
+                            <span>Title</span>
+                            <input id="f-title" name="title" type="text" />
+                        </label>
+                        <label class="field">
+                            <span>Authors</span>
+                            <input id="f-authors" name="authors" type="text" />
+                        </label>
+                        <div class="inline-row">
+                            <label class="field">
+                                <span>Year</span>
+                                <input id="f-year" name="year" type="text" />
+                            </label>
+                            <label class="field">
+                                <span>Journal / Subject</span>
+                                <input id="f-journal" name="journal" type="text" />
+                            </label>
+                        </div>
+                        <div class="inline-row">
+                            <label class="field">
+                                <span>Volume</span>
+                                <input id="f-volume" name="volume" type="text" />
+                            </label>
+                            <label class="field">
+                                <span>Issue</span>
+                                <input id="f-issue" name="number" type="text" />
+                            </label>
+                            <label class="field">
+                                <span>Pages</span>
+                                <input id="f-pages" name="pages" type="text" />
+                            </label>
+                        </div>
+                        <label class="field compact">
+                            <span>DOI</span>
+                            <div style="display:flex;gap:8px;">
+                                <input id="f-doi" name="doi" type="text" style="flex:1;" />
+                                <button id="doi-fetch-btn" type="button" class="accent"
+                                    style="padding: 0 12px; font-weight: bold;"
+                                    title="Fetch metadata via Crossref using this DOI">Fetch</button>
+                            </div>
+                        </label>
+                        <label class="field">
+                            <span>Abstract</span>
+                            <textarea id="f-abstract" name="abstract" rows="5"></textarea>
+                        </label>
+                        <div class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
+                            <label style="display:flex;align-items:center;gap:8px;min-width:0;cursor:pointer;">
+                                <input id="paste-cleanup" type="checkbox" checked />
+                                <span style="font-size:0.82rem;">Auto-clean pasted text</span>
+                            </label>
+                            <button id="abstract-clean-btn" type="button" class="ghost" data-skip-autosave="true"
+                                style="margin-left:auto; font-size:0.78rem; padding:4px 8px;">Clean</button>
+                        </div>
+                        <label class="field">
+                            <span>Tags</span>
+                            <div id="tag-chip-container" class="tag-chip-container">
+                                <input id="f-tag-input" type="text" class="tag-chip-input" placeholder="Add tag..."
+                                    autocomplete="off" />
+                                <div id="tag-autocomplete" class="tag-autocomplete hidden"></div>
+                            </div>
+                        </label>
+                        <div id="tag-suggestions" class="tag-suggestions hidden" data-skip-autosave="true">
+                            <span class="tag-suggestions-label">Suggested tags</span>
+                            <div id="tag-suggestions-list" class="tag-suggestions-list"></div>
+                        </div>
+                        <label class="field metadata-notes-field">
+                            <span>Notes</span>
+                            <textarea id="f-notes" name="notes" rows="4"></textarea>
+                        </label>
+                        <div class="modal-actions">
+                            <div class="modal-remove-wrap">
+                                <button id="meta-remove" type="button" class="danger">Remove Article</button>
+                            </div>
+                            <button id="meta-save" type="submit">Save Metadata</button>
+                        </div>
+                    </form>
                 </div>
-                <form id="metadata-form">
-                    <label class="field">
-                        <span>Title</span>
-                        <input id="f-title" name="title" type="text" />
-                    </label>
-                    <label class="field">
-                        <span>Authors</span>
-                        <input id="f-authors" name="authors" type="text" />
-                    </label>
-                    <div class="inline-row">
-                        <label class="field">
-                            <span>Year</span>
-                            <input id="f-year" name="year" type="text" />
-                        </label>
-                        <label class="field">
-                            <span>Journal / Subject</span>
-                            <input id="f-journal" name="journal" type="text" />
-                        </label>
-                    </div>
-                    <div class="inline-row">
-                        <label class="field">
-                            <span>Volume</span>
-                            <input id="f-volume" name="volume" type="text" />
-                        </label>
-                        <label class="field">
-                            <span>Issue</span>
-                            <input id="f-issue" name="number" type="text" />
-                        </label>
-                        <label class="field">
-                            <span>Pages</span>
-                            <input id="f-pages" name="pages" type="text" />
-                        </label>
-                    </div>
-                    <label class="field compact">
-                        <span>DOI</span>
-                        <div style="display:flex;gap:8px;">
-                            <input id="f-doi" name="doi" type="text" style="flex:1;" />
-                            <button id="doi-fetch-btn" type="button" class="accent"
-                                style="padding: 0 12px; font-weight: bold;"
-                                title="Fetch metadata via Crossref using this DOI">Fetch</button>
-                        </div>
-                    </label>
-                    <label class="field">
-                        <span>Abstract</span>
-                        <textarea id="f-abstract" name="abstract" rows="5"></textarea>
-                    </label>
-                    <div class="field" style="flex-direction:row;align-items:center;gap:8px;min-width:0;">
-                        <label style="display:flex;align-items:center;gap:8px;min-width:0;cursor:pointer;">
-                            <input id="paste-cleanup" type="checkbox" checked />
-                            <span style="font-size:0.82rem;">Auto-clean pasted text</span>
-                        </label>
-                        <button id="abstract-clean-btn" type="button" class="ghost" data-skip-autosave="true"
-                            style="margin-left:auto; font-size:0.78rem; padding:4px 8px;">Clean</button>
-                    </div>
-                    <label class="field">
-                        <span>Tags</span>
-                        <div id="tag-chip-container" class="tag-chip-container">
-                            <input id="f-tag-input" type="text" class="tag-chip-input" placeholder="Add tag..."
-                                autocomplete="off" />
-                            <div id="tag-autocomplete" class="tag-autocomplete hidden"></div>
-                        </div>
-                    </label>
-                    <div id="tag-suggestions" class="tag-suggestions hidden" data-skip-autosave="true">
-                        <span class="tag-suggestions-label">Suggested tags</span>
-                        <div id="tag-suggestions-list" class="tag-suggestions-list"></div>
-                    </div>
-                    <label class="field">
-                        <span>Notes</span>
-                        <textarea id="f-notes" name="notes" rows="4"></textarea>
-                    </label>
-                    <div class="modal-actions">
-                        <div class="modal-remove-wrap">
-                            <button id="meta-remove" type="button" class="danger">Remove Article</button>
-                            <!--<span class="modal-danger-note">Permanently deletes the PDF file and stored metadata.</span>-->
-                        </div>
-                        <button id="meta-save" type="submit">Save Metadata</button>
-                    </div>
-                </form>
             </div>
         </div>
     </div>
@@ -670,10 +671,6 @@
                 </div>
                 <div class="pdf-viewer-tool-actions">
                     <button id="pdf-copy-region-toggle" type="button" class="ghost hidden">Copy Region</button>
-                    <label id="pdf-reader-notes-toggle-wrap" class="pdf-reader-notes-toggle">
-                        <input id="pdf-reader-notes-toggle" type="checkbox" />
-                        <span>Reader Notes</span>
-                    </label>
                     <button id="pdf-text-select-toggle" type="button" class="ghost hidden">Select Text</button>
                     <button id="pdf-capture-thumbnail-toggle" type="button" class="ghost hidden">Capture Thumbnail</button>
                 </div>
@@ -705,7 +702,7 @@
                     </div>
                 </div>
             </div>
-            <div class="pdf-viewer-body">
+            <div id="pdf-viewer-body" class="pdf-viewer-body">
                 <aside class="pdf-page-list-panel">
                     <div id="pdf-page-list" class="pdf-page-list"></div>
                 </aside>
@@ -715,17 +712,25 @@
                         <canvas id="pdf-canvas"></canvas>
                     </div>
                 </section>
-                <aside id="pdf-reader-notes-panel" class="pdf-reader-notes-panel hidden" aria-label="Reader notes">
+                <aside id="pdf-reader-notes-panel" class="pdf-reader-notes-panel hidden" aria-label="Notes">
+                    <div id="pdf-reader-notes-resizer" class="pdf-reader-notes-resizer" aria-hidden="true"></div>
                     <div class="pdf-reader-notes-header">
                         <div class="pdf-reader-notes-title-wrap">
-                            <strong>Reader Notes</strong>
+                            <strong>Notes</strong>
                             <span id="pdf-reader-notes-status" class="meta">Shared with metadata notes.</span>
                         </div>
-                        <button id="pdf-reader-notes-add-line" type="button" class="ghost">New Line</button>
                     </div>
-                    <div id="pdf-reader-notes-lines" class="pdf-reader-notes-lines"></div>
-                    <div class="pdf-reader-notes-footer meta">
-                        Markdown preview stays visible for non-active lines.
+                    <div class="pdf-reader-notes-body">
+                        <label class="field pdf-reader-notes-field">
+                            <span>Notes</span>
+                            <div id="pdf-reader-notes-preview" class="pdf-reader-notes-preview abstract-notes-text"
+                                tabindex="0" role="button" aria-label="Edit notes"></div>
+                            <textarea id="pdf-reader-notes-editor" class="pdf-reader-notes-editor"
+                                placeholder="Write notes here..."></textarea>
+                        </label>
+                        <button id="pdf-reader-metadata-divider" class="pdf-reader-metadata-divider" type="button"
+                            aria-label="Toggle metadata section"></button>
+                        <div id="pdf-reader-metadata-dock" class="pdf-reader-metadata-dock hidden"></div>
                     </div>
                 </aside>
             </div>
@@ -897,7 +902,7 @@
                 <div class="hotkeys-modal-footer-separator"></div>
                 <a id="version-link" href="https://github.com/frkatona/journal-article-library-webGUI/releases"
                     target="_blank" rel="noopener noreferrer"
-                    class="hotkeys-version-link">v1.0.1</a>
+                    class="hotkeys-version-link">v1.1.0</a>
             </div>
         </div>
     </div>
