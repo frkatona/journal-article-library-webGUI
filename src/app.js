@@ -70,6 +70,7 @@ const PDF_READER_NOTES_MIN_WIDTH = 240;
 const PDF_READER_NOTES_MAX_WIDTH = 760;
 const PDF_READER_NOTES_MIN_STAGE_WIDTH = 360;
 const PDF_READER_NOTES_FOLDED_WIDTH = 18;
+const PDF_READER_NOTES_RESIZE_CLICK_TOLERANCE = 4;
 const PDF_CAPTURE_THUMBNAIL_W = 420;
 const PDF_CAPTURE_THUMBNAIL_H = 260;
 const PDF_CAPTURE_MAX_DIMENSION = 2400;
@@ -624,6 +625,7 @@ const state = {
     autoFitHeight: window.localStorage.getItem("article-autofit-height") === "true",
     cardWidth: Number.parseInt(window.localStorage.getItem("article-card-width") || "200", 10),
     cardFont: Number.parseInt(window.localStorage.getItem("article-card-font") || "14", 10),
+    recentSelectionThickness: Number.parseInt(window.localStorage.getItem("article-recent-selection-thickness") || "3", 10),
     fontFamily: window.localStorage.getItem("article-font-family") || "segoe",
     theme: window.localStorage.getItem("article-theme") || "ocean",
     themePresets: loadThemePresets(),
@@ -687,6 +689,9 @@ const state = {
     tagSuggestionArticles: [],
     tagSuggestionCorpusMode: null,
     tagSuggestionCorpusLoaded: false,
+    dismissedTagSuggestionKeys: new Set(),
+    tagSuggestionSessionKey: "",
+    tagSuggestionDismissScopeKey: "",
     modalArrowBusy: false,
     thumbnailUndo: null,
     metadataDirty: false,
@@ -715,6 +720,8 @@ const dom = {
     cardWidthValue: document.getElementById("card-width-value"),
     cardFontSlider: document.getElementById("card-font-slider"),
     cardFontValue: document.getElementById("card-font-value"),
+    recentBorderThicknessSlider: document.getElementById("recent-border-thickness-slider"),
+    recentBorderThicknessValue: document.getElementById("recent-border-thickness-value"),
     modalBackdropSlider: document.getElementById("modal-backdrop-slider"),
     modalBackdropValue: document.getElementById("modal-backdrop-value"),
     surfaceOpacitySlider: document.getElementById("surface-opacity-slider"),
@@ -1006,8 +1013,7 @@ const pdfViewer = {
     notesSaving: false,
     notesSaveTimer: null,
     notesResizeSession: null,
-    notesLastUnfoldAt: 0,
-    notesMetadataLastUnfoldAt: 0,
+    notesResizeSuppressClickUntil: 0,
 };
 
 let pdfJsLibPromise = null;
@@ -1386,6 +1392,24 @@ function applyCardFont(value) {
     document.documentElement.style.setProperty("--card-btn-size", `${btnFont}px`);
     dom.cardFontSlider.value = String(cardFont);
     dom.cardFontValue.textContent = String(cardFont);
+}
+
+function clampRecentSelectionThickness(value) {
+    const n = Number.parseInt(String(value), 10);
+    if (Number.isNaN(n)) return 3;
+    return Math.max(1, Math.min(10, n));
+}
+
+function applyRecentSelectionThickness(value) {
+    const thickness = clampRecentSelectionThickness(value);
+    state.recentSelectionThickness = thickness;
+    document.documentElement.style.setProperty("--recent-selection-thickness", `${thickness}px`);
+    if (dom.recentBorderThicknessSlider) {
+        dom.recentBorderThicknessSlider.value = String(thickness);
+    }
+    if (dom.recentBorderThicknessValue) {
+        dom.recentBorderThicknessValue.textContent = String(thickness);
+    }
 }
 
 function clampModalBackdropDarkness(value) {
@@ -2770,6 +2794,7 @@ function getTagSuggestionCorpus() {
 
 function computeTagSuggestions() {
     if (!state.current) return [];
+    syncDismissedTagSuggestions();
     const draftData = buildDraftTagSuggestionData();
     if (draftData.norm === 0 && draftData.currentTagKeys.size === 0) return [];
 
@@ -2806,14 +2831,14 @@ function computeTagSuggestions() {
         const perTagScore = similarity / Math.max(articleData.tags.length, 1);
         for (const tag of articleData.tags) {
             const tagKey = normalizeTagKey(tag);
-            if (draftData.currentTagKeys.has(tagKey)) continue;
+            if (draftData.currentTagKeys.has(tagKey) || state.dismissedTagSuggestionKeys.has(tagKey)) continue;
             scores.set(tag, (scores.get(tag) || 0) + perTagScore);
         }
     }
 
     for (const tag of getAllKnownTags()) {
         const tagKey = normalizeTagKey(tag);
-        if (draftData.currentTagKeys.has(tagKey)) continue;
+        if (draftData.currentTagKeys.has(tagKey) || state.dismissedTagSuggestionKeys.has(tagKey)) continue;
         const lexicalBoost = computeTagLexicalBoost(tag, draftData);
         if (lexicalBoost > 0) {
             scores.set(tag, (scores.get(tag) || 0) + lexicalBoost);
@@ -2857,13 +2882,53 @@ function renderTagSuggestions(tags, { loading = false } = {}) {
         chip.dataset.skipAutosave = "true";
         chip.textContent = tag;
         chip.addEventListener("mousedown", (evt) => {
+            if (evt.button !== 0) {
+                evt.preventDefault();
+                return;
+            }
             evt.preventDefault();
             addTagChip(tag);
             dom.tagInput.focus();
         });
+        chip.addEventListener("contextmenu", (evt) => {
+            evt.preventDefault();
+            dismissTagSuggestion(tag);
+        });
         dom.tagSuggestionsList.appendChild(chip);
     }
     dom.tagSuggestions.classList.remove("hidden");
+}
+
+function buildTagSuggestionDismissScopeKey() {
+    if (!state.current || !isMetadataEditorVisible()) return "";
+    return state.tagSuggestionSessionKey || "";
+}
+
+function beginTagSuggestionDismissSession() {
+    state.tagSuggestionSessionKey = `metadata-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    state.tagSuggestionDismissScopeKey = state.tagSuggestionSessionKey;
+    state.dismissedTagSuggestionKeys.clear();
+}
+
+function clearTagSuggestionDismissSession() {
+    state.tagSuggestionSessionKey = "";
+    state.tagSuggestionDismissScopeKey = "";
+    state.dismissedTagSuggestionKeys.clear();
+}
+
+function syncDismissedTagSuggestions() {
+    const scopeKey = buildTagSuggestionDismissScopeKey();
+    if (state.tagSuggestionDismissScopeKey === scopeKey) return;
+    state.tagSuggestionDismissScopeKey = scopeKey;
+    state.dismissedTagSuggestionKeys.clear();
+}
+
+function dismissTagSuggestion(tag) {
+    const normalized = normalizeTagKey(tag);
+    if (!normalized) return;
+    syncDismissedTagSuggestions();
+    state.dismissedTagSuggestionKeys.add(normalized);
+    renderTagSuggestions(computeTagSuggestions());
 }
 
 function invalidateTagSuggestionCorpus() {
@@ -3381,6 +3446,76 @@ function normalizePdfReaderNotesText(value) {
     return String(value || "").replace(/\r\n?/g, "\n");
 }
 
+function applyTextareaTabIndent(textarea, { outdent = false } = {}) {
+    if (!(textarea instanceof HTMLTextAreaElement)) return false;
+
+    const value = textarea.value;
+    const start = textarea.selectionStart ?? 0;
+    const end = textarea.selectionEnd ?? start;
+    const hasMultilineSelection = end > start && value.slice(start, end).includes("\n");
+
+    if (!hasMultilineSelection) {
+        if (outdent) {
+            const lineStart = value.lastIndexOf("\n", Math.max(0, start - 1)) + 1;
+            const beforeCursor = value.slice(lineStart, start);
+            const indentMatch = beforeCursor.match(/(?:\t| {1,4})$/);
+            if (!indentMatch) return false;
+            const removeLength = indentMatch[0].length;
+            textarea.value = `${value.slice(0, start - removeLength)}${value.slice(end)}`;
+            textarea.selectionStart = textarea.selectionEnd = start - removeLength;
+        } else {
+            textarea.value = `${value.slice(0, start)}\t${value.slice(end)}`;
+            textarea.selectionStart = textarea.selectionEnd = start + 1;
+        }
+        textarea.dispatchEvent(new Event("input", { bubbles: true }));
+        return true;
+    }
+
+    const blockStart = value.lastIndexOf("\n", Math.max(0, start - 1)) + 1;
+    const selectedBlock = value.slice(blockStart, end);
+    const lines = selectedBlock.split("\n");
+    let selectionStart = start;
+    let selectionEnd = end;
+
+    const updatedLines = lines.map((line, index) => {
+        if (!outdent) {
+            if (index === 0) selectionStart += 1;
+            selectionEnd += 1;
+            return `\t${line}`;
+        }
+
+        let removeLength = 0;
+        if (line.startsWith("\t")) {
+            removeLength = 1;
+        } else {
+            const match = line.match(/^ {1,4}/);
+            removeLength = match ? match[0].length : 0;
+        }
+        if (removeLength > 0) {
+            if (index === 0) {
+                selectionStart = Math.max(blockStart, selectionStart - removeLength);
+            }
+            selectionEnd = Math.max(selectionStart, selectionEnd - removeLength);
+            return line.slice(removeLength);
+        }
+        return line;
+    });
+
+    textarea.value = `${value.slice(0, blockStart)}${updatedLines.join("\n")}${value.slice(end)}`;
+    textarea.selectionStart = selectionStart;
+    textarea.selectionEnd = selectionEnd;
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    return true;
+}
+
+function handleNotesTabIndent(evt) {
+    if (evt.key !== "Tab") return;
+    if (!(evt.currentTarget instanceof HTMLTextAreaElement)) return;
+    evt.preventDefault();
+    evt.stopPropagation();
+    applyTextareaTabIndent(evt.currentTarget, { outdent: evt.shiftKey });
+}
+
 function clearPdfReaderNotesAutosaveTimer() {
     if (pdfViewer.notesSaveTimer) {
         window.clearTimeout(pdfViewer.notesSaveTimer);
@@ -3427,6 +3562,7 @@ function fillMetadataEditorFromArticle(article, { source = "modal" } = {}) {
         : normalizePdfReaderNotesText(article.metadata?.notes);
     markArticleSelected(article);
     state.current = article;
+    beginTagSuggestionDismissSession();
     state.metadataSavedSinceOpen = false;
     debugLog(`Opened metadata editor for article ${article.id} (${source}).`);
     const md = article.metadata || {};
@@ -5661,13 +5797,7 @@ function beginPdfReaderNotesResize(evt) {
     if (!pdfViewer.notesVisible || !pdfViewer.article || !dom.pdfViewerBody) return;
     if (window.innerWidth <= 980) return;
     if (evt.button !== 0) return;
-    if (pdfViewer.notesFolded) {
-        evt.preventDefault();
-        evt.stopPropagation();
-        pdfViewer.notesLastUnfoldAt = Date.now();
-        setPdfReaderNotesFolded(false);
-        return;
-    }
+    if (pdfViewer.notesFolded) return;
 
     const bodyRect = dom.pdfViewerBody.getBoundingClientRect();
     if (!bodyRect.width) return;
@@ -5678,37 +5808,29 @@ function beginPdfReaderNotesResize(evt) {
         pointerId: evt.pointerId,
         bodyLeft: bodyRect.left,
         bodyWidth: bodyRect.width,
+        startX: evt.clientX,
+        startY: evt.clientY,
+        moved: false,
     };
-    dom.pdfViewerBody.classList.add("is-resizing-notes");
 }
 
-function handlePdfReaderNotesResizerDoubleClick(evt) {
+function handlePdfReaderNotesResizerClick(evt) {
     if (!pdfViewer.notesVisible || !pdfViewer.article) return;
-    if ((Date.now() - (pdfViewer.notesLastUnfoldAt || 0)) < 280) return;
+    if (Date.now() < (pdfViewer.notesResizeSuppressClickUntil || 0)) {
+        evt.preventDefault();
+        evt.stopPropagation();
+        return;
+    }
     evt.preventDefault();
     evt.stopPropagation();
-    if (!pdfViewer.notesFolded) {
-        setPdfReaderNotesFolded(true);
-    }
+    setPdfReaderNotesFolded(!pdfViewer.notesFolded);
 }
 
 function handlePdfReaderMetadataDividerClick(evt) {
     if (!pdfViewer.notesVisible || !pdfViewer.article || pdfViewer.notesFolded) return;
-    if (!pdfViewer.notesMetadataFolded) return;
     evt.preventDefault();
     evt.stopPropagation();
-    pdfViewer.notesMetadataLastUnfoldAt = Date.now();
-    setPdfReaderMetadataFolded(false);
-}
-
-function handlePdfReaderMetadataDividerDoubleClick(evt) {
-    if (!pdfViewer.notesVisible || !pdfViewer.article || pdfViewer.notesFolded) return;
-    if ((Date.now() - (pdfViewer.notesMetadataLastUnfoldAt || 0)) < 280) return;
-    evt.preventDefault();
-    evt.stopPropagation();
-    if (!pdfViewer.notesMetadataFolded) {
-        setPdfReaderMetadataFolded(true);
-    }
+    setPdfReaderMetadataFolded(!pdfViewer.notesMetadataFolded);
 }
 
 function handlePdfReaderNotesResizeMove(evt) {
@@ -5717,6 +5839,14 @@ function handlePdfReaderNotesResizeMove(evt) {
     if (typeof session.pointerId === "number" && typeof evt.pointerId === "number" && session.pointerId !== evt.pointerId) {
         return false;
     }
+
+    const movedEnough = Math.abs(evt.clientX - session.startX) >= PDF_READER_NOTES_RESIZE_CLICK_TOLERANCE
+        || Math.abs(evt.clientY - session.startY) >= PDF_READER_NOTES_RESIZE_CLICK_TOLERANCE;
+    if (!session.moved && movedEnough) {
+        session.moved = true;
+        dom.pdfViewerBody?.classList.add("is-resizing-notes");
+    }
+    if (!session.moved) return true;
 
     evt.preventDefault();
     const nextWidth = (session.bodyLeft + session.bodyWidth) - evt.clientX;
@@ -5735,9 +5865,12 @@ function handlePdfReaderNotesResizeEnd(evt) {
         return false;
     }
 
-    evt.preventDefault();
+    if (session.moved) {
+        evt.preventDefault();
+        pdfViewer.notesResizeSuppressClickUntil = Date.now() + 220;
+    }
     clearPdfReaderNotesResizeSession();
-    if (isPdfViewerOpen() && pdfViewer.doc && (pdfViewer.zoomMode === "fit-width" || pdfViewer.zoomMode === "fit-page")) {
+    if (session.moved && isPdfViewerOpen() && pdfViewer.doc && (pdfViewer.zoomMode === "fit-width" || pdfViewer.zoomMode === "fit-page")) {
         debouncedPdfViewerResize();
     }
     return true;
@@ -6035,15 +6168,64 @@ function normalizeWheelDeltaToPixels(delta, deltaMode, pageSize) {
     return delta;
 }
 
+function canElementScrollInWheelDirection(element, deltaX, deltaY) {
+    if (!(element instanceof HTMLElement)) return false;
+    const tolerance = 1;
+    const canScrollUp = deltaY < 0 && element.scrollTop > tolerance;
+    const canScrollDown = deltaY > 0 && (element.scrollTop + element.clientHeight) < (element.scrollHeight - tolerance);
+    const canScrollLeft = deltaX < 0 && element.scrollLeft > tolerance;
+    const canScrollRight = deltaX > 0 && (element.scrollLeft + element.clientWidth) < (element.scrollWidth - tolerance);
+    return canScrollUp || canScrollDown || canScrollLeft || canScrollRight;
+}
+
+function getPdfReaderNotesWheelTarget(target, deltaX, deltaY) {
+    if (!dom.pdfReaderNotesPanel || dom.pdfReaderNotesPanel.classList.contains("hidden") || pdfViewer.notesFolded) {
+        return null;
+    }
+    if (!(target instanceof Node) || !dom.pdfReaderNotesPanel.contains(target)) {
+        return null;
+    }
+
+    const directFieldTarget = target instanceof Element
+        ? target.closest("textarea, .pdf-reader-notes-preview")
+        : null;
+    if (directFieldTarget instanceof HTMLElement && dom.pdfReaderNotesPanel.contains(directFieldTarget)) {
+        return directFieldTarget;
+    }
+
+    const notesBody = dom.pdfReaderNotesPanel.querySelector(".pdf-reader-notes-body");
+    let fallback = notesBody instanceof HTMLElement ? notesBody : null;
+    let current = target instanceof HTMLElement ? target : target.parentElement;
+
+    while (current && current !== dom.pdfReaderNotesPanel) {
+        if (current instanceof HTMLElement) {
+            const style = window.getComputedStyle(current);
+            const canScrollY = /(auto|scroll|overlay)/.test(style.overflowY) && current.scrollHeight > (current.clientHeight + 1);
+            const canScrollX = /(auto|scroll|overlay)/.test(style.overflowX) && current.scrollWidth > (current.clientWidth + 1);
+            if (canScrollY || canScrollX) {
+                if (!fallback) {
+                    fallback = current;
+                }
+                if (canElementScrollInWheelDirection(current, deltaX, deltaY)) {
+                    return current;
+                }
+            }
+        }
+        current = current.parentElement;
+    }
+
+    return fallback;
+}
+
 function handlePdfViewerGlobalWheel(evt) {
     if (!isPdfViewerOpen()) return;
-    evt.preventDefault();
-    evt.stopPropagation();
-    if (typeof evt.stopImmediatePropagation === "function") evt.stopImmediatePropagation();
     const wrap = dom.pdfCanvasWrap;
     if (!wrap || wrap.classList.contains("hidden")) return;
 
     if (evt.ctrlKey) {
+        evt.preventDefault();
+        evt.stopPropagation();
+        if (typeof evt.stopImmediatePropagation === "function") evt.stopImmediatePropagation();
         if (!pdfViewer.doc) return;
         const anchor = capturePdfViewportAnchor(evt);
         const currentScale = clampPdfZoomScale(pdfViewer.zoomScale);
@@ -6056,6 +6238,19 @@ function handlePdfViewerGlobalWheel(evt) {
     const deltaY = normalizeWheelDeltaToPixels(evt.deltaY, evt.deltaMode, wrap.clientHeight || window.innerHeight || 0);
     if (!deltaX && !deltaY) return;
 
+    const notesWheelTarget = getPdfReaderNotesWheelTarget(evt.target, deltaX, deltaY);
+    if (notesWheelTarget) {
+        evt.preventDefault();
+        evt.stopPropagation();
+        if (typeof evt.stopImmediatePropagation === "function") evt.stopImmediatePropagation();
+        notesWheelTarget.scrollLeft += deltaX;
+        notesWheelTarget.scrollTop += deltaY;
+        return;
+    }
+
+    evt.preventDefault();
+    evt.stopPropagation();
+    if (typeof evt.stopImmediatePropagation === "function") evt.stopImmediatePropagation();
     wrap.scrollLeft += deltaX;
     wrap.scrollTop += deltaY;
 }
@@ -6599,7 +6794,10 @@ function captureEditorFormSnapshot(articleId) {
     if (!articleId || !isMetadataEditorOpenForArticle(articleId)) {
         return null;
     }
+    const isDocked = dom.metadataEditorLayout?.parentElement === dom.pdfReaderMetadataDock;
     return {
+        articleId,
+        source: isDocked ? "reader-dock" : "modal",
         title: dom.title.value,
         authors: dom.authors.value,
         year: dom.year.value,
@@ -6738,7 +6936,13 @@ async function reloadArticleAfterThumbnailChange(articleId, formSnapshot = null)
     if (formSnapshot) {
         state.current = updatedArticle;
         if (updatedArticle) {
-            openEditor(updatedArticle);
+            fillMetadataEditorFromArticle(updatedArticle, { source: formSnapshot.source || "modal" });
+            if ((formSnapshot.source || "modal") === "modal") {
+                dom.modal.classList.remove("hidden");
+            } else {
+                dom.modal.classList.add("hidden");
+            }
+            syncMetadataEditorDock();
             restoreEditorFormSnapshot(formSnapshot);
         } else {
             closeEditor();
@@ -8230,6 +8434,7 @@ function refreshPreferenceStateFromStorage() {
     state.autoFitHeight = window.localStorage.getItem("article-autofit-height") === "true";
     state.cardWidth = Number.parseInt(window.localStorage.getItem("article-card-width") || "200", 10);
     state.cardFont = Number.parseInt(window.localStorage.getItem("article-card-font") || "14", 10);
+    state.recentSelectionThickness = Number.parseInt(window.localStorage.getItem("article-recent-selection-thickness") || "3", 10);
     state.fontFamily = normalizeFontKey(window.localStorage.getItem("article-font-family") || "segoe", "segoe");
     state.themePresets = loadThemePresets();
     state.theme = VALID_THEMES.has(window.localStorage.getItem("article-theme") || "ocean")
@@ -8309,6 +8514,7 @@ function refreshPreferenceStateFromStorage() {
     applyCardHeight(state.cardHeight);
     applyCardWidth(state.cardWidth);
     applyCardFont(state.cardFont);
+    applyRecentSelectionThickness(state.recentSelectionThickness);
     applyModalBackdropDarkness(state.modalBackdropDarkness);
     applySurfaceOpacity(state.surfaceOpacity);
     applyDefaultPdfZoom(state.defaultPdfZoom);
@@ -8470,6 +8676,7 @@ function openEditor(article) {
 
 function closeEditor() {
     state.current = null;
+    clearTagSuggestionDismissSession();
     dom.modal.classList.add("hidden");
     if (dom.metadataEditorModalHost) {
         mountMetadataEditorLayout(dom.metadataEditorModalHost);
@@ -8890,6 +9097,7 @@ function wireEvents() {
     applyCardHeight(state.cardHeight);
     applyCardWidth(state.cardWidth);
     applyCardFont(state.cardFont);
+    applyRecentSelectionThickness(state.recentSelectionThickness);
     applyModalBackdropDarkness(state.modalBackdropDarkness);
     applySurfaceOpacity(state.surfaceOpacity);
     applyDefaultPdfZoom(state.defaultPdfZoom);
@@ -9579,6 +9787,7 @@ function wireEvents() {
         field.addEventListener("input", debouncedTagSuggestionRefresh);
     });
     if (dom.notes) {
+        dom.notes.addEventListener("keydown", handleNotesTabIndent);
         dom.notes.addEventListener("input", () => {
             if (pdfViewer.article?.id !== state.current?.id) return;
             applyPdfReaderNotesText(dom.notes.value, {
@@ -9874,6 +10083,12 @@ function wireEvents() {
         applyCardFont(dom.cardFontSlider.value);
         window.localStorage.setItem("article-card-font", String(state.cardFont));
     });
+    if (dom.recentBorderThicknessSlider) {
+        dom.recentBorderThicknessSlider.addEventListener("input", () => {
+            applyRecentSelectionThickness(dom.recentBorderThicknessSlider.value);
+            window.localStorage.setItem("article-recent-selection-thickness", String(state.recentSelectionThickness));
+        });
+    }
     if (dom.modalBackdropSlider) {
         dom.modalBackdropSlider.addEventListener("input", () => {
             applyModalBackdropDarkness(dom.modalBackdropSlider.value);
@@ -10027,6 +10242,7 @@ function wireEvents() {
         });
     }
     if (dom.pdfReaderNotesEditor) {
+        dom.pdfReaderNotesEditor.addEventListener("keydown", handleNotesTabIndent);
         dom.pdfReaderNotesEditor.addEventListener("focus", () => {
             if (!pdfViewer.notesEditing) {
                 setPdfReaderNotesEditing(true);
@@ -10059,11 +10275,10 @@ function wireEvents() {
     }
     if (dom.pdfReaderNotesResizer) {
         dom.pdfReaderNotesResizer.addEventListener("pointerdown", beginPdfReaderNotesResize);
-        dom.pdfReaderNotesResizer.addEventListener("dblclick", handlePdfReaderNotesResizerDoubleClick);
+        dom.pdfReaderNotesResizer.addEventListener("click", handlePdfReaderNotesResizerClick);
     }
     if (dom.pdfReaderMetadataDivider) {
         dom.pdfReaderMetadataDivider.addEventListener("click", handlePdfReaderMetadataDividerClick);
-        dom.pdfReaderMetadataDivider.addEventListener("dblclick", handlePdfReaderMetadataDividerDoubleClick);
     }
     if (dom.pdfTextSelectToggle) {
         dom.pdfTextSelectToggle.addEventListener("click", () => {

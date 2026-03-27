@@ -1225,16 +1225,42 @@ forgot about 0.9.5 LOL
 ---
 
 - [x] notes panel
- - [ ] real time markdown formatting
- - [ ] maybe first just 'convert to markdown when the field becomes inactive' 
+ - [x] 'convert to markdown when the field becomes inactive' 
+ - [x] added notes in readme for pursuit of 'real time' markdown formatting
 
-- [x] migrated metadata modal to bottom of notes panel
+- [x] limit the speed of moving through articles by holding down left/right arrows to prevent crashing
 
-- [ ] limit the speed of moving through articles by holding down left/right arrows to prevent crashing
-
-*next push: v1.1.0*
+**push: v1.1.0**
 
 ---
+
+- [x] added metadata as a subsection of the notes panel (still maintaining distinct metadata modal as well until I'm sure it's redundant)
+
+- [x] added fold-up dividers for the notes and metadata sections
+
+- [x] directed scroll events to the panel while the cursor overlaps it
+
+**push: v1.1.1**
+
+---
+
+- [ ] is the zoom on PDFs bugged when closed and re-opened?
+
+- [x] made last-clicked card more easily identifiable
+  - [x] added display menu slider for new effect/border thickness
+
+- [x] for the abstract and notes fields as well within the notes panel, made scroll events target them when the cursor is over them
+
+- [x] made a right-click on a 'suggested tag' chip remove it and replace it with the next best unlisted suggestion
+
+- [ ] bug when using thumbnail capture tool in the notes panel
+
+- further increase the draggable divider line thickness by about 2x
+
+*next push: v1.1.2*
+
+---
+
 
 ### think about more first
 
