@@ -1,6 +1,6 @@
 [package]
 name = "literature-library"
-version = "1.1.1"
+version = "1.2.0"
 edition = "2021"
 
 [lib]
@@ -27,6 +27,7 @@ chrono = { version = "0.4", features = ["serde"] }
 tauri-plugin-dialog = "2.6.0"
 reqwest = { version = "0.12", features = ["json", "blocking", "native-tls"] }
 futures = "0.3"
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
 
 [profile.release]
 strip = true

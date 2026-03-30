@@ -284,6 +284,8 @@
 
                         <hr style="border: none; border-top: 1px dashed var(--danger); margin: 8px 0; opacity: 0.5;" />
 
+                        <button id="export-sync-bundle-btn" type="button" class="ghost">Export Library Bundle...</button>
+                        <button id="import-sync-bundle-btn" type="button" class="ghost">Import Library Bundle...</button>
                         <button id="open-articles-btn" type="button" class="ghost">Open Articles Folder</button>
                         <button id="reindex-btn" type="button">Reindex</button>
                     </div>
@@ -608,6 +610,75 @@
         </div>
     </div>
 
+    <div id="sync-import-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="sync-import-title">
+        <div class="modal-card sync-import-modal-card">
+            <div class="modal-header">
+                <div class="modal-header-title">
+                    <h2 id="sync-import-title">Import Library Bundle</h2>
+                </div>
+                <button id="sync-import-close" type="button">Cancel</button>
+            </div>
+            <div class="sync-import-body">
+                <p id="sync-import-path" class="meta sync-import-path"></p>
+                <div class="sync-import-summary-grid">
+                    <div class="sync-import-summary-item">
+                        <span class="meta">Exported</span>
+                        <strong id="sync-import-exported-at">Unknown</strong>
+                    </div>
+                    <div class="sync-import-summary-item">
+                        <span class="meta">Bundle size</span>
+                        <strong id="sync-import-file-size">0 B</strong>
+                    </div>
+                    <div class="sync-import-summary-item">
+                        <span class="meta">Bundle articles</span>
+                        <strong id="sync-import-article-count">0</strong>
+                    </div>
+                    <div class="sync-import-summary-item">
+                        <span class="meta">New articles</span>
+                        <strong id="sync-import-new-count">0</strong>
+                    </div>
+                    <div class="sync-import-summary-item">
+                        <span class="meta">Existing matches</span>
+                        <strong id="sync-import-skip-count">0</strong>
+                    </div>
+                    <div class="sync-import-summary-item">
+                        <span class="meta">Bundle app version</span>
+                        <strong id="sync-import-app-version">Unknown</strong>
+                    </div>
+                </div>
+                <div id="sync-import-warning-block" class="sync-import-warning-block hidden">
+                    <div class="sync-import-warning-header">
+                        <strong>Warnings</strong>
+                        <span id="sync-import-warning-count" class="meta"></span>
+                    </div>
+                    <div id="sync-import-warning-list" class="sync-import-warning-list"></div>
+                </div>
+                <div class="sync-import-options">
+                    <label class="field sync-import-option-row">
+                        <input id="sync-import-articles" type="checkbox" checked />
+                        <span>Import new articles</span>
+                    </label>
+                    <label id="sync-import-thumbnails-row" class="field sync-import-option-row sync-import-nested-row">
+                        <input id="sync-import-thumbnails" type="checkbox" checked />
+                        <span>Import thumbnails for imported articles</span>
+                    </label>
+                    <label id="sync-import-settings-row" class="field sync-import-option-row hidden">
+                        <input id="sync-import-settings" type="checkbox" />
+                        <span>Import app settings</span>
+                    </label>
+                    <label id="sync-import-settings-apply-row" class="field sync-import-option-row sync-import-nested-row hidden">
+                        <input id="sync-import-settings-apply" type="checkbox" checked />
+                        <span>Apply imported settings immediately after import</span>
+                    </label>
+                </div>
+                <div class="sync-import-actions">
+                    <button id="sync-import-confirm" type="button">Import</button>
+                    <button id="sync-import-cancel" type="button" class="ghost">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div id="pdf-viewer-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="pdf-viewer-title">
         <div class="modal-card pdf-viewer-modal-card">
             <div class="modal-header pdf-viewer-header">
@@ -910,7 +981,7 @@
                 <div class="hotkeys-modal-footer-separator"></div>
                 <a id="version-link" href="https://github.com/frkatona/journal-article-library-webGUI/releases"
                     target="_blank" rel="noopener noreferrer"
-                    class="hotkeys-version-link">v1.1.1</a>
+                    class="hotkeys-version-link">v1.2.0</a>
             </div>
         </div>
     </div>

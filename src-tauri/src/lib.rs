@@ -10,6 +10,7 @@ use std::time::Duration;
 use sha1_smol::Sha1;
 use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::io::{Read, Write};
 use std::panic;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -17,14 +18,20 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use tauri_plugin_dialog::DialogExt;
 
 use walkdir::WalkDir;
+use zip::write::SimpleFileOptions;
+use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
 // ── Constants ───────────────────────────────────────────────────────────────
 const THUMBNAIL_W: u32 = 420;
 const THUMBNAIL_H: u32 = 260;
 const DEMO_MODE_DIRNAME: &str = "demo_mode";
 const CROSSREF_TIMEOUT_SECS: u64 = 5;
+const SYNC_BUNDLE_VERSION: u32 = 1;
+const SYNC_BUNDLE_MANIFEST_PATH: &str = "manifest.json";
+const SYNC_BUNDLE_SETTINGS_PATH: &str = "settings.json";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -210,6 +217,78 @@ pub struct MetadataPayload {
     pub ref_dois: Option<Vec<String>>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SyncBundleManifest {
+    bundle_version: u32,
+    exported_at: String,
+    app_version: String,
+    article_count: usize,
+    settings_path: Option<String>,
+    articles: Vec<SyncBundleArticleEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SyncBundleArticleEntry {
+    source_article_id: String,
+    pdf_filename: String,
+    pdf_relpath: String,
+    pdf_size: u64,
+    pdf_sha1: String,
+    pdf_path: String,
+    metadata_path: String,
+    thumbnail_path: Option<String>,
+    auto_meta: AutoMeta,
+    metadata: Metadata,
+    date_added: String,
+    last_opened: String,
+    thumbnail_mode: String,
+    doi: String,
+}
+
+#[derive(Debug, Serialize)]
+struct SyncBundleExportResponse {
+    ok: bool,
+    path: String,
+    article_count: usize,
+    settings_included: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct SyncBundlePreviewResponse {
+    ok: bool,
+    path: String,
+    file_size: u64,
+    bundle_version: u32,
+    app_version: String,
+    exported_at: String,
+    article_count: usize,
+    new_article_count: usize,
+    skipped_article_count: usize,
+    settings_included: bool,
+    warning_count: usize,
+    warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct SyncBundleImportOptions {
+    import_articles: Option<bool>,
+    import_thumbnails: Option<bool>,
+    import_settings: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
+struct SyncBundleImportResponse {
+    ok: bool,
+    path: String,
+    bundle_article_count: usize,
+    imported_count: usize,
+    skipped_count: usize,
+    warning_count: usize,
+    imported_article_ids: Vec<String>,
+    settings_json: Option<String>,
+    warnings: Vec<String>,
+}
+
 // ── App State ───────────────────────────────────────────────────────────────
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LibraryMode {
@@ -375,6 +454,113 @@ fn article_id_for_path(pdf_path: &Path, articles_dir: &Path) -> String {
         .to_string_lossy()
         .to_string();
     format!("{}-{}", safe_slug(&stem, 58), digest)
+}
+
+fn sha1_hex_for_bytes(bytes: &[u8]) -> String {
+    let mut hasher = Sha1::new();
+    hasher.update(bytes);
+    hasher.digest().to_string()
+}
+
+fn sha1_hex_for_file(path: &Path) -> Result<String, String> {
+    let bytes = fs::read(path).map_err(|e| format!("Failed to read file for hashing: {}", e))?;
+    Ok(sha1_hex_for_bytes(&bytes))
+}
+
+fn sync_source_id_for_article(state: &AppState, article: &Article) -> String {
+    let over = load_override(&state.overrides_dir, &article.id);
+    over.get("sync_source_id")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| article.id.clone())
+}
+
+fn sync_bundle_folder_name(source_article_id: &str, fallback_filename: &str) -> String {
+    let clean = source_article_id
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string();
+    if clean.is_empty() {
+        safe_slug(fallback_filename, 64)
+    } else {
+        clean
+    }
+}
+
+fn option_nonempty_string(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn build_sync_bundle_article_entry(
+    state: &AppState,
+    article: &Article,
+) -> Result<(SyncBundleArticleEntry, Vec<u8>, Option<Vec<u8>>, Vec<u8>), String> {
+    let pdf_path = state.root_dir.join(&article.pdf_relpath);
+    let pdf_bytes = fs::read(&pdf_path)
+        .map_err(|e| format!("Failed to read PDF for export ({}): {}", article.pdf_filename, e))?;
+    let pdf_sha1 = sha1_hex_for_bytes(&pdf_bytes);
+    let source_article_id = sync_source_id_for_article(state, article);
+    let folder = sync_bundle_folder_name(&source_article_id, &article.pdf_filename);
+    let pdf_entry_path = format!("articles/{}/paper.pdf", folder);
+    let metadata_entry_path = format!("articles/{}/metadata.json", folder);
+
+    let thumbnail_path = option_nonempty_string(&article.thumbnail.path)
+        .map(|rel| state.root_dir.join(rel))
+        .filter(|path| path.exists());
+    let thumbnail_bytes = thumbnail_path
+        .as_ref()
+        .map(|path| fs::read(path).map_err(|e| format!("Failed to read thumbnail for export: {}", e)))
+        .transpose()?;
+    let thumbnail_entry_path = thumbnail_bytes
+        .as_ref()
+        .map(|_| format!("articles/{}/thumbnail.jpg", folder));
+
+    let entry = SyncBundleArticleEntry {
+        source_article_id,
+        pdf_filename: article.pdf_filename.clone(),
+        pdf_relpath: article.pdf_relpath.clone(),
+        pdf_size: article.file_size,
+        pdf_sha1,
+        pdf_path: pdf_entry_path,
+        metadata_path: metadata_entry_path,
+        thumbnail_path: thumbnail_entry_path,
+        auto_meta: article.auto_meta.clone(),
+        metadata: article.metadata.clone(),
+        date_added: article.date_added.clone(),
+        last_opened: article.last_opened.clone(),
+        thumbnail_mode: article.thumbnail.mode.clone(),
+        doi: article.metadata.doi.clone(),
+    };
+    let metadata_bytes = serde_json::to_vec_pretty(&entry)
+        .map_err(|e| format!("Failed to encode sync metadata JSON: {}", e))?;
+    Ok((entry, pdf_bytes, thumbnail_bytes, metadata_bytes))
+}
+
+fn normalize_doi_key(value: &str) -> String {
+    value.trim().to_lowercase()
+}
+
+fn compute_article_match_key_from_override(
+    state: &AppState,
+    article: &Article,
+) -> (String, String) {
+    let source_id = sync_source_id_for_article(state, article);
+    let doi = normalize_doi_key(&article.metadata.doi);
+    (source_id, doi)
 }
 
 fn parse_filename_metadata(pdf_path: &Path) -> (String, String, String) {
@@ -990,6 +1176,213 @@ fn save_override(overrides_dir: &Path, article_id: &str, data: &serde_json::Valu
     let path = overrides_dir.join(format!("{}.json", article_id));
     let content = serde_json::to_string_pretty(data).unwrap_or_default();
     let _ = fs::write(path, content);
+}
+
+fn zip_file_options() -> SimpleFileOptions {
+    SimpleFileOptions::default()
+        .compression_method(CompressionMethod::Deflated)
+        .unix_permissions(0o644)
+}
+
+fn write_zip_bytes(
+    zip: &mut ZipWriter<fs::File>,
+    entry_path: &str,
+    bytes: &[u8],
+) -> Result<(), String> {
+    zip.start_file(entry_path, zip_file_options())
+        .map_err(|e| format!("Failed to start zip entry {}: {}", entry_path, e))?;
+    zip.write_all(bytes)
+        .map_err(|e| format!("Failed to write zip entry {}: {}", entry_path, e))
+}
+
+fn read_zip_entry_bytes(
+    archive: &mut ZipArchive<fs::File>,
+    entry_path: &str,
+) -> Result<Vec<u8>, String> {
+    let mut file = archive
+        .by_name(entry_path)
+        .map_err(|e| format!("Failed to open bundle entry {}: {}", entry_path, e))?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)
+        .map_err(|e| format!("Failed to read bundle entry {}: {}", entry_path, e))?;
+    Ok(bytes)
+}
+
+fn zip_has_entry(archive: &mut ZipArchive<fs::File>, entry_path: &str) -> bool {
+    archive.by_name(entry_path).is_ok()
+}
+
+fn read_sync_bundle_manifest_from_archive(
+    archive: &mut ZipArchive<fs::File>,
+) -> Result<SyncBundleManifest, String> {
+    let manifest_bytes = read_zip_entry_bytes(archive, SYNC_BUNDLE_MANIFEST_PATH)?;
+    let manifest: SyncBundleManifest = serde_json::from_slice(&manifest_bytes)
+        .map_err(|e| format!("Failed to parse sync bundle manifest: {}", e))?;
+    if manifest.bundle_version != SYNC_BUNDLE_VERSION {
+        return Err(format!(
+            "Unsupported sync bundle version {} (expected {}).",
+            manifest.bundle_version, SYNC_BUNDLE_VERSION
+        ));
+    }
+    Ok(manifest)
+}
+
+fn read_sync_bundle_settings_json(
+    archive: &mut ZipArchive<fs::File>,
+    manifest: &SyncBundleManifest,
+) -> Result<Option<String>, String> {
+    manifest
+        .settings_path
+        .as_ref()
+        .map(|path| read_zip_entry_bytes(archive, path))
+        .transpose()?
+        .map(|bytes| {
+            String::from_utf8(bytes).map_err(|e| format!("Invalid settings JSON encoding: {}", e))
+        })
+        .transpose()
+}
+
+fn sync_bundle_safe_pdf_filename(filename: &str) -> String {
+    let mut safe_name = filename.trim().replace('/', "_").replace('\\', "_");
+    if safe_name.is_empty() {
+        safe_name = "imported.pdf".to_string();
+    } else if !safe_name.to_lowercase().ends_with(".pdf") {
+        safe_name = format!("{}.pdf", safe_name);
+    }
+    safe_name
+}
+
+fn choose_unique_article_path(articles_dir: &Path, preferred_filename: &str) -> PathBuf {
+    let safe_name = sync_bundle_safe_pdf_filename(preferred_filename);
+    let mut output_path = articles_dir.join(&safe_name);
+    if output_path.exists() {
+        let stem = output_path
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        let ext = output_path
+            .extension()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        let mut counter = 1u32;
+        loop {
+            let candidate = articles_dir.join(format!("{}_{}.{}", stem, counter, ext));
+            if !candidate.exists() {
+                output_path = candidate;
+                break;
+            }
+            counter += 1;
+        }
+    }
+    output_path
+}
+
+fn write_sync_thumbnail_files(
+    state: &AppState,
+    article_id: &str,
+    thumbnail_bytes: Option<&[u8]>,
+) -> Result<(ThumbnailInfo, ThumbnailInfo, serde_json::Value), String> {
+    let mut override_obj = serde_json::json!({});
+    let obj = override_obj
+        .as_object_mut()
+        .ok_or("Failed to create sync override object")?;
+
+    let auto_output = state.thumbnails_dir.join(format!("{}.jpg", article_id));
+    let manual_output = state.manual_thumbnails_dir.join(format!("{}.jpg", article_id));
+
+    if let Some(bytes) = thumbnail_bytes {
+        let img = image::load_from_memory(bytes)
+            .map_err(|e| format!("Failed to decode imported thumbnail: {}", e))?;
+        save_thumbnail_image(&img, &auto_output);
+        save_thumbnail_image(&img, &manual_output);
+
+        let auto_rel = auto_output
+            .strip_prefix(&state.root_dir)
+            .unwrap_or(&auto_output)
+            .to_string_lossy()
+            .replace('\\', "/");
+        let manual_rel = manual_output
+            .strip_prefix(&state.root_dir)
+            .unwrap_or(&manual_output)
+            .to_string_lossy()
+            .replace('\\', "/");
+
+        obj.insert(
+            "thumbnail_mode".into(),
+            serde_json::Value::String("manual".into()),
+        );
+        obj.insert(
+            "manual_thumbnail".into(),
+            serde_json::Value::String(manual_rel.clone()),
+        );
+
+        let auto_thumb = ThumbnailInfo {
+            path: auto_rel,
+            source: "sync".to_string(),
+            mode: "auto".to_string(),
+        };
+        let current_thumb = ThumbnailInfo {
+            path: manual_rel,
+            source: "sync".to_string(),
+            mode: "manual".to_string(),
+        };
+        return Ok((auto_thumb, current_thumb, override_obj));
+    }
+
+    let placeholder = placeholder_thumbnail("");
+    save_thumbnail_image(&placeholder, &auto_output);
+    let auto_rel = auto_output
+        .strip_prefix(&state.root_dir)
+        .unwrap_or(&auto_output)
+        .to_string_lossy()
+        .replace('\\', "/");
+    let auto_thumb = ThumbnailInfo {
+        path: auto_rel.clone(),
+        source: "placeholder".to_string(),
+        mode: "auto".to_string(),
+    };
+    Ok((auto_thumb.clone(), auto_thumb, override_obj))
+}
+
+fn bundle_article_matches_existing(
+    state: &AppState,
+    article: &Article,
+    entry: &SyncBundleArticleEntry,
+    local_pdf_hash_cache: &mut HashMap<String, String>,
+) -> bool {
+    let (source_id, doi_key) = compute_article_match_key_from_override(state, article);
+    if !entry.source_article_id.trim().is_empty() && source_id == entry.source_article_id {
+        return true;
+    }
+
+    let entry_doi = normalize_doi_key(&entry.doi);
+    if !entry_doi.is_empty() && doi_key == entry_doi {
+        return true;
+    }
+
+    if !entry.pdf_sha1.trim().is_empty() {
+        let local_hash = if let Some(existing_hash) = local_pdf_hash_cache.get(&article.id) {
+            existing_hash.clone()
+        } else {
+            let pdf_path = state.root_dir.join(&article.pdf_relpath);
+            match sha1_hex_for_file(&pdf_path) {
+                Ok(hash) => {
+                    local_pdf_hash_cache.insert(article.id.clone(), hash.clone());
+                    hash
+                }
+                Err(_) => String::new(),
+            }
+        };
+        if !local_hash.is_empty() && local_hash == entry.pdf_sha1 {
+            return true;
+        }
+    }
+
+    article.file_size == entry.pdf_size
+        && sync_bundle_safe_pdf_filename(&article.pdf_filename)
+            == sync_bundle_safe_pdf_filename(&entry.pdf_filename)
 }
 
 fn merge_metadata(auto: &AutoMeta, over: &serde_json::Value) -> Metadata {
@@ -2201,6 +2594,424 @@ fn open_articles_folder(state: tauri::State<'_, Mutex<AppState>>) -> Result<(), 
 }
 
 #[tauri::command]
+fn pick_sync_bundle_export_path(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let suggested = format!(
+        "literature-library-sync-{}.zip",
+        Utc::now().format("%Y%m%d-%H%M%S")
+    );
+    let path = app
+        .dialog()
+        .file()
+        .add_filter("Sync bundle", &["zip"])
+        .set_file_name(&suggested)
+        .blocking_save_file();
+    let Some(path) = path else {
+        return Ok(None);
+    };
+    let fs_path = path
+        .into_path()
+        .map_err(|_| "Selected export path is not a local filesystem path".to_string())?;
+    Ok(Some(fs_path.to_string_lossy().to_string()))
+}
+
+#[tauri::command]
+fn pick_sync_bundle_import_path(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let path = app
+        .dialog()
+        .file()
+        .add_filter("Sync bundle", &["zip"])
+        .blocking_pick_file();
+    let Some(path) = path else {
+        return Ok(None);
+    };
+    let fs_path = path
+        .into_path()
+        .map_err(|_| "Selected import path is not a local filesystem path".to_string())?;
+    Ok(Some(fs_path.to_string_lossy().to_string()))
+}
+
+#[tauri::command]
+fn preview_sync_bundle(
+    state: tauri::State<'_, Mutex<AppState>>,
+    bundle_path: String,
+) -> Result<SyncBundlePreviewResponse, String> {
+    let bundle_fs_path = PathBuf::from(bundle_path.trim());
+    let file_size = fs::metadata(&bundle_fs_path)
+        .map_err(|e| format!("Failed to read sync bundle metadata: {}", e))?
+        .len();
+    let bundle_file =
+        fs::File::open(&bundle_fs_path).map_err(|e| format!("Failed to open sync bundle: {}", e))?;
+    let mut archive =
+        ZipArchive::new(bundle_file).map_err(|e| format!("Failed to read zip archive: {}", e))?;
+    let manifest = read_sync_bundle_manifest_from_archive(&mut archive)?;
+
+    let mut warnings = Vec::new();
+    for entry in &manifest.articles {
+        if !zip_has_entry(&mut archive, &entry.pdf_path) {
+            warnings.push(format!("Missing PDF entry for {}.", entry.pdf_filename));
+        }
+        if !zip_has_entry(&mut archive, &entry.metadata_path) {
+            warnings.push(format!("Missing metadata entry for {}.", entry.pdf_filename));
+        }
+        if let Some(thumbnail_path) = &entry.thumbnail_path {
+            if !zip_has_entry(&mut archive, thumbnail_path) {
+                warnings.push(format!("Missing thumbnail entry for {}.", entry.pdf_filename));
+            }
+        }
+    }
+    if let Some(settings_path) = &manifest.settings_path {
+        if !zip_has_entry(&mut archive, settings_path) {
+            warnings.push("Bundle declares settings.json, but the file is missing.".to_string());
+        }
+    }
+
+    let mut st = state.lock().map_err(|e| e.to_string())?;
+    let _ = load_index(&mut st);
+    let mut local_pdf_hash_cache = HashMap::new();
+    let mut new_article_count = 0usize;
+    let mut skipped_article_count = 0usize;
+    for entry in &manifest.articles {
+        let already_exists = st
+            .index
+            .as_ref()
+            .map(|index| {
+                index.articles.iter().any(|article| {
+                    bundle_article_matches_existing(&st, article, entry, &mut local_pdf_hash_cache)
+                })
+            })
+            .unwrap_or(false);
+        if already_exists {
+            skipped_article_count += 1;
+        } else {
+            new_article_count += 1;
+        }
+    }
+
+    Ok(SyncBundlePreviewResponse {
+        ok: true,
+        path: bundle_fs_path.to_string_lossy().to_string(),
+        file_size,
+        bundle_version: manifest.bundle_version,
+        app_version: manifest.app_version,
+        exported_at: manifest.exported_at,
+        article_count: manifest.article_count,
+        new_article_count,
+        skipped_article_count,
+        settings_included: manifest.settings_path.is_some(),
+        warning_count: warnings.len(),
+        warnings,
+    })
+}
+
+#[tauri::command]
+fn export_sync_bundle(
+    state: tauri::State<'_, Mutex<AppState>>,
+    bundle_path: String,
+    settings_json: Option<String>,
+) -> Result<SyncBundleExportResponse, String> {
+    let mut st = state.lock().map_err(|e| e.to_string())?;
+    let index = load_index(&mut st).clone();
+    st.ensure_dirs();
+
+    let settings_value = match settings_json {
+        Some(raw) if !raw.trim().is_empty() => Some(
+            serde_json::from_str::<serde_json::Value>(&raw)
+                .map_err(|e| format!("Failed to parse settings export JSON: {}", e))?,
+        ),
+        _ => None,
+    };
+
+    let mut destination = PathBuf::from(bundle_path.trim());
+    if destination.extension().is_none() {
+        destination.set_extension("zip");
+    }
+    if let Some(parent) = destination.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+
+    let file = fs::File::create(&destination)
+        .map_err(|e| format!("Failed to create sync bundle: {}", e))?;
+    let mut zip = ZipWriter::new(file);
+
+    let mut articles = Vec::with_capacity(index.articles.len());
+    for article in &index.articles {
+        let (entry, pdf_bytes, thumbnail_bytes, metadata_bytes) =
+            build_sync_bundle_article_entry(&st, article)?;
+        write_zip_bytes(&mut zip, &entry.pdf_path, &pdf_bytes)?;
+        write_zip_bytes(&mut zip, &entry.metadata_path, &metadata_bytes)?;
+        if let (Some(path), Some(bytes)) = (entry.thumbnail_path.as_ref(), thumbnail_bytes.as_ref()) {
+            write_zip_bytes(&mut zip, path, bytes)?;
+        }
+        articles.push(entry);
+    }
+
+    if let Some(settings) = settings_value.as_ref() {
+        let bytes = serde_json::to_vec_pretty(settings)
+            .map_err(|e| format!("Failed to encode settings JSON: {}", e))?;
+        write_zip_bytes(&mut zip, SYNC_BUNDLE_SETTINGS_PATH, &bytes)?;
+    }
+
+    let manifest = SyncBundleManifest {
+        bundle_version: SYNC_BUNDLE_VERSION,
+        exported_at: Utc::now().to_rfc3339(),
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
+        article_count: articles.len(),
+        settings_path: settings_value.as_ref().map(|_| SYNC_BUNDLE_SETTINGS_PATH.to_string()),
+        articles,
+    };
+    let manifest_bytes = serde_json::to_vec_pretty(&manifest)
+        .map_err(|e| format!("Failed to encode bundle manifest: {}", e))?;
+    write_zip_bytes(&mut zip, SYNC_BUNDLE_MANIFEST_PATH, &manifest_bytes)?;
+    zip.finish()
+        .map_err(|e| format!("Failed to finalize sync bundle: {}", e))?;
+
+    Ok(SyncBundleExportResponse {
+        ok: true,
+        path: destination.to_string_lossy().to_string(),
+        article_count: manifest.article_count,
+        settings_included: settings_value.is_some(),
+    })
+}
+
+#[tauri::command]
+fn import_sync_bundle(
+    state: tauri::State<'_, Mutex<AppState>>,
+    bundle_path: String,
+    options: Option<SyncBundleImportOptions>,
+) -> Result<SyncBundleImportResponse, String> {
+    let import_articles = options
+        .as_ref()
+        .and_then(|opts| opts.import_articles)
+        .unwrap_or(true);
+    let import_thumbnails = options
+        .as_ref()
+        .and_then(|opts| opts.import_thumbnails)
+        .unwrap_or(true);
+    let import_settings = options
+        .as_ref()
+        .and_then(|opts| opts.import_settings)
+        .unwrap_or(false);
+    let bundle_file =
+        fs::File::open(&bundle_path).map_err(|e| format!("Failed to open sync bundle: {}", e))?;
+    let mut archive =
+        ZipArchive::new(bundle_file).map_err(|e| format!("Failed to read zip archive: {}", e))?;
+    let manifest = read_sync_bundle_manifest_from_archive(&mut archive)?;
+    let settings_json = if import_settings {
+        read_sync_bundle_settings_json(&mut archive, &manifest)?
+    } else {
+        None
+    };
+
+    let mut st = state.lock().map_err(|e| e.to_string())?;
+    let _ = load_index(&mut st);
+    st.ensure_dirs();
+
+    let mut imported_article_ids = Vec::new();
+    let mut warnings = Vec::new();
+    let mut skipped_count = 0usize;
+    let mut imported_count = 0usize;
+    let mut local_pdf_hash_cache = HashMap::new();
+
+    for entry in &manifest.articles {
+        let already_exists = st
+            .index
+            .as_ref()
+            .map(|index| {
+                index.articles.iter().any(|article| {
+                    bundle_article_matches_existing(&st, article, entry, &mut local_pdf_hash_cache)
+                })
+            })
+            .unwrap_or(false);
+
+        if already_exists {
+            skipped_count += 1;
+            continue;
+        }
+        if !import_articles {
+            continue;
+        }
+
+        let pdf_bytes = match read_zip_entry_bytes(&mut archive, &entry.pdf_path) {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                warnings.push(err);
+                skipped_count += 1;
+                continue;
+            }
+        };
+
+        let output_path = choose_unique_article_path(&st.articles_dir, &entry.pdf_filename);
+        fs::write(&output_path, &pdf_bytes)
+            .map_err(|e| format!("Failed to write imported PDF {}: {}", entry.pdf_filename, e))?;
+
+        let local_article_id = article_id_for_path(&output_path, &st.articles_dir);
+        let thumbnail_bytes = if import_thumbnails {
+            entry
+                .thumbnail_path
+                .as_ref()
+                .map(|path| read_zip_entry_bytes(&mut archive, path))
+                .transpose()
+                .map_err(|e| format!("Failed to import thumbnail for {}: {}", entry.pdf_filename, e))?
+        } else {
+            None
+        };
+
+        let (auto_thumbnail, thumbnail, mut override_json) =
+            write_sync_thumbnail_files(&st, &local_article_id, thumbnail_bytes.as_deref())?;
+        let override_obj = override_json
+            .as_object_mut()
+            .ok_or("Failed to build imported override JSON")?;
+        override_obj.insert(
+            "sync_source_id".into(),
+            serde_json::Value::String(entry.source_article_id.clone()),
+        );
+        override_obj.insert(
+            "title".into(),
+            serde_json::Value::String(entry.metadata.title.trim().to_string()),
+        );
+        override_obj.insert(
+            "authors".into(),
+            serde_json::Value::String(entry.metadata.authors.trim().to_string()),
+        );
+        override_obj.insert(
+            "year".into(),
+            serde_json::Value::String(entry.metadata.year.trim().to_string()),
+        );
+        override_obj.insert(
+            "journal".into(),
+            serde_json::Value::String(entry.metadata.journal.trim().to_string()),
+        );
+        override_obj.insert(
+            "volume".into(),
+            serde_json::Value::String(entry.metadata.volume.trim().to_string()),
+        );
+        override_obj.insert(
+            "number".into(),
+            serde_json::Value::String(entry.metadata.number.trim().to_string()),
+        );
+        override_obj.insert(
+            "pages".into(),
+            serde_json::Value::String(entry.metadata.pages.trim().to_string()),
+        );
+        override_obj.insert(
+            "doi".into(),
+            serde_json::Value::String(entry.metadata.doi.trim().to_string()),
+        );
+        override_obj.insert(
+            "abstract".into(),
+            serde_json::Value::String(entry.metadata.abstract_text.trim().to_string()),
+        );
+        override_obj.insert(
+            "notes".into(),
+            serde_json::Value::String(entry.metadata.notes.clone()),
+        );
+        override_obj.insert(
+            "tags".into(),
+            serde_json::Value::Array(
+                dedupe_tag_values(entry.metadata.tags.clone())
+                    .into_iter()
+                    .map(serde_json::Value::String)
+                    .collect(),
+            ),
+        );
+        override_obj.insert(
+            "ref_dois".into(),
+            serde_json::Value::Array(
+                entry.metadata
+                    .ref_dois
+                    .iter()
+                    .filter_map(|doi| {
+                        let trimmed = doi.trim();
+                        if trimmed.is_empty() {
+                            None
+                        } else {
+                            Some(serde_json::Value::String(trimmed.to_string()))
+                        }
+                    })
+                    .collect(),
+            ),
+        );
+        let date_added = if entry.date_added.trim().is_empty() {
+            Utc::now().to_rfc3339()
+        } else {
+            entry.date_added.clone()
+        };
+        override_obj.insert(
+            "date_added".into(),
+            serde_json::Value::String(date_added.clone()),
+        );
+        if !entry.last_opened.trim().is_empty() {
+            override_obj.insert(
+                "last_opened".into(),
+                serde_json::Value::String(entry.last_opened.clone()),
+            );
+        }
+        save_override(&st.overrides_dir, &local_article_id, &override_json);
+
+        let rel_path = output_path
+            .strip_prefix(&st.root_dir)
+            .unwrap_or(&output_path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        let stat = fs::metadata(&output_path)
+            .map_err(|e| format!("Failed to stat imported PDF {}: {}", entry.pdf_filename, e))?;
+        let file_modified = stat
+            .modified()
+            .ok()
+            .map(|t| {
+                let dt: chrono::DateTime<Utc> = t.into();
+                dt.to_rfc3339()
+            })
+            .unwrap_or_default();
+
+        let mut article = Article {
+            id: local_article_id.clone(),
+            pdf_filename: output_path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string(),
+            pdf_relpath: rel_path,
+            file_size: stat.len(),
+            file_modified,
+            auto_meta: entry.auto_meta.clone(),
+            auto_thumbnail,
+            metadata: entry.metadata.clone(),
+            thumbnail,
+            search_text: String::new(),
+            date_added,
+            last_opened: entry.last_opened.clone(),
+        };
+        article.search_text = build_search_text(&article);
+
+        if let Some(index) = st.index.as_mut() {
+            index.articles.push(article.clone());
+            index.article_count = index.articles.len();
+        }
+
+        imported_article_ids.push(local_article_id);
+        imported_count += 1;
+    }
+
+    if let Some(index) = st.index.as_ref() {
+        let json = serde_json::to_string_pretty(index).unwrap_or_default();
+        let _ = fs::write(&st.index_path, json);
+    }
+
+    Ok(SyncBundleImportResponse {
+        ok: true,
+        path: bundle_path,
+        bundle_article_count: manifest.article_count,
+        imported_count,
+        skipped_count,
+        warning_count: warnings.len(),
+        imported_article_ids,
+        settings_json,
+        warnings,
+    })
+}
+
+#[tauri::command]
 fn set_demo_mode(
     state: tauri::State<'_, Mutex<AppState>>,
     enabled: bool,
@@ -2968,6 +3779,7 @@ fn get_crash_log(state: tauri::State<'_, Mutex<AppState>>) -> String {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             use tauri::Manager;
             let root_dir = if cfg!(debug_assertions) {
@@ -3020,6 +3832,11 @@ pub fn run() {
             open_pdf,
             open_file_location,
             open_articles_folder,
+            pick_sync_bundle_export_path,
+            pick_sync_bundle_import_path,
+            preview_sync_bundle,
+            export_sync_bundle,
+            import_sync_bundle,
             set_demo_mode,
             open_external_url,
             get_thumbnail_url,

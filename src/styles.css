@@ -987,6 +987,105 @@ main {
   margin: 0;
 }
 
+.sync-import-modal-card {
+  width: min(720px, 100%);
+  height: auto;
+  max-height: min(84vh, 760px);
+}
+
+.sync-import-body {
+  padding: 16px 18px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.sync-import-path {
+  margin: 0;
+  word-break: break-word;
+}
+
+.sync-import-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.sync-import-summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 11px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(82, 208, 163, 0.12);
+  background: rgba(10, 24, 36, 0.32);
+}
+
+.sync-import-summary-item strong {
+  font-size: 0.98rem;
+  color: var(--text);
+}
+
+.sync-import-warning-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(245, 179, 77, 0.28);
+  background: rgba(245, 179, 77, 0.08);
+}
+
+.sync-import-warning-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.sync-import-warning-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 170px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.sync-import-warning-item {
+  font-size: 0.84rem;
+  line-height: 1.4;
+  color: #f2d5a0;
+}
+
+.sync-import-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sync-import-option-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.sync-import-option-row span {
+  font-size: 0.86rem;
+}
+
+.sync-import-nested-row {
+  margin-left: 24px;
+}
+
+.sync-import-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 4px;
+}
+
 #abstract-modal .modal-header {
   justify-content: center;
   gap: 0;
@@ -1352,7 +1451,17 @@ main {
   position: absolute;
   inset-inline: 0;
   top: 50%;
-  border-top: 1px solid var(--line);
+  height: 4px;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background:
+    linear-gradient(90deg,
+      rgba(82, 208, 163, 0.08) 0%,
+      rgba(82, 208, 163, 0.42) 16%,
+      rgba(181, 246, 221, 0.96) 50%,
+      rgba(82, 208, 163, 0.42) 84%,
+      rgba(82, 208, 163, 0.08) 100%);
+  box-shadow: 0 0 0 1px rgba(82, 208, 163, 0.12), 0 0 14px rgba(82, 208, 163, 0.12);
 }
 
 .pdf-viewer-fold-toggle {
@@ -1712,7 +1821,13 @@ main {
   width: 6px;
   transform: translateX(-50%);
   border-radius: 999px;
-  background: linear-gradient(180deg, rgba(139, 237, 201, 0.92), rgba(82, 208, 163, 0.88));
+  background:
+    linear-gradient(180deg,
+      rgba(181, 246, 221, 0.2) 0%,
+      rgba(139, 237, 201, 0.96) 18%,
+      rgba(209, 251, 235, 0.98) 50%,
+      rgba(82, 208, 163, 0.94) 82%,
+      rgba(181, 246, 221, 0.2) 100%);
   box-shadow: 0 0 0 1px rgba(82, 208, 163, 0.16), 0 0 14px rgba(82, 208, 163, 0.22);
   transition: background 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease, width 0.18s ease;
   opacity: 0.92;
@@ -1721,7 +1836,13 @@ main {
 .pdf-reader-notes-panel:hover .pdf-reader-notes-resizer::after,
 .pdf-viewer-body.is-resizing-notes .pdf-reader-notes-resizer::after {
   width: 8px;
-  background: linear-gradient(180deg, rgba(181, 246, 221, 0.98), rgba(82, 208, 163, 0.96));
+  background:
+    linear-gradient(180deg,
+      rgba(196, 249, 228, 0.26) 0%,
+      rgba(196, 249, 228, 1) 18%,
+      rgba(225, 253, 242, 1) 50%,
+      rgba(95, 216, 176, 0.98) 82%,
+      rgba(196, 249, 228, 0.26) 100%);
   box-shadow: 0 0 0 1px rgba(82, 208, 163, 0.2), 0 0 18px rgba(82, 208, 163, 0.34);
   opacity: 1;
 }
@@ -1838,7 +1959,13 @@ main {
   height: 6px;
   transform: translateY(-50%);
   border-radius: 999px;
-  background: linear-gradient(90deg, rgba(139, 237, 201, 0.92), rgba(82, 208, 163, 0.88));
+  background:
+    linear-gradient(90deg,
+      rgba(181, 246, 221, 0.18) 0%,
+      rgba(139, 237, 201, 0.96) 18%,
+      rgba(209, 251, 235, 0.98) 50%,
+      rgba(82, 208, 163, 0.94) 82%,
+      rgba(181, 246, 221, 0.18) 100%);
   box-shadow: 0 0 0 1px rgba(82, 208, 163, 0.16), 0 0 14px rgba(82, 208, 163, 0.22);
   transition: background 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease, height 0.18s ease;
   opacity: 0.92;
@@ -1847,7 +1974,13 @@ main {
 .pdf-reader-metadata-divider:hover::after,
 .pdf-reader-metadata-divider:focus-visible::after {
   height: 8px;
-  background: linear-gradient(90deg, rgba(181, 246, 221, 0.98), rgba(82, 208, 163, 0.96));
+  background:
+    linear-gradient(90deg,
+      rgba(196, 249, 228, 0.24) 0%,
+      rgba(196, 249, 228, 1) 18%,
+      rgba(225, 253, 242, 1) 50%,
+      rgba(95, 216, 176, 0.98) 82%,
+      rgba(196, 249, 228, 0.24) 100%);
   box-shadow: 0 0 0 1px rgba(82, 208, 163, 0.2), 0 0 18px rgba(82, 208, 163, 0.34);
   opacity: 1;
 }
@@ -1995,8 +2128,8 @@ main {
 }
 
 .pdf-canvas-wrap::-webkit-scrollbar {
-  width: 16px;
-  height: 16px;
+  width: 32px;
+  height: 32px;
 }
 
 .pdf-canvas-wrap::-webkit-scrollbar-track {
@@ -2007,7 +2140,7 @@ main {
 .pdf-canvas-wrap::-webkit-scrollbar-thumb {
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--accent), white 10%), color-mix(in srgb, var(--accent), black 20%));
-  border: 3px solid rgba(8, 21, 34, 0.48);
+  border: 6px solid rgba(8, 21, 34, 0.48);
   border-radius: 999px;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
 }

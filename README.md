@@ -1240,12 +1240,6 @@ forgot about 0.9.5 LOL
 
 - [x] directed scroll events to the panel while the cursor overlaps it
 
-**push: v1.1.1**
-
----
-
-- [ ] is the zoom on PDFs bugged when closed and re-opened?
-
 - [x] made last-clicked card more easily identifiable
   - [x] added display menu slider for new effect/border thickness
 
@@ -1253,9 +1247,20 @@ forgot about 0.9.5 LOL
 
 - [x] made a right-click on a 'suggested tag' chip remove it and replace it with the next best unlisted suggestion
 
+**push: v1.1.1**
+
+---
+
+- [ ] is the zoom on PDFs bugged when closed and re-opened?
+
 - [ ] bug when using thumbnail capture tool in the notes panel
 
-- further increase the draggable divider line thickness by about 2x
+#### manual library syncing
+> Implemented a first-pass manual sync bundle flow. The Files menu now has Export Library Bundle and Import Library Bundle in index.html (line 287), with the frontend wiring in app.js (line 7720) and app.js (line 10321). Export now bundles the library into a .zip, including PDFs, per-article metadata files, current thumbnails, a manifest, and a snapshot of article-* local settings. Import uses a native file picker, brings in only new articles by default, reloads the library, and can optionally apply imported settings with a reload prompt.
+
+>On the backend, I added zip-based bundle creation/import, dialog helpers, and duplicate matching in Cargo.toml (line 30) and lib.rs (line 221). The importer persists a sync_source_id in overrides so later bundle imports can recognize the same article across computers, and it preserves the visible thumbnail by storing the imported bundle thumbnail locally for the new article.
+
+>Current first-pass limits: matching existing articles is conservative and skips them rather than merging, and imported thumbnails are preserved as synced/manual thumbnails rather than trying to reconstruct the exact old auto-thumbnail state.
 
 *next push: v1.1.2*
 
@@ -1263,6 +1268,12 @@ forgot about 0.9.5 LOL
 
 
 ### think about more first
+
+- cross-computer library syncing
+  - option to add link for where to search online for existing papers/metadata repo
+    - places to store a global source
+      - github (repos <~10 GB, so might have to just be the metadata)
+      - psu onedrive
 
   - [ ] basic image editing on the thumbnail, like masking
 

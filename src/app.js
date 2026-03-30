@@ -21,6 +21,8 @@ const DEFAULT_KEYBOARD_SHORTCUTS = {
     pasteThumb: ["P"],
     pdfCopyTool: ["C"],
     pdfThumbnailTool: ["T"],
+    pdfNotesPanel: ["N"],
+    pdfMetadataSubpanel: ["M"],
     enter: ["Ctrl+Enter"],
     prevModal: ["ArrowUp"],
     nextModal: ["ArrowDown"],
@@ -701,6 +703,8 @@ const state = {
     metadataBaselineKey: "",
     doiFetchRecentTimestamps: [],
     lastDoiRateWarningAt: 0,
+    syncImportBundlePath: "",
+    syncImportPreview: null,
 };
 
 const dom = {
@@ -776,9 +780,32 @@ const dom = {
     parsePdfs: document.getElementById("parse-pdfs"),
     longParseWrap: document.getElementById("long-parse-wrap"),
     reindexBtn: document.getElementById("reindex-btn"),
+    exportSyncBundleBtn: document.getElementById("export-sync-bundle-btn"),
+    importSyncBundleBtn: document.getElementById("import-sync-bundle-btn"),
     openArticlesBtn: document.getElementById("open-articles-btn"),
     renameTagBtn: document.getElementById("rename-tag-btn"),
     removeTagBtn: document.getElementById("remove-tag-btn"),
+    syncImportModal: document.getElementById("sync-import-modal"),
+    syncImportClose: document.getElementById("sync-import-close"),
+    syncImportCancel: document.getElementById("sync-import-cancel"),
+    syncImportConfirm: document.getElementById("sync-import-confirm"),
+    syncImportPath: document.getElementById("sync-import-path"),
+    syncImportExportedAt: document.getElementById("sync-import-exported-at"),
+    syncImportFileSize: document.getElementById("sync-import-file-size"),
+    syncImportArticleCount: document.getElementById("sync-import-article-count"),
+    syncImportNewCount: document.getElementById("sync-import-new-count"),
+    syncImportSkipCount: document.getElementById("sync-import-skip-count"),
+    syncImportAppVersion: document.getElementById("sync-import-app-version"),
+    syncImportWarningBlock: document.getElementById("sync-import-warning-block"),
+    syncImportWarningCount: document.getElementById("sync-import-warning-count"),
+    syncImportWarningList: document.getElementById("sync-import-warning-list"),
+    syncImportArticles: document.getElementById("sync-import-articles"),
+    syncImportThumbnailsRow: document.getElementById("sync-import-thumbnails-row"),
+    syncImportThumbnails: document.getElementById("sync-import-thumbnails"),
+    syncImportSettingsRow: document.getElementById("sync-import-settings-row"),
+    syncImportSettings: document.getElementById("sync-import-settings"),
+    syncImportSettingsApplyRow: document.getElementById("sync-import-settings-apply-row"),
+    syncImportSettingsApply: document.getElementById("sync-import-settings-apply"),
     statusLine: document.getElementById("status-line"),
     grid: document.getElementById("grid"),
     modal: document.getElementById("edit-modal"),
@@ -6506,6 +6533,25 @@ function togglePdfThumbnailCaptureTool() {
     return true;
 }
 
+function togglePdfNotesPanelShortcut() {
+    if (!isPdfViewerOpen() || !getResolvedPdfViewerArticle()) return false;
+    setPdfReaderNotesFolded(!pdfViewer.notesFolded);
+    syncPdfViewerControls();
+    return true;
+}
+
+function togglePdfMetadataSubpanelShortcut() {
+    if (!isPdfViewerOpen() || !getResolvedPdfViewerArticle()) return false;
+    if (pdfViewer.notesFolded) {
+        setPdfReaderNotesFolded(false);
+        setPdfReaderMetadataFolded(false);
+    } else {
+        setPdfReaderMetadataFolded(!pdfViewer.notesMetadataFolded);
+    }
+    syncPdfViewerControls();
+    return true;
+}
+
 async function openPdfInternal(article) {
     if (!article?.id) return;
     const previousArticleId = pdfViewer.article?.id;
@@ -7356,6 +7402,8 @@ const KEYBOARD_SHORTCUTS = [
     { label: "paste thumbnail", key: "pasteThumb" },
     { label: "PDF copy tool", key: "pdfCopyTool" },
     { label: "PDF thumbnail tool", key: "pdfThumbnailTool" },
+    { label: "PDF notes panel", key: "pdfNotesPanel" },
+    { label: "PDF metadata subpanel", key: "pdfMetadataSubpanel" },
     { label: "save & close", key: "enter" },
     { label: "prev modal", key: "prevModal" },
     { label: "next modal", key: "nextModal" },
@@ -7712,6 +7760,292 @@ async function openExternalUrl(url) {
     } catch (err) {
         // Fallback for environments where backend command might not be present yet.
         window.open(target, "_blank", "noopener,noreferrer");
+    }
+}
+
+function getSyncSettingsSnapshot() {
+    const snapshot = {};
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+        const key = window.localStorage.key(i);
+        if (!key || !key.startsWith("article-")) continue;
+        const value = window.localStorage.getItem(key);
+        if (typeof value === "string") {
+            snapshot[key] = value;
+        }
+    }
+    return snapshot;
+}
+
+function applyImportedSyncSettings(settingsJson) {
+    if (!settingsJson) return false;
+    let parsed;
+    try {
+        parsed = JSON.parse(settingsJson);
+    } catch {
+        return false;
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return false;
+    }
+    let applied = 0;
+    Object.entries(parsed).forEach(([key, value]) => {
+        if (!key.startsWith("article-") || typeof value !== "string") return;
+        window.localStorage.setItem(key, value);
+        applied += 1;
+    });
+    return applied > 0;
+}
+
+function basenameFromAnyPath(value) {
+    const target = String(value || "").trim();
+    if (!target) return "";
+    const parts = target.split(/[\\/]/);
+    return parts[parts.length - 1] || target;
+}
+
+async function exportSyncBundle() {
+    if (!dom.exportSyncBundleBtn) return;
+    dom.exportSyncBundleBtn.disabled = true;
+    try {
+        const bundlePath = await invoke("pick_sync_bundle_export_path");
+        if (!bundlePath) {
+            setStatus("Library bundle export canceled.");
+            return;
+        }
+        setStatus("Exporting library bundle...");
+        const settingsJson = JSON.stringify(getSyncSettingsSnapshot());
+        const result = await invoke("export_sync_bundle", {
+            bundlePath,
+            settingsJson,
+        });
+        const fileLabel = basenameFromAnyPath(result?.path || bundlePath);
+        setStatus(`Exported ${result?.article_count || 0} article(s) to ${fileLabel}.`);
+        debugLog(`Sync bundle exported to ${result?.path || bundlePath} (${result?.article_count || 0} articles).`);
+    } catch (err) {
+        const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
+        setStatus(`Library bundle export failed: ${message}`, true);
+    } finally {
+        dom.exportSyncBundleBtn.disabled = false;
+    }
+}
+
+function syncImportModalOpen() {
+    return Boolean(dom.syncImportModal && !dom.syncImportModal.classList.contains("hidden"));
+}
+
+function closeSyncImportModal({ canceled = false } = {}) {
+    state.syncImportBundlePath = "";
+    state.syncImportPreview = null;
+    if (dom.syncImportModal) {
+        dom.syncImportModal.classList.add("hidden");
+    }
+    if (dom.syncImportConfirm) {
+        dom.syncImportConfirm.disabled = false;
+        dom.syncImportConfirm.textContent = "Import";
+    }
+    if (dom.importSyncBundleBtn) {
+        dom.importSyncBundleBtn.disabled = false;
+    }
+    if (canceled) {
+        setStatus("Library bundle import canceled.");
+    }
+}
+
+function updateSyncImportOptionVisibility() {
+    const preview = state.syncImportPreview;
+    const hasPreview = Boolean(preview);
+    const canImportArticles = hasPreview && Number(preview.new_article_count) > 0;
+    const hasSettings = hasPreview && preview.settings_included;
+    if (dom.syncImportArticles) {
+        dom.syncImportArticles.disabled = !canImportArticles;
+        if (!canImportArticles) {
+            dom.syncImportArticles.checked = false;
+        }
+    }
+    if (dom.syncImportThumbnailsRow) {
+        dom.syncImportThumbnailsRow.classList.toggle("hidden", !canImportArticles || !(dom.syncImportArticles?.checked));
+    }
+    if (dom.syncImportThumbnails) {
+        dom.syncImportThumbnails.disabled = !canImportArticles || !(dom.syncImportArticles?.checked);
+        if (dom.syncImportThumbnails.disabled) {
+            dom.syncImportThumbnails.checked = false;
+        }
+    }
+    if (dom.syncImportSettingsRow) {
+        dom.syncImportSettingsRow.classList.toggle("hidden", !hasSettings);
+    }
+    if (dom.syncImportSettings) {
+        dom.syncImportSettings.disabled = !hasSettings;
+        if (!hasSettings) {
+            dom.syncImportSettings.checked = false;
+        }
+    }
+    if (dom.syncImportSettingsApplyRow) {
+        dom.syncImportSettingsApplyRow.classList.toggle(
+            "hidden",
+            !hasSettings || !(dom.syncImportSettings?.checked),
+        );
+    }
+    if (dom.syncImportSettingsApply) {
+        dom.syncImportSettingsApply.disabled = !hasSettings || !(dom.syncImportSettings?.checked);
+        if (dom.syncImportSettingsApply.disabled) {
+            dom.syncImportSettingsApply.checked = true;
+        }
+    }
+    const canProceed = Boolean(dom.syncImportArticles?.checked || dom.syncImportSettings?.checked);
+    if (dom.syncImportConfirm) {
+        dom.syncImportConfirm.disabled = !canProceed;
+    }
+}
+
+function openSyncImportModal(bundlePath, preview) {
+    state.syncImportBundlePath = bundlePath;
+    state.syncImportPreview = preview;
+    if (dom.syncImportPath) {
+        dom.syncImportPath.textContent = basenameFromAnyPath(bundlePath);
+        dom.syncImportPath.title = bundlePath;
+    }
+    if (dom.syncImportExportedAt) {
+        dom.syncImportExportedAt.textContent = prettyDate(preview?.exported_at) || preview?.exported_at || "Unknown";
+    }
+    if (dom.syncImportFileSize) {
+        dom.syncImportFileSize.textContent = formatBytes(preview?.file_size || 0);
+    }
+    if (dom.syncImportArticleCount) {
+        dom.syncImportArticleCount.textContent = String(preview?.article_count || 0);
+    }
+    if (dom.syncImportNewCount) {
+        dom.syncImportNewCount.textContent = String(preview?.new_article_count || 0);
+    }
+    if (dom.syncImportSkipCount) {
+        dom.syncImportSkipCount.textContent = String(preview?.skipped_article_count || 0);
+    }
+    if (dom.syncImportAppVersion) {
+        dom.syncImportAppVersion.textContent = preview?.app_version || "Unknown";
+    }
+    if (dom.syncImportWarningList) {
+        clearNode(dom.syncImportWarningList);
+        const warnings = Array.isArray(preview?.warnings) ? preview.warnings : [];
+        warnings.forEach((warning) => {
+            const item = document.createElement("div");
+            item.className = "sync-import-warning-item";
+            item.textContent = warning;
+            dom.syncImportWarningList.appendChild(item);
+        });
+    }
+    if (dom.syncImportWarningBlock) {
+        const count = Number(preview?.warning_count) || 0;
+        dom.syncImportWarningBlock.classList.toggle("hidden", count === 0);
+        if (dom.syncImportWarningCount) {
+            dom.syncImportWarningCount.textContent = count === 1 ? "1 warning" : `${count} warnings`;
+        }
+    }
+    if (dom.syncImportArticles) {
+        dom.syncImportArticles.checked = Number(preview?.new_article_count) > 0;
+    }
+    if (dom.syncImportThumbnails) {
+        dom.syncImportThumbnails.checked = true;
+    }
+    if (dom.syncImportSettings) {
+        dom.syncImportSettings.checked = false;
+    }
+    if (dom.syncImportSettingsApply) {
+        dom.syncImportSettingsApply.checked = true;
+    }
+    updateSyncImportOptionVisibility();
+    if (dom.syncImportModal) {
+        dom.syncImportModal.classList.remove("hidden");
+    }
+}
+
+async function confirmSyncBundleImport() {
+    const bundlePath = state.syncImportBundlePath;
+    if (!bundlePath) return;
+    const importArticles = Boolean(dom.syncImportArticles?.checked);
+    const importThumbnails = importArticles && Boolean(dom.syncImportThumbnails?.checked);
+    const importSettings = Boolean(dom.syncImportSettings?.checked);
+    const applySettingsImmediately = importSettings && Boolean(dom.syncImportSettingsApply?.checked);
+    if (!importArticles && !importSettings) return;
+
+    if (dom.syncImportConfirm) {
+        dom.syncImportConfirm.disabled = true;
+        dom.syncImportConfirm.textContent = "Importing...";
+    }
+
+    try {
+        setStatus("Importing library bundle...");
+        const result = await invoke("import_sync_bundle", {
+            bundlePath,
+            options: {
+                importArticles,
+                importThumbnails,
+                importSettings,
+            },
+        });
+        closeSyncImportModal();
+        await loadArticles();
+
+        const importedCount = Number(result?.imported_count) || 0;
+        const skippedCount = Number(result?.skipped_count) || 0;
+        const warningCount = Number(result?.warning_count) || 0;
+
+        if (Array.isArray(result?.warnings)) {
+            result.warnings.forEach((warning) => {
+                if (warning) debugLog(`Sync import warning: ${warning}`);
+            });
+        }
+
+        if (importedCount === 1 && Array.isArray(result?.imported_article_ids)) {
+            const importedId = result.imported_article_ids[0];
+            const importedArticle = state.articles.find((article) => article.id === importedId);
+            if (importedArticle) {
+                markArticleSelected(importedArticle);
+            }
+        }
+
+        const warningSuffix = warningCount > 0 ? ` (${warningCount} warning${warningCount === 1 ? "" : "s"})` : "";
+        const settingsSuffix = importSettings ? " Settings imported." : "";
+        setStatus(`Imported ${importedCount} new article(s); skipped ${skippedCount} existing.${warningSuffix}${settingsSuffix}`);
+        debugLog(
+            `Sync bundle imported from ${bundlePath}: imported=${importedCount}, skipped=${skippedCount}, warnings=${warningCount}, settings=${importSettings}.`,
+        );
+
+        if (importSettings && applySettingsImmediately && result?.settings_json) {
+            const applied = applyImportedSyncSettings(result.settings_json);
+            if (applied) {
+                window.location.reload();
+                return;
+            }
+            setStatus("Imported bundle settings could not be applied.", true);
+        }
+    } catch (err) {
+        const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
+        setStatus(`Library bundle import failed: ${message}`, true);
+        if (dom.syncImportConfirm) {
+            dom.syncImportConfirm.disabled = false;
+            dom.syncImportConfirm.textContent = "Import";
+        }
+    }
+}
+
+async function importSyncBundle() {
+    if (!dom.importSyncBundleBtn) return;
+    dom.importSyncBundleBtn.disabled = true;
+    try {
+        const bundlePath = await invoke("pick_sync_bundle_import_path");
+        if (!bundlePath) {
+            setStatus("Library bundle import canceled.");
+            dom.importSyncBundleBtn.disabled = false;
+            return;
+        }
+        setStatus("Analyzing library bundle...");
+        const preview = await invoke("preview_sync_bundle", { bundlePath });
+        openSyncImportModal(bundlePath, preview);
+        setStatus("Review the bundle import options.");
+    } catch (err) {
+        const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
+        setStatus(`Library bundle import failed: ${message}`, true);
+        dom.importSyncBundleBtn.disabled = false;
     }
 }
 
@@ -10184,6 +10518,34 @@ function wireEvents() {
         });
     }
     dom.reindexBtn.addEventListener("click", doReindex);
+    if (dom.exportSyncBundleBtn) {
+        dom.exportSyncBundleBtn.addEventListener("click", exportSyncBundle);
+    }
+    if (dom.importSyncBundleBtn) {
+        dom.importSyncBundleBtn.addEventListener("click", importSyncBundle);
+    }
+    if (dom.syncImportClose) {
+        dom.syncImportClose.addEventListener("click", () => closeSyncImportModal({ canceled: true }));
+    }
+    if (dom.syncImportCancel) {
+        dom.syncImportCancel.addEventListener("click", () => closeSyncImportModal({ canceled: true }));
+    }
+    if (dom.syncImportConfirm) {
+        dom.syncImportConfirm.addEventListener("click", confirmSyncBundleImport);
+    }
+    if (dom.syncImportArticles) {
+        dom.syncImportArticles.addEventListener("change", updateSyncImportOptionVisibility);
+    }
+    if (dom.syncImportSettings) {
+        dom.syncImportSettings.addEventListener("change", updateSyncImportOptionVisibility);
+    }
+    if (dom.syncImportModal) {
+        dom.syncImportModal.addEventListener("click", (evt) => {
+            if (evt.target === dom.syncImportModal) {
+                closeSyncImportModal({ canceled: true });
+            }
+        });
+    }
     if (dom.openArticlesBtn) {
         dom.openArticlesBtn.addEventListener("click", () => {
             invoke("open_articles_folder").catch(err => {
@@ -10817,7 +11179,7 @@ function wireEvents() {
         if (handleModalKeyboardNavigation(evt)) return;
 
         if (evt.key === "Escape") {
-            // Priority: autocomplete -> color editors -> PDF viewer -> abstract -> duplicate/edit modal -> hotkeys -> backup modal
+            // Priority: autocomplete -> color editors -> sync import -> PDF viewer -> abstract -> duplicate/edit modal -> hotkeys -> backup modal
             if (!dom.tagAutocomplete.classList.contains("hidden")) {
                 dom.tagAutocomplete.classList.add("hidden");
                 return;
@@ -10828,6 +11190,10 @@ function wireEvents() {
             }
             if (dom.themeEditor && !dom.themeEditor.classList.contains("hidden")) {
                 closeThemeEditor();
+                return;
+            }
+            if (syncImportModalOpen()) {
+                closeSyncImportModal({ canceled: true });
                 return;
             }
             if (dom.pdfViewerModal && !dom.pdfViewerModal.classList.contains("hidden")) {
@@ -10946,6 +11312,20 @@ function wireEvents() {
             }
             if (matchesKeyboardShortcut(evt, "pdfThumbnailTool")) {
                 if (togglePdfThumbnailCaptureTool()) {
+                    evt.preventDefault();
+                    evt.stopPropagation();
+                    return;
+                }
+            }
+            if (matchesKeyboardShortcut(evt, "pdfNotesPanel")) {
+                if (togglePdfNotesPanelShortcut()) {
+                    evt.preventDefault();
+                    evt.stopPropagation();
+                    return;
+                }
+            }
+            if (matchesKeyboardShortcut(evt, "pdfMetadataSubpanel")) {
+                if (togglePdfMetadataSubpanelShortcut()) {
                     evt.preventDefault();
                     evt.stopPropagation();
                     return;
