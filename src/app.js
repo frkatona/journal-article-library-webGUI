@@ -705,6 +705,9 @@ const state = {
     lastDoiRateWarningAt: 0,
     syncImportBundlePath: "",
     syncImportPreview: null,
+    libraryRootPath: "",
+    appRootPath: "",
+    usingDefaultLibraryRoot: true,
 };
 
 const dom = {
@@ -821,6 +824,9 @@ const dom = {
     emptyUploadBtn: document.getElementById("empty-upload-btn"),
     emptyReindexBtn: document.getElementById("empty-reindex-btn"),
     emptyFileInput: document.getElementById("empty-file-input"),
+    libraryRootPath: document.getElementById("library-root-path"),
+    setLibraryRootBtn: document.getElementById("set-library-root-btn"),
+    openLibraryRootBtn: document.getElementById("open-library-root-btn"),
     restoreBackupBtn: document.getElementById("restore-backup-btn"),
     storageReportBtn: document.getElementById("storage-report-btn"),
     storageReportContent: document.getElementById("storage-report-content"),
@@ -2110,7 +2116,8 @@ function formatStorageReport(report) {
     if (!report) return "No storage report returned.";
 
     const lines = [
-        `App folder: ${report.root_dir || "(unknown)"}`,
+        `Library root: ${report.root_dir || "(unknown)"}`,
+        `Local app folder: ${report.app_root_dir || "(unknown)"}`,
         `Total size: ${formatBytes(report.total_bytes)}`,
         `Root-level files: ${formatBytes(report.root_file_bytes)} across ${(report.root_file_count || 0).toLocaleString()} file(s)`,
         "",
@@ -7312,7 +7319,7 @@ async function renameTagEverywhere() {
         setStatus("Tag name is unchanged.");
         return;
     }
-    if (!window.confirm(`Rename "${sourceTag}" to "${targetTag}" across the library?`)) {
+    if (!await confirmUserAction(`Rename "${sourceTag}" to "${targetTag}" across the library?`)) {
         return;
     }
 
@@ -7344,7 +7351,7 @@ async function removeTagEverywhere() {
         setStatus(`Tag not found: ${normalizeWhitespace(sourceInput) || "(blank)"}`, true);
         return;
     }
-    if (!window.confirm(`Remove "${tagName}" from every article that uses it?`)) {
+    if (!await confirmUserAction(`Remove "${tagName}" from every article that uses it?`)) {
         return;
     }
 
@@ -7801,6 +7808,103 @@ function basenameFromAnyPath(value) {
     if (!target) return "";
     const parts = target.split(/[\\/]/);
     return parts[parts.length - 1] || target;
+}
+
+async function confirmUserAction(message) {
+    try {
+        const result = window.confirm(message);
+        if (typeof result === "boolean") {
+            return result;
+        }
+        if (result && typeof result.then === "function") {
+            return Boolean(await result);
+        }
+        return Boolean(result);
+    } catch (err) {
+        const tauriConfirm = window.__TAURI__?.dialog?.confirm;
+        if (typeof tauriConfirm === "function") {
+            return Boolean(await tauriConfirm(message));
+        }
+        throw err;
+    }
+}
+
+async function refreshLibraryRootInfo() {
+    try {
+        const info = await invoke("get_library_root_info");
+        state.libraryRootPath = info?.path || "";
+        state.appRootPath = info?.app_root_dir || "";
+        state.usingDefaultLibraryRoot = Boolean(info?.using_default);
+        if (dom.libraryRootPath) {
+            const detail = state.usingDefaultLibraryRoot ? " (default local folder)" : "";
+            const demoSuffix = info?.demo_mode_enabled ? " [demo mode active]" : "";
+            dom.libraryRootPath.textContent = `${state.libraryRootPath || "(unknown)"}${detail}${demoSuffix}`;
+            dom.libraryRootPath.title = state.libraryRootPath || "";
+        }
+    } catch (err) {
+        const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
+        if (dom.libraryRootPath) {
+            dom.libraryRootPath.textContent = `Failed to load: ${message}`;
+            dom.libraryRootPath.title = "";
+        }
+    }
+}
+
+async function switchLibraryRoot() {
+    if (!dom.setLibraryRootBtn) return;
+    dom.setLibraryRootBtn.disabled = true;
+    try {
+        const selectedPath = await invoke("pick_library_root_path");
+        if (!selectedPath) {
+            setStatus("Library root change canceled.");
+            return;
+        }
+        if (selectedPath === state.libraryRootPath) {
+            setStatus("Library root unchanged.");
+            return;
+        }
+
+        const switchConfirmed = await confirmUserAction(
+            `Switch the shared library root to:\n\n${selectedPath}\n\nUse this if the folder is already mirrored by Google Drive Desktop or another sync client.`,
+        );
+        if (!switchConfirmed) {
+            setStatus("Library root change canceled.");
+            return;
+        }
+
+        const hasCurrentLibrary = state.total > 0 || Boolean(state.generatedAt);
+        const copyExisting = hasCurrentLibrary
+            ? await confirmUserAction("Copy the current library contents into the selected folder before switching? Choose Cancel to switch without copying.")
+            : false;
+
+        setStatus(copyExisting ? "Switching library root and copying library data..." : "Switching library root...");
+        const result = await invoke("set_library_root", {
+            path: selectedPath,
+            copyExisting,
+        });
+
+        await refreshLibraryRootInfo();
+        await reloadLibraryForStorageSwitch();
+
+        const copySuffix = result?.copied_existing ? " Current library data was copied to the new folder." : "";
+        setStatus(`Library root switched to ${basenameFromAnyPath(result?.path || selectedPath)}.${copySuffix}`);
+        debugLog(`Library root switched from ${result?.previous_path || state.libraryRootPath} to ${result?.path || selectedPath}. copied=${Boolean(result?.copied_existing)}`);
+    } catch (err) {
+        const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
+        setStatus(`Library root change failed: ${message}`, true);
+        await refreshLibraryRootInfo();
+    } finally {
+        dom.setLibraryRootBtn.disabled = false;
+    }
+}
+
+async function openLibraryRootFolder() {
+    try {
+        await invoke("open_library_root_folder");
+    } catch (err) {
+        const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
+        setStatus(`Failed to open library root: ${message}`, true);
+    }
 }
 
 async function exportSyncBundle() {
@@ -8910,7 +9014,7 @@ async function setDemoModeEnabled(enabled, { startup = false } = {}) {
     if (!startup && nextMode === previousMode) return true;
 
     if (!nextMode && !startup) {
-        const confirmed = window.confirm(
+        const confirmed = await confirmUserAction(
             "Turning off demo mode will permanently delete the demo articles, metadata, thumbnails, and backups created while demo mode was active. Continue?",
         );
         if (!confirmed) {
@@ -8937,6 +9041,7 @@ async function setDemoModeEnabled(enabled, { startup = false } = {}) {
     }
 
     persistDemoModePreference(nextMode);
+    await refreshLibraryRootInfo();
 
     if (!startup) {
         if (nextMode) {
@@ -9381,7 +9486,7 @@ async function checkDuplicates() {
             delBtn.style.fontSize = "0.8rem";
             delBtn.textContent = "Remove";
             delBtn.addEventListener("click", async () => {
-                if (!confirm(`Permanently remove ${article.pdf_filename}?`)) return;
+                if (!await confirmUserAction(`Permanently remove ${article.pdf_filename}?`)) return;
                 try {
                     await invoke("remove_article", { articleId: article.id });
                     row.remove();
@@ -9640,10 +9745,10 @@ function wireEvents() {
     }
 
     if (dom.themeEditorReset) {
-        dom.themeEditorReset.addEventListener("click", () => {
+        dom.themeEditorReset.addEventListener("click", async () => {
             const themeKey = getThemeEditorTheme();
             const preset = getThemePreset(themeKey);
-            if (!window.confirm(`Reset "${preset.name}" to its default theme name and colors?`)) return;
+            if (!await confirmUserAction(`Reset "${preset.name}" to its default theme name and colors?`)) return;
             state.themePresets[themeKey] = cloneThemePreset(DEFAULT_THEME_PRESETS[themeKey]);
             saveThemePresets();
             if (state.theme === themeKey) applyTheme(state.theme);
@@ -10251,8 +10356,8 @@ function wireEvents() {
     // Reset All Tag Colors
     const resetAllBtn = document.getElementById("tag-color-reset-all");
     if (resetAllBtn) {
-        resetAllBtn.addEventListener("click", () => {
-            if (confirm("Are you sure you want to reset all tag colors to the default?")) {
+        resetAllBtn.addEventListener("click", async () => {
+            if (await confirmUserAction("Are you sure you want to reset all tag colors to the default?")) {
                 state.tagColors = {};
                 saveTagColors();
                 renderArticles();
@@ -10320,7 +10425,7 @@ function wireEvents() {
                 btn.innerHTML = `<span>Restore <strong>${b.name}</strong></span> <span class="meta">${timeStr}</span>`;
 
                 btn.addEventListener("click", async () => {
-                    if (!window.confirm(`Are you sure you want to restore the backup from ${timeStr}? This will overwrite your current library.`)) {
+                    if (!await confirmUserAction(`Are you sure you want to restore the backup from ${timeStr}? This will overwrite your current library.`)) {
                         return;
                     }
                     dom.backupStatus.style.display = "block";
@@ -10523,6 +10628,12 @@ function wireEvents() {
     }
     if (dom.importSyncBundleBtn) {
         dom.importSyncBundleBtn.addEventListener("click", importSyncBundle);
+    }
+    if (dom.setLibraryRootBtn) {
+        dom.setLibraryRootBtn.addEventListener("click", switchLibraryRoot);
+    }
+    if (dom.openLibraryRootBtn) {
+        dom.openLibraryRootBtn.addEventListener("click", openLibraryRootFolder);
     }
     if (dom.syncImportClose) {
         dom.syncImportClose.addEventListener("click", () => closeSyncImportModal({ canceled: true }));
@@ -10769,7 +10880,7 @@ function wireEvents() {
         if (!state.current) return;
         const md = state.current.metadata || {};
         const title = md.title || state.current.pdf_filename;
-        if (!confirm(`Are you sure you want to permanently remove "${title}"? This will delete the PDF file and cannot be undone.`)) {
+        if (!await confirmUserAction(`Are you sure you want to permanently remove "${title}"? This will delete the PDF file and cannot be undone.`)) {
             return;
         }
         setStatus("Removing article...");
@@ -11459,6 +11570,7 @@ async function init() {
     try {
         await setDemoModeEnabled(state.demoMode, { startup: true });
         await Promise.all([loadTags(), loadArticles()]);
+        await refreshLibraryRootInfo();
     } catch (err) {
         const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
         setStatus(`Failed to load: ${message}`, true);

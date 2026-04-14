@@ -32,6 +32,7 @@ const CROSSREF_TIMEOUT_SECS: u64 = 5;
 const SYNC_BUNDLE_VERSION: u32 = 1;
 const SYNC_BUNDLE_MANIFEST_PATH: &str = "manifest.json";
 const SYNC_BUNDLE_SETTINGS_PATH: &str = "settings.json";
+const LIBRARY_ROOT_CONFIG_PATH: &str = "local_state/library_root.json";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -289,6 +290,32 @@ struct SyncBundleImportResponse {
     warnings: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct LibraryRootConfig {
+    path: String,
+}
+
+#[derive(Debug, Serialize)]
+struct LibraryRootInfoResponse {
+    path: String,
+    app_root_dir: String,
+    articles_dir: String,
+    data_dir: String,
+    using_default: bool,
+    demo_mode_enabled: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct LibraryRootChangeResponse {
+    ok: bool,
+    path: String,
+    previous_path: String,
+    copied_existing: bool,
+    using_default: bool,
+    articles_dir: String,
+    data_dir: String,
+}
+
 // ── App State ───────────────────────────────────────────────────────────────
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LibraryMode {
@@ -297,6 +324,8 @@ enum LibraryMode {
 }
 
 pub struct AppState {
+    app_root_dir: PathBuf,
+    library_root_config_path: PathBuf,
     root_dir: PathBuf,
     demo_root_dir: PathBuf,
     mode: LibraryMode,
@@ -311,9 +340,13 @@ pub struct AppState {
 }
 
 impl AppState {
-    fn new(root_dir: PathBuf) -> Self {
-        let demo_root_dir = root_dir.join(DEMO_MODE_DIRNAME);
+    fn new(app_root_dir: PathBuf) -> Self {
+        let library_root_config_path = app_root_dir.join(LIBRARY_ROOT_CONFIG_PATH);
+        let root_dir = load_primary_library_root(&app_root_dir, &library_root_config_path);
+        let demo_root_dir = app_root_dir.join(DEMO_MODE_DIRNAME);
         let mut state = Self {
+            app_root_dir,
+            library_root_config_path,
             root_dir,
             demo_root_dir,
             mode: LibraryMode::Primary,
@@ -328,6 +361,10 @@ impl AppState {
         };
         state.refresh_active_paths();
         state
+    }
+
+    fn using_default_primary_root(&self) -> bool {
+        self.root_dir == self.app_root_dir
     }
 
     fn active_storage_root(&self) -> &Path {
@@ -358,6 +395,15 @@ impl AppState {
         self.ensure_dirs();
     }
 
+    fn set_primary_library_root(&mut self, next_root: PathBuf) {
+        self.root_dir = next_root;
+        if self.mode == LibraryMode::Primary {
+            self.refresh_active_paths();
+            self.index = None;
+            self.ensure_dirs();
+        }
+    }
+
     fn demo_mode_enabled(&self) -> bool {
         self.mode == LibraryMode::Demo
     }
@@ -380,6 +426,109 @@ impl AppState {
 }
 
 // ── Utility Functions ───────────────────────────────────────────────────────
+
+fn load_primary_library_root(default_root: &Path, config_path: &Path) -> PathBuf {
+    let raw = fs::read_to_string(config_path).ok();
+    let parsed = raw
+        .as_deref()
+        .and_then(|text| serde_json::from_str::<LibraryRootConfig>(text).ok())
+        .map(|config| PathBuf::from(config.path.trim()))
+        .filter(|path| !path.as_os_str().is_empty());
+    parsed.unwrap_or_else(|| default_root.to_path_buf())
+}
+
+fn save_primary_library_root(config_path: &Path, root_path: &Path) -> Result<(), String> {
+    if let Some(parent) = config_path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create local config directory: {}", e))?;
+    }
+    let payload = LibraryRootConfig {
+        path: root_path.to_string_lossy().to_string(),
+    };
+    let json = serde_json::to_vec_pretty(&payload)
+        .map_err(|e| format!("Failed to encode library root config: {}", e))?;
+    fs::write(config_path, json).map_err(|e| format!("Failed to save library root config: {}", e))
+}
+
+fn normalize_candidate_root(path: &str) -> Result<PathBuf, String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err("Library root path cannot be empty.".to_string());
+    }
+    let candidate = PathBuf::from(trimmed);
+    if candidate.is_absolute() {
+        Ok(candidate)
+    } else {
+        std::env::current_dir()
+            .map(|cwd| cwd.join(candidate))
+            .map_err(|e| format!("Failed to resolve library root path: {}", e))
+    }
+}
+
+fn canonical_or_clean(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+fn directory_contains_files(path: &Path) -> bool {
+    fs::read_dir(path)
+        .ok()
+        .map(|entries| {
+            entries.filter_map(|entry| entry.ok()).any(|entry| {
+                let name = entry.file_name().to_string_lossy().to_string();
+                !name.starts_with('.')
+            })
+        })
+        .unwrap_or(false)
+}
+
+fn library_root_has_existing_data(root: &Path) -> bool {
+    directory_contains_files(&root.join("Articles"))
+        || directory_contains_files(&root.join("library_data"))
+        || root.join("library_data").join("index.json").exists()
+}
+
+fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
+    if !src.exists() {
+        return Ok(());
+    }
+    for entry in WalkDir::new(src) {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        let rel = path
+            .strip_prefix(src)
+            .map_err(|e| format!("Failed to resolve relative path during copy: {}", e))?;
+        let dest_path = dst.join(rel);
+        if entry.file_type().is_dir() {
+            fs::create_dir_all(&dest_path)
+                .map_err(|e| format!("Failed to create destination directory {}: {}", dest_path.display(), e))?;
+        } else if entry.file_type().is_file() {
+            if let Some(parent) = dest_path.parent() {
+                fs::create_dir_all(parent)
+                    .map_err(|e| format!("Failed to create destination directory {}: {}", parent.display(), e))?;
+            }
+            fs::copy(path, &dest_path).map_err(|e| {
+                format!(
+                    "Failed to copy {} to {}: {}",
+                    path.display(),
+                    dest_path.display(),
+                    e
+                )
+            })?;
+        }
+    }
+    Ok(())
+}
+
+fn copy_primary_library_contents(source_root: &Path, dest_root: &Path) -> Result<(), String> {
+    if library_root_has_existing_data(dest_root) {
+        return Err("Selected folder already contains a library. Choose an empty folder or switch without copying.".to_string());
+    }
+    fs::create_dir_all(dest_root)
+        .map_err(|e| format!("Failed to create library root folder: {}", e))?;
+    copy_dir_recursive(&source_root.join("Articles"), &dest_root.join("Articles"))?;
+    copy_dir_recursive(&source_root.join("library_data"), &dest_root.join("library_data"))?;
+    Ok(())
+}
 
 fn normalize_text(value: &str) -> String {
     value.trim().to_string()
@@ -2576,21 +2725,105 @@ fn open_file_location(
         return opener::open(parent).map_err(|e| format!("Failed to open location: {}", e));
     }
 
-    #[allow(unreachable_code)]
-    Err("Unsupported platform".into())
+#[allow(unreachable_code)]
+Err("Unsupported platform".into())
+}
+
+fn open_folder_path(path: &Path, label: &str) -> Result<(), String> {
+    let mut path_str = path.to_string_lossy().to_string();
+    if path_str.starts_with("\\\\?\\") {
+        path_str = path_str.replacen("\\\\?\\", "", 1);
+    }
+    opener::open(&path_str).map_err(|e| format!("Failed to open {}: {}", label, e))
+}
+
+#[tauri::command]
+fn get_library_root_info(state: tauri::State<'_, Mutex<AppState>>) -> Result<LibraryRootInfoResponse, String> {
+    let st = state.lock().map_err(|e| e.to_string())?;
+    Ok(LibraryRootInfoResponse {
+        path: st.root_dir.to_string_lossy().to_string(),
+        app_root_dir: st.app_root_dir.to_string_lossy().to_string(),
+        articles_dir: st.articles_dir.to_string_lossy().to_string(),
+        data_dir: st.data_dir.to_string_lossy().to_string(),
+        using_default: st.using_default_primary_root(),
+        demo_mode_enabled: st.demo_mode_enabled(),
+    })
+}
+
+#[tauri::command]
+fn pick_library_root_path(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let path = app.dialog().file().blocking_pick_folder();
+    let Some(path) = path else {
+        return Ok(None);
+    };
+    let fs_path = path
+        .into_path()
+        .map_err(|_| "Selected library root is not a local filesystem path".to_string())?;
+    Ok(Some(fs_path.to_string_lossy().to_string()))
+}
+
+#[tauri::command]
+fn set_library_root(
+    state: tauri::State<'_, Mutex<AppState>>,
+    path: String,
+    copy_existing: Option<bool>,
+) -> Result<LibraryRootChangeResponse, String> {
+    let next_root = canonical_or_clean(&normalize_candidate_root(&path)?);
+    let copy_existing = copy_existing.unwrap_or(false);
+
+    let mut st = state.lock().map_err(|e| e.to_string())?;
+    if st.demo_mode_enabled() {
+        return Err("Exit demo mode before switching the primary library root.".to_string());
+    }
+
+    let previous_root = canonical_or_clean(&st.root_dir);
+    if previous_root == next_root {
+        return Ok(LibraryRootChangeResponse {
+            ok: true,
+            path: previous_root.to_string_lossy().to_string(),
+            previous_path: previous_root.to_string_lossy().to_string(),
+            copied_existing: false,
+            using_default: st.using_default_primary_root(),
+            articles_dir: st.articles_dir.to_string_lossy().to_string(),
+            data_dir: st.data_dir.to_string_lossy().to_string(),
+        });
+    }
+
+    if copy_existing && (next_root.starts_with(&previous_root) || previous_root.starts_with(&next_root)) {
+        return Err("Choose a library root that is not nested inside the current library root when copying existing data.".to_string());
+    }
+
+    if copy_existing && library_root_has_existing_data(&previous_root) {
+        copy_primary_library_contents(&previous_root, &next_root)?;
+    } else {
+        fs::create_dir_all(&next_root)
+            .map_err(|e| format!("Failed to create library root folder: {}", e))?;
+    }
+
+    save_primary_library_root(&st.library_root_config_path, &next_root)?;
+    st.set_primary_library_root(next_root.clone());
+
+    Ok(LibraryRootChangeResponse {
+        ok: true,
+        path: next_root.to_string_lossy().to_string(),
+        previous_path: previous_root.to_string_lossy().to_string(),
+        copied_existing: copy_existing && library_root_has_existing_data(&next_root),
+        using_default: st.using_default_primary_root(),
+        articles_dir: st.articles_dir.to_string_lossy().to_string(),
+        data_dir: st.data_dir.to_string_lossy().to_string(),
+    })
+}
+
+#[tauri::command]
+fn open_library_root_folder(state: tauri::State<'_, Mutex<AppState>>) -> Result<(), String> {
+    let st = state.lock().map_err(|e| e.to_string())?;
+    open_folder_path(&st.root_dir, "library root folder")
 }
 
 #[tauri::command]
 fn open_articles_folder(state: tauri::State<'_, Mutex<AppState>>) -> Result<(), String> {
     let st = state.lock().map_err(|e| e.to_string())?;
-
-    // Strip `\\?\` prefix which often breaks `opener` on Windows
-    let mut path_str = st.articles_dir.to_string_lossy().to_string();
-    if path_str.starts_with("\\\\?\\") {
-        path_str = path_str.replacen("\\\\?\\", "", 1);
-    }
-
-    opener::open(&path_str).map_err(|e| format!("Failed to open articles folder: {}", e))
+    open_folder_path(&st.articles_dir, "articles folder")
 }
 
 #[tauri::command]
@@ -3298,10 +3531,11 @@ fn get_root_dir(state: tauri::State<'_, Mutex<AppState>>) -> Result<String, Stri
 
 #[tauri::command]
 fn get_storage_report(state: tauri::State<'_, Mutex<AppState>>) -> Result<StorageReportResponse, String> {
-    let (root_dir, data_dir, overrides_dir, index_path, index_payload) = {
+    let (app_root_dir, root_dir, data_dir, overrides_dir, index_path, index_payload) = {
         let mut st = state.lock().map_err(|e| e.to_string())?;
         let index = load_index(&mut st).clone();
         (
+            st.app_root_dir.clone(),
             st.root_dir.clone(),
             st.data_dir.clone(),
             st.overrides_dir.clone(),
@@ -3315,7 +3549,7 @@ fn get_storage_report(state: tauri::State<'_, Mutex<AppState>>) -> Result<Storag
     let mut root_file_bytes = 0_u64;
     let mut root_file_count = 0_usize;
 
-    let entries = fs::read_dir(&root_dir).map_err(|e| format!("Failed to read app folder: {}", e))?;
+    let entries = fs::read_dir(&root_dir).map_err(|e| format!("Failed to read library root folder: {}", e))?;
     for entry in entries {
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
@@ -3494,6 +3728,7 @@ fn get_storage_report(state: tauri::State<'_, Mutex<AppState>>) -> Result<Storag
     merged_field_bytes.sort_by(|a, b| b.bytes.cmp(&a.bytes));
 
     Ok(StorageReportResponse {
+        app_root_dir: app_root_dir.to_string_lossy().to_string(),
         root_dir: root_dir.to_string_lossy().to_string(),
         total_bytes,
         root_file_bytes,
@@ -3551,6 +3786,7 @@ pub struct MetadataStorageReport {
 
 #[derive(Debug, Serialize)]
 pub struct StorageReportResponse {
+    pub app_root_dir: String,
     pub root_dir: String,
     pub total_bytes: u64,
     pub root_file_bytes: u64,
@@ -3782,7 +4018,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             use tauri::Manager;
-            let root_dir = if cfg!(debug_assertions) {
+            let app_root_dir = if cfg!(debug_assertions) {
                 let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
                 manifest_dir
                     .parent()
@@ -3796,7 +4032,7 @@ pub fn run() {
                 })
             };
 
-            let app_state = AppState::new(root_dir);
+            let app_state = AppState::new(app_root_dir);
             app_state.ensure_dirs();
             let panic_log_dir = app_state.data_dir.clone();
             let default_hook = panic::take_hook();
@@ -3831,6 +4067,10 @@ pub fn run() {
             get_pdf_data,
             open_pdf,
             open_file_location,
+            get_library_root_info,
+            pick_library_root_path,
+            set_library_root,
+            open_library_root_folder,
             open_articles_folder,
             pick_sync_bundle_export_path,
             pick_sync_bundle_import_path,

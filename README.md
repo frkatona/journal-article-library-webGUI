@@ -1262,7 +1262,7 @@ forgot about 0.9.5 LOL
 
 >Current first-pass limits: matching existing articles is conservative and skips them rather than merging, and imported thumbnails are preserved as synced/manual thumbnails rather than trying to reconstruct the exact old auto-thumbnail state.
 
-*next push: v1.1.2*
+*next push: v1.2.0*
 
 ---
 
