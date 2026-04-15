@@ -1251,21 +1251,26 @@ forgot about 0.9.5 LOL
 
 ---
 
-- [ ] is the zoom on PDFs bugged when closed and re-opened?
+- cloud-sync alpha: set library root (using google drive here)
 
-- [ ] bug when using thumbnail capture tool in the notes panel
-
-#### manual library syncing
-> Implemented a first-pass manual sync bundle flow. The Files menu now has Export Library Bundle and Import Library Bundle in index.html (line 287), with the frontend wiring in app.js (line 7720) and app.js (line 10321). Export now bundles the library into a .zip, including PDFs, per-article metadata files, current thumbnails, a manifest, and a snapshot of article-* local settings. Import uses a native file picker, brings in only new articles by default, reloads the library, and can optionally apply imported settings with a reload prompt.
-
->On the backend, I added zip-based bundle creation/import, dialog helpers, and duplicate matching in Cargo.toml (line 30) and lib.rs (line 221). The importer persists a sync_source_id in overrides so later bundle imports can recognize the same article across computers, and it preserves the visible thumbnail by storing the imported bundle thumbnail locally for the new article.
-
->Current first-pass limits: matching existing articles is conservative and skips them rather than merging, and imported thumbnails are preserved as synced/manual thumbnails rather than trying to reconstruct the exact old auto-thumbnail state.
-
-*next push: v1.2.0*
+**push: v1.2.0**
 
 ---
 
+- [x] remove 'open articles folder' button now that there is 'open library root'
+
+- [x] remove the "//?/" before the library root path
+
+- [x] I get a panic when alt-clicking (hotkey for abstract view) on an article "173109_1_online", error: "thread 'main' (48140) panicked at C:\Users\antho\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cff-parser-0.1.0\src\encoding.rs:150:37: explicit panic"
+  - when I access the abstract view by using the arrow key from the article's pdf view, I get the error "error: failed to remove file `C:\Users\antho\OneDrive - The Pennsylvania State University\Desktop\Code Testbench\literature-library\src-tauri\target\debug\literature-library.exe` Caused by: Access is denied. (os error 5)"
+
+- [x] if I set a library root in a folder that already has articles, will it combine the articles?
+
+- [x] move the copied text preview window in the pdf reader to the bottom left of the screen instead of the bottom right
+
+**push: v1.2.1**
+
+---
 
 ### think about more first
 
@@ -1338,3 +1343,19 @@ node update-version.js <version>
 ```
 
 (e.g., node update-version.js 0.8.5)
+
+- [ ] accessing abstracts appears to cause the application to not respond for several seconds
+
+- [ ] remove the back-up function now that I have export library bundle
+
+- [ ] disable hotkeys 
+
+- [ ] when installing the software with the same version number, allow me to update (currently only option is to uninstall)
+
+- [ ] is the zoom on PDFs bugged when closed and re-opened?
+
+- [ ] bug when using thumbnail capture tool in the notes panel
+
+questions:
+- is the articles folder in the project directory doing anything anymore?
+- if I uninstall, what happens to the articles and metadata?  should I prompt the user to zip/export that content?  how much control do I have over the uninstallation process?

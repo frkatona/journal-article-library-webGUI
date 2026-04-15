@@ -33,6 +33,15 @@ const SYNC_BUNDLE_VERSION: u32 = 1;
 const SYNC_BUNDLE_MANIFEST_PATH: &str = "manifest.json";
 const SYNC_BUNDLE_SETTINGS_PATH: &str = "settings.json";
 const LIBRARY_ROOT_CONFIG_PATH: &str = "local_state/library_root.json";
+const GUARDED_PDF_EXTRACT_THREAD_NAME: &str = "guarded-pdf-extract";
+const PDF_REF_SCAN_CACHE_VERSION: u32 = 1;
+const PDF_REF_SCAN_TIMEOUT_SECS: u64 = 2;
+const PDF_REF_SCAN_STATUS_KEY: &str = "pdf_ref_scan_status";
+const PDF_REF_SCAN_MESSAGE_KEY: &str = "pdf_ref_scan_message";
+const PDF_REF_SCAN_UPDATED_AT_KEY: &str = "pdf_ref_scan_updated_at";
+const PDF_REF_SCAN_VERSION_KEY: &str = "pdf_ref_scan_version";
+const PDF_REF_SCAN_FILE_SIZE_KEY: &str = "pdf_ref_scan_file_size";
+const PDF_REF_SCAN_FILE_MODIFIED_KEY: &str = "pdf_ref_scan_file_modified";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -188,6 +197,15 @@ pub struct MutationResponse {
 }
 
 #[derive(Debug, Serialize)]
+pub struct ReferenceDoiScanResponse {
+    pub ok: bool,
+    pub article: Article,
+    pub ref_dois: Vec<String>,
+    pub status: String,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct TagMutationResponse {
     pub ok: bool,
     pub updated_count: usize,
@@ -314,6 +332,117 @@ struct LibraryRootChangeResponse {
     using_default: bool,
     articles_dir: String,
     data_dir: String,
+}
+
+#[derive(Debug, Serialize)]
+struct LibraryRootSwitchPreviewResponse {
+    ok: bool,
+    path: String,
+    current_path: String,
+    current_has_library_data: bool,
+    target_status: String,
+    target_has_existing_library_data: bool,
+    target_has_articles_dir: bool,
+    target_has_data_dir: bool,
+    target_article_pdf_count: usize,
+    target_library_data_file_count: usize,
+    target_index_exists: bool,
+    target_index_article_count: usize,
+    target_index_read_error: Option<String>,
+    target_root_other_item_count: usize,
+    target_looks_complete: bool,
+    target_looks_partial: bool,
+    target_needs_reindex: bool,
+    copy_supported: bool,
+    copy_block_reason: Option<String>,
+    merge_available: bool,
+    merge_add_count: usize,
+    merge_match_count: usize,
+    merge_block_reason: Option<String>,
+    recommended_action: String,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct LibraryRootMergeResponse {
+    ok: bool,
+    path: String,
+    previous_path: String,
+    merged_count: usize,
+    skipped_count: usize,
+    warning_count: usize,
+    warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct LibraryMatchRecord {
+    source_id: String,
+    doi_key: String,
+    pdf_filename: String,
+    pdf_size: u64,
+    pdf_path: PathBuf,
+}
+
+#[derive(Debug, Clone)]
+struct LibraryMatchCandidate {
+    source_article_id: String,
+    doi_key: String,
+    pdf_filename: String,
+    pdf_size: u64,
+    pdf_path: PathBuf,
+}
+
+#[derive(Debug, Default)]
+struct LibraryRootInspection {
+    has_articles_dir: bool,
+    has_data_dir: bool,
+    article_pdf_count: usize,
+    library_data_file_count: usize,
+    index_exists: bool,
+    index_article_count: usize,
+    index_read_error: Option<String>,
+    root_other_item_count: usize,
+}
+
+impl LibraryRootInspection {
+    fn has_existing_library_data(&self) -> bool {
+        self.article_pdf_count > 0 || self.library_data_file_count > 0 || self.index_exists
+    }
+
+    fn needs_reindex(&self) -> bool {
+        if self.index_read_error.is_some() {
+            return true;
+        }
+        if self.library_data_file_count > 0 && !self.index_exists {
+            return true;
+        }
+        if self.article_pdf_count > 0 && !self.index_exists {
+            return true;
+        }
+        self.index_exists && self.article_pdf_count != self.index_article_count
+    }
+
+    fn looks_complete(&self) -> bool {
+        self.has_existing_library_data() && !self.needs_reindex()
+    }
+
+    fn looks_partial(&self) -> bool {
+        self.has_existing_library_data() && self.needs_reindex()
+    }
+
+    fn target_status(&self) -> &'static str {
+        if !self.has_existing_library_data() {
+            if self.root_other_item_count > 0 {
+                "empty_with_other_files"
+            } else {
+                "empty"
+            }
+        } else if self.looks_partial() {
+            "partial_library"
+        } else {
+            "existing_library"
+        }
+    }
 }
 
 // ── App State ───────────────────────────────────────────────────────────────
@@ -485,6 +614,381 @@ fn library_root_has_existing_data(root: &Path) -> bool {
     directory_contains_files(&root.join("Articles"))
         || directory_contains_files(&root.join("library_data"))
         || root.join("library_data").join("index.json").exists()
+}
+
+fn is_visible_entry_name(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| !name.starts_with('.'))
+        .unwrap_or(true)
+}
+
+fn count_visible_files_recursive<F>(root: &Path, predicate: F) -> usize
+where
+    F: Fn(&Path) -> bool,
+{
+    if !root.exists() {
+        return 0;
+    }
+    WalkDir::new(root)
+        .into_iter()
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.file_type().is_file())
+        .filter(|entry| is_visible_entry_name(entry.path()))
+        .filter(|entry| predicate(entry.path()))
+        .count()
+}
+
+fn read_index_article_count(index_path: &Path) -> Result<usize, String> {
+    let content = fs::read_to_string(index_path)
+        .map_err(|e| format!("Failed to read {}: {}", index_path.display(), e))?;
+    let payload = serde_json::from_str::<IndexPayload>(&content)
+        .map_err(|e| format!("Failed to parse {}: {}", index_path.display(), e))?;
+    Ok(if payload.articles.is_empty() {
+        payload.article_count
+    } else {
+        payload.articles.len()
+    })
+}
+
+fn count_other_visible_root_items(root: &Path) -> usize {
+    fs::read_dir(root)
+        .ok()
+        .map(|entries| {
+            entries
+                .filter_map(|entry| entry.ok())
+                .filter(|entry| {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    !name.starts_with('.') && name != "Articles" && name != "library_data"
+                })
+                .count()
+        })
+        .unwrap_or(0)
+}
+
+fn inspect_library_root(root: &Path) -> LibraryRootInspection {
+    let articles_dir = root.join("Articles");
+    let data_dir = root.join("library_data");
+    let index_path = data_dir.join("index.json");
+
+    let mut inspection = LibraryRootInspection {
+        has_articles_dir: articles_dir.is_dir(),
+        has_data_dir: data_dir.is_dir(),
+        article_pdf_count: count_visible_files_recursive(&articles_dir, |path| {
+            path.extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext.eq_ignore_ascii_case("pdf"))
+                .unwrap_or(false)
+        }),
+        library_data_file_count: count_visible_files_recursive(&data_dir, |_| true),
+        index_exists: index_path.exists(),
+        index_article_count: 0,
+        index_read_error: None,
+        root_other_item_count: count_other_visible_root_items(root),
+    };
+
+    if inspection.index_exists {
+        match read_index_article_count(&index_path) {
+            Ok(count) => inspection.index_article_count = count,
+            Err(err) => inspection.index_read_error = Some(err),
+        }
+    }
+
+    inspection
+}
+
+fn sync_source_id_from_override_value(overrides_dir: &Path, article_id: &str) -> String {
+    let over = load_override(overrides_dir, article_id);
+    over.get("sync_source_id")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| article_id.to_string())
+}
+
+fn doi_key_from_override_value(overrides_dir: &Path, article_id: &str) -> String {
+    let over = load_override(overrides_dir, article_id);
+    over.get("doi")
+        .and_then(|v| v.as_str())
+        .map(normalize_doi_key)
+        .unwrap_or_default()
+}
+
+fn hash_for_path_cached(path: &Path, cache: &mut HashMap<String, String>) -> String {
+    let key = path.to_string_lossy().to_string();
+    if let Some(existing) = cache.get(&key) {
+        return existing.clone();
+    }
+    let hash = sha1_hex_for_file(path).unwrap_or_default();
+    cache.insert(key, hash.clone());
+    hash
+}
+
+fn build_library_match_candidate(state: &AppState, article: &Article) -> LibraryMatchCandidate {
+    LibraryMatchCandidate {
+        source_article_id: sync_source_id_for_article(state, article),
+        doi_key: normalize_doi_key(&article.metadata.doi),
+        pdf_filename: article.pdf_filename.clone(),
+        pdf_size: article.file_size,
+        pdf_path: state.root_dir.join(&article.pdf_relpath),
+    }
+}
+
+fn library_match_record_matches_candidate(
+    record: &LibraryMatchRecord,
+    candidate: &LibraryMatchCandidate,
+    target_hash_cache: &mut HashMap<String, String>,
+    source_hash_cache: &mut HashMap<String, String>,
+) -> bool {
+    if !candidate.source_article_id.trim().is_empty() && record.source_id == candidate.source_article_id {
+        return true;
+    }
+
+    if !candidate.doi_key.is_empty() && record.doi_key == candidate.doi_key {
+        return true;
+    }
+
+    let source_hash = hash_for_path_cached(&candidate.pdf_path, source_hash_cache);
+    if !source_hash.is_empty() {
+        let target_hash = hash_for_path_cached(&record.pdf_path, target_hash_cache);
+        if !target_hash.is_empty() && target_hash == source_hash {
+            return true;
+        }
+    }
+
+    record.pdf_size == candidate.pdf_size
+        && sync_bundle_safe_pdf_filename(&record.pdf_filename)
+            == sync_bundle_safe_pdf_filename(&candidate.pdf_filename)
+}
+
+fn collect_library_match_records(root: &Path) -> Vec<LibraryMatchRecord> {
+    let articles_dir = root.join("Articles");
+    let overrides_dir = root.join("library_data").join("overrides");
+    let index_path = root.join("library_data").join("index.json");
+    let mut records = Vec::new();
+    let mut seen_article_ids = HashSet::new();
+
+    if index_path.exists() {
+        if let Ok(content) = fs::read_to_string(&index_path) {
+            if let Ok(payload) = serde_json::from_str::<IndexPayload>(&content) {
+                for article in payload.articles {
+                    let pdf_path = root.join(&article.pdf_relpath);
+                    let source_id = sync_source_id_from_override_value(&overrides_dir, &article.id);
+                    let doi_key = if article.metadata.doi.trim().is_empty() {
+                        doi_key_from_override_value(&overrides_dir, &article.id)
+                    } else {
+                        normalize_doi_key(&article.metadata.doi)
+                    };
+                    seen_article_ids.insert(article.id.clone());
+                    records.push(LibraryMatchRecord {
+                        source_id,
+                        doi_key,
+                        pdf_filename: article.pdf_filename,
+                        pdf_size: article.file_size,
+                        pdf_path,
+                    });
+                }
+            }
+        }
+    }
+
+    if articles_dir.exists() {
+        for entry in WalkDir::new(&articles_dir).into_iter().filter_map(|entry| entry.ok()) {
+            if !entry.file_type().is_file() {
+                continue;
+            }
+            let path = entry.path();
+            let is_pdf = path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext.eq_ignore_ascii_case("pdf"))
+                .unwrap_or(false);
+            if !is_pdf {
+                continue;
+            }
+            let article_id = article_id_for_path(path, &articles_dir);
+            if !seen_article_ids.insert(article_id.clone()) {
+                continue;
+            }
+            let stat = match fs::metadata(path) {
+                Ok(meta) => meta,
+                Err(_) => continue,
+            };
+            records.push(LibraryMatchRecord {
+                source_id: sync_source_id_from_override_value(&overrides_dir, &article_id),
+                doi_key: doi_key_from_override_value(&overrides_dir, &article_id),
+                pdf_filename: path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string(),
+                pdf_size: stat.len(),
+                pdf_path: path.to_path_buf(),
+            });
+        }
+    }
+
+    records
+}
+
+fn build_temp_primary_library_state(app_root_dir: PathBuf, default_strategy: String, root_dir: PathBuf) -> AppState {
+    let mut temp = AppState::new(app_root_dir);
+    temp.root_dir = root_dir;
+    temp.mode = LibraryMode::Primary;
+    temp.default_strategy = default_strategy;
+    temp.refresh_active_paths();
+    temp.index = None;
+    temp.ensure_dirs();
+    temp
+}
+
+fn import_sync_entry_into_library(
+    state: &mut AppState,
+    entry: &SyncBundleArticleEntry,
+    pdf_bytes: &[u8],
+    thumbnail_bytes: Option<&[u8]>,
+) -> Result<String, String> {
+    state.ensure_dirs();
+
+    let output_path = choose_unique_article_path(&state.articles_dir, &entry.pdf_filename);
+    fs::write(&output_path, pdf_bytes)
+        .map_err(|e| format!("Failed to write imported PDF {}: {}", entry.pdf_filename, e))?;
+
+    let local_article_id = article_id_for_path(&output_path, &state.articles_dir);
+    let (auto_thumbnail, thumbnail, mut override_json) =
+        write_sync_thumbnail_files(state, &local_article_id, thumbnail_bytes)?;
+    let override_obj = override_json
+        .as_object_mut()
+        .ok_or("Failed to build imported override JSON")?;
+    override_obj.insert(
+        "sync_source_id".into(),
+        serde_json::Value::String(entry.source_article_id.clone()),
+    );
+    override_obj.insert(
+        "title".into(),
+        serde_json::Value::String(entry.metadata.title.trim().to_string()),
+    );
+    override_obj.insert(
+        "authors".into(),
+        serde_json::Value::String(entry.metadata.authors.trim().to_string()),
+    );
+    override_obj.insert(
+        "year".into(),
+        serde_json::Value::String(entry.metadata.year.trim().to_string()),
+    );
+    override_obj.insert(
+        "journal".into(),
+        serde_json::Value::String(entry.metadata.journal.trim().to_string()),
+    );
+    override_obj.insert(
+        "volume".into(),
+        serde_json::Value::String(entry.metadata.volume.trim().to_string()),
+    );
+    override_obj.insert(
+        "number".into(),
+        serde_json::Value::String(entry.metadata.number.trim().to_string()),
+    );
+    override_obj.insert(
+        "pages".into(),
+        serde_json::Value::String(entry.metadata.pages.trim().to_string()),
+    );
+    override_obj.insert(
+        "doi".into(),
+        serde_json::Value::String(entry.metadata.doi.trim().to_string()),
+    );
+    override_obj.insert(
+        "abstract".into(),
+        serde_json::Value::String(entry.metadata.abstract_text.trim().to_string()),
+    );
+    override_obj.insert(
+        "notes".into(),
+        serde_json::Value::String(entry.metadata.notes.clone()),
+    );
+    override_obj.insert(
+        "tags".into(),
+        serde_json::Value::Array(
+            dedupe_tag_values(entry.metadata.tags.clone())
+                .into_iter()
+                .map(serde_json::Value::String)
+                .collect(),
+        ),
+    );
+    override_obj.insert(
+        "ref_dois".into(),
+        serde_json::Value::Array(
+            entry.metadata
+                .ref_dois
+                .iter()
+                .filter_map(|doi| {
+                    let trimmed = doi.trim();
+                    if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(serde_json::Value::String(trimmed.to_string()))
+                    }
+                })
+                .collect(),
+        ),
+    );
+    let date_added = if entry.date_added.trim().is_empty() {
+        Utc::now().to_rfc3339()
+    } else {
+        entry.date_added.clone()
+    };
+    override_obj.insert(
+        "date_added".into(),
+        serde_json::Value::String(date_added.clone()),
+    );
+    if !entry.last_opened.trim().is_empty() {
+        override_obj.insert(
+            "last_opened".into(),
+            serde_json::Value::String(entry.last_opened.clone()),
+        );
+    }
+    save_override(&state.overrides_dir, &local_article_id, &override_json);
+
+    let rel_path = output_path
+        .strip_prefix(&state.root_dir)
+        .unwrap_or(&output_path)
+        .to_string_lossy()
+        .replace('\\', "/");
+    let stat = fs::metadata(&output_path)
+        .map_err(|e| format!("Failed to stat imported PDF {}: {}", entry.pdf_filename, e))?;
+    let file_modified = stat
+        .modified()
+        .ok()
+        .map(|t| {
+            let dt: chrono::DateTime<Utc> = t.into();
+            dt.to_rfc3339()
+        })
+        .unwrap_or_default();
+
+    let mut article = Article {
+        id: local_article_id.clone(),
+        pdf_filename: output_path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string(),
+        pdf_relpath: rel_path,
+        file_size: stat.len(),
+        file_modified,
+        auto_meta: entry.auto_meta.clone(),
+        auto_thumbnail,
+        metadata: entry.metadata.clone(),
+        thumbnail,
+        search_text: String::new(),
+        date_added,
+        last_opened: entry.last_opened.clone(),
+    };
+    article.search_text = build_search_text(&article);
+
+    if let Some(index) = state.index.as_mut() {
+        index.articles.push(article);
+        index.article_count = index.articles.len();
+    }
+
+    Ok(local_article_id)
 }
 
 fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
@@ -752,6 +1256,28 @@ fn extract_doi_from_text(text: &str) -> String {
     }
 }
 
+fn extract_all_dois_from_text(text: &str) -> Vec<String> {
+    if text.is_empty() {
+        return Vec::new();
+    }
+
+    let re = Regex::new(r"\b10\.\d{4,9}/[-._;()/:A-Za-z0-9]+\b").unwrap();
+    let mut seen = HashSet::new();
+    let mut result = Vec::new();
+
+    for matched in re.find_iter(text) {
+        let doi = normalize_doi_key(matched.as_str());
+        if doi.is_empty() {
+            continue;
+        }
+        if seen.insert(doi.clone()) {
+            result.push(doi);
+        }
+    }
+
+    result
+}
+
 fn keywords_to_list(value: &str) -> Vec<String> {
     let raw = normalize_text(value);
     if raw.is_empty() {
@@ -880,32 +1406,66 @@ fn pdf_dict_int(doc: &PdfDoc, dict: &lopdf::Dictionary, key: &[u8]) -> i64 {
 
 // ── PDF Metadata Extraction ─────────────────────────────────────────────────
 
-fn extract_pdf_text(pdf_path: &Path, long_parse: bool) -> String {
-    // Run on a thread with 8 MB stack to avoid stack overflow on complex PDFs
+fn extract_pdf_text_result(pdf_path: &Path, long_parse: bool) -> Result<String, String> {
+    // Run on a named thread with 8 MB stack so malformed PDFs cannot unwind the
+    // Tauri command thread and so the panic hook can suppress noisy expected panics.
     let path = pdf_path.to_path_buf();
     let (tx, rx) = std::sync::mpsc::channel();
 
     let handle = thread::Builder::new()
+        .name(GUARDED_PDF_EXTRACT_THREAD_NAME.to_string())
         .stack_size(8 * 1024 * 1024)
         .spawn(move || {
-            let res = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-                pdf_extract::extract_text(&path).unwrap_or_default()
-            }))
-            .unwrap_or_default();
-            let _ = tx.send(res);
-        });
+            let result = match panic::catch_unwind(panic::AssertUnwindSafe(|| {
+                pdf_extract::extract_text(&path)
+            })) {
+                Ok(Ok(text)) => Ok(text),
+                Ok(Err(e)) => Err(format!(
+                    "Failed to extract text from PDF '{}': {:?}",
+                    path.display(),
+                    e
+                )),
+                Err(_) => Err(format!(
+                    "Panic while extracting text from PDF '{}'.",
+                    path.display()
+                )),
+            };
+            let _ = tx.send(result);
+        })
+        .map_err(|e| {
+            format!(
+                "Failed to spawn PDF text extraction worker for '{}': {}",
+                pdf_path.display(),
+                e
+            )
+        })?;
 
     if long_parse {
-        if let Ok(h) = handle {
-            let _ = h.join();
-        }
-        rx.recv().unwrap_or_default()
+        let result = rx.recv().map_err(|e| {
+            format!(
+                "Failed to receive PDF text extraction result for '{}': {}",
+                pdf_path.display(),
+                e
+            )
+        })?;
+        let _ = handle.join();
+        result
     } else {
         match rx.recv_timeout(std::time::Duration::from_secs(2)) {
-            Ok(s) => s,
-            Err(_) => String::new(),
+            Ok(result) => {
+                let _ = handle.join();
+                result
+            }
+            Err(_) => Err(format!(
+                "Timed out while extracting text from PDF '{}'.",
+                pdf_path.display()
+            )),
         }
     }
+}
+
+fn extract_pdf_text(pdf_path: &Path, long_parse: bool) -> String {
+    extract_pdf_text_result(pdf_path, long_parse).unwrap_or_default()
 }
 
 fn extract_auto_metadata(pdf_path: &Path, long_parse: bool) -> AutoMeta {
@@ -1325,6 +1885,142 @@ fn save_override(overrides_dir: &Path, article_id: &str, data: &serde_json::Valu
     let path = overrides_dir.join(format!("{}.json", article_id));
     let content = serde_json::to_string_pretty(data).unwrap_or_default();
     let _ = fs::write(path, content);
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PdfRefScanCacheStatus {
+    Empty,
+    Failed,
+    Timeout,
+}
+
+impl PdfRefScanCacheStatus {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Empty => "empty",
+            Self::Failed => "failed",
+            Self::Timeout => "timeout",
+        }
+    }
+
+    fn from_str(value: &str) -> Option<Self> {
+        match value {
+            "empty" => Some(Self::Empty),
+            "failed" => Some(Self::Failed),
+            "timeout" => Some(Self::Timeout),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct PdfRefScanCacheEntry {
+    status: PdfRefScanCacheStatus,
+    message: Option<String>,
+}
+
+fn clear_pdf_ref_scan_cache_fields(obj: &mut serde_json::Map<String, serde_json::Value>) {
+    obj.remove(PDF_REF_SCAN_STATUS_KEY);
+    obj.remove(PDF_REF_SCAN_MESSAGE_KEY);
+    obj.remove(PDF_REF_SCAN_UPDATED_AT_KEY);
+    obj.remove(PDF_REF_SCAN_VERSION_KEY);
+    obj.remove(PDF_REF_SCAN_FILE_SIZE_KEY);
+    obj.remove(PDF_REF_SCAN_FILE_MODIFIED_KEY);
+}
+
+fn set_pdf_ref_scan_cache_fields(
+    obj: &mut serde_json::Map<String, serde_json::Value>,
+    article: &Article,
+    status: PdfRefScanCacheStatus,
+    message: Option<String>,
+) {
+    clear_pdf_ref_scan_cache_fields(obj);
+    obj.insert(
+        PDF_REF_SCAN_STATUS_KEY.into(),
+        serde_json::Value::String(status.as_str().to_string()),
+    );
+    obj.insert(
+        PDF_REF_SCAN_UPDATED_AT_KEY.into(),
+        serde_json::Value::String(Utc::now().to_rfc3339()),
+    );
+    obj.insert(
+        PDF_REF_SCAN_VERSION_KEY.into(),
+        serde_json::Value::Number(serde_json::Number::from(PDF_REF_SCAN_CACHE_VERSION)),
+    );
+    obj.insert(
+        PDF_REF_SCAN_FILE_SIZE_KEY.into(),
+        serde_json::Value::Number(serde_json::Number::from(article.file_size)),
+    );
+    obj.insert(
+        PDF_REF_SCAN_FILE_MODIFIED_KEY.into(),
+        serde_json::Value::String(article.file_modified.clone()),
+    );
+
+    if let Some(text) = message.map(|value| value.trim().to_string()).filter(|value| !value.is_empty()) {
+        obj.insert(PDF_REF_SCAN_MESSAGE_KEY.into(), serde_json::Value::String(text));
+    }
+}
+
+fn read_pdf_ref_scan_cache(
+    over: &serde_json::Value,
+    article: &Article,
+) -> Option<PdfRefScanCacheEntry> {
+    let version = over
+        .get(PDF_REF_SCAN_VERSION_KEY)
+        .and_then(|v| v.as_u64())
+        .map(|value| value as u32)?;
+    if version != PDF_REF_SCAN_CACHE_VERSION {
+        return None;
+    }
+
+    let cached_file_size = over
+        .get(PDF_REF_SCAN_FILE_SIZE_KEY)
+        .and_then(|v| v.as_u64())
+        .unwrap_or_default();
+    if cached_file_size != article.file_size {
+        return None;
+    }
+
+    let cached_file_modified = over
+        .get(PDF_REF_SCAN_FILE_MODIFIED_KEY)
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+    if cached_file_modified != article.file_modified {
+        return None;
+    }
+
+    let status = over
+        .get(PDF_REF_SCAN_STATUS_KEY)
+        .and_then(|v| v.as_str())
+        .and_then(PdfRefScanCacheStatus::from_str)?;
+
+    let message = over
+        .get(PDF_REF_SCAN_MESSAGE_KEY)
+        .and_then(|v| v.as_str())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    Some(PdfRefScanCacheEntry { status, message })
+}
+
+fn update_article_from_override(
+    state: &mut AppState,
+    article_id: &str,
+    over: &serde_json::Value,
+) -> Result<Article, String> {
+    let root_dir = state.root_dir.clone();
+    let index_path = state.index_path.clone();
+    let index = state.index.as_mut().ok_or("no index loaded")?;
+    let article = find_article_mut(index, article_id).ok_or("Article not found")?;
+
+    article.metadata = merge_metadata(&article.auto_meta, over);
+    article.thumbnail = resolve_thumbnail(&article.auto_thumbnail, over, &root_dir);
+    article.search_text = build_search_text(article);
+
+    let updated = article.clone();
+    let json = serde_json::to_string_pretty(index).unwrap_or_default();
+    let _ = fs::write(&index_path, json);
+    Ok(updated)
 }
 
 fn zip_file_options() -> SimpleFileOptions {
@@ -2116,23 +2812,11 @@ fn save_metadata(
             .filter(|v| !v.as_str().unwrap_or_default().is_empty())
             .collect();
         obj.insert("ref_dois".into(), serde_json::Value::Array(arr));
+        clear_pdf_ref_scan_cache_fields(obj);
     }
 
     save_override(&st.overrides_dir, &article_id, &existing);
-
-    let root_dir = st.root_dir.clone();
-    let index_path = st.index_path.clone();
-    let index = st.index.as_mut().ok_or("no index loaded")?;
-    let article = find_article_mut(index, &article_id).ok_or("Article not found")?;
-
-    article.metadata = merge_metadata(&article.auto_meta, &existing);
-    article.thumbnail = resolve_thumbnail(&article.auto_thumbnail, &existing, &root_dir);
-    article.search_text = build_search_text(article);
-
-    let updated = article.clone();
-
-    let json = serde_json::to_string_pretty(index).unwrap_or_default();
-    let _ = fs::write(&index_path, json);
+    let updated = update_article_from_override(&mut st, &article_id, &existing)?;
 
     Ok(MutationResponse {
         ok: true,
@@ -2763,6 +3447,271 @@ fn pick_library_root_path(app: tauri::AppHandle) -> Result<Option<String>, Strin
 }
 
 #[tauri::command]
+fn preview_library_root_switch(
+    state: tauri::State<'_, Mutex<AppState>>,
+    path: String,
+) -> Result<LibraryRootSwitchPreviewResponse, String> {
+    let next_root = canonical_or_clean(&normalize_candidate_root(&path)?);
+
+    let mut st = state.lock().map_err(|e| e.to_string())?;
+    if st.demo_mode_enabled() {
+        return Err("Exit demo mode before switching the primary library root.".to_string());
+    }
+
+    let previous_root = canonical_or_clean(&st.root_dir);
+    let current_has_library_data = library_root_has_existing_data(&previous_root);
+    let current_index = if current_has_library_data {
+        Some(load_index(&mut st).clone())
+    } else {
+        None
+    };
+    let inspection = inspect_library_root(&next_root);
+    let target_has_existing_library_data = inspection.has_existing_library_data();
+    let target_needs_reindex = inspection.needs_reindex();
+    let target_looks_complete = inspection.looks_complete();
+    let target_looks_partial = inspection.looks_partial();
+    let nested_with_current = next_root.starts_with(&previous_root) || previous_root.starts_with(&next_root);
+
+    let copy_block_reason = if !current_has_library_data {
+        Some("The current library does not have any Articles or library_data to move.".to_string())
+    } else if target_has_existing_library_data {
+        Some("Move Current Library Here is disabled because the selected folder already contains Articles and/or library_data.".to_string())
+    } else if nested_with_current {
+        Some("Move Current Library Here is disabled because the selected folder is nested inside the current library root, or vice versa.".to_string())
+    } else {
+        None
+    };
+    let copy_supported = copy_block_reason.is_none();
+
+    let mut merge_available = false;
+    let mut merge_add_count = 0usize;
+    let mut merge_match_count = 0usize;
+    let mut merge_block_reason = None;
+
+    let mut notes = Vec::new();
+    if target_has_existing_library_data && current_has_library_data {
+        notes.push("No automatic merge will occur unless you explicitly choose the experimental merge option. Export Library Bundle and Import Library Bundle remain the safer consolidation path.".to_string());
+    }
+    if inspection.root_other_item_count > 0 && !target_has_existing_library_data {
+        notes.push("This folder also contains other top-level items. They will be left untouched.".to_string());
+    }
+    if let Some(err) = &inspection.index_read_error {
+        notes.push(format!("The target index could not be read cleanly: {}", err));
+    } else if inspection.article_pdf_count > 0 && !inspection.index_exists {
+        notes.push("The target Articles folder has PDFs, but library_data/index.json is missing. Reindexing is recommended after switching.".to_string());
+    } else if inspection.index_exists && inspection.article_pdf_count != inspection.index_article_count {
+        notes.push(format!(
+            "The target index currently describes {} article(s), but {} PDF(s) were found in Articles. Reindexing is recommended.",
+            inspection.index_article_count, inspection.article_pdf_count
+        ));
+    }
+    if let Some(reason) = &copy_block_reason {
+        notes.push(reason.clone());
+    }
+
+    if target_has_existing_library_data {
+        if !current_has_library_data {
+            merge_block_reason = Some("Experimental merge is unavailable because the current library does not contain any Articles or library_data.".to_string());
+        } else if nested_with_current {
+            merge_block_reason = Some("Experimental merge is disabled when the selected library root is nested inside the current library root, or vice versa.".to_string());
+        } else if let Some(source_index) = current_index.as_ref() {
+            let target_records = collect_library_match_records(&next_root);
+            let source_state = build_temp_primary_library_state(
+                st.app_root_dir.clone(),
+                st.default_strategy.clone(),
+                previous_root.clone(),
+            );
+            let mut target_hash_cache = HashMap::new();
+            let mut source_hash_cache = HashMap::new();
+
+            for article in &source_index.articles {
+                let candidate = build_library_match_candidate(&source_state, article);
+                let already_exists = target_records.iter().any(|record| {
+                    library_match_record_matches_candidate(
+                        record,
+                        &candidate,
+                        &mut target_hash_cache,
+                        &mut source_hash_cache,
+                    )
+                });
+                if already_exists {
+                    merge_match_count += 1;
+                } else {
+                    merge_add_count += 1;
+                }
+            }
+
+            if merge_add_count > 0 {
+                merge_available = true;
+                notes.push(format!(
+                    "Experimental merge would copy {} current article(s) into the selected library before switching.",
+                    merge_add_count
+                ));
+            } else {
+                merge_block_reason = Some(
+                    "The selected library already appears to contain every current article, so experimental merge is not needed.".to_string(),
+                );
+                notes.push("The selected library already appears to contain every current article, so experimental merge is not needed.".to_string());
+            }
+        }
+    } else {
+        merge_block_reason = Some(
+            "Experimental merge is only available when the selected folder already contains a library.".to_string(),
+        );
+    }
+    if let Some(reason) = &merge_block_reason {
+        if !notes.iter().any(|note| note == reason) {
+            notes.push(reason.clone());
+        }
+    }
+
+    let recommended_action = if !target_has_existing_library_data {
+        if copy_supported {
+            "copy_current".to_string()
+        } else {
+            "switch_empty".to_string()
+        }
+    } else if target_needs_reindex {
+        "switch_reindex".to_string()
+    } else {
+        "switch_existing".to_string()
+    };
+
+    Ok(LibraryRootSwitchPreviewResponse {
+        ok: true,
+        path: next_root.to_string_lossy().to_string(),
+        current_path: previous_root.to_string_lossy().to_string(),
+        current_has_library_data,
+        target_status: inspection.target_status().to_string(),
+        target_has_existing_library_data,
+        target_has_articles_dir: inspection.has_articles_dir,
+        target_has_data_dir: inspection.has_data_dir,
+        target_article_pdf_count: inspection.article_pdf_count,
+        target_library_data_file_count: inspection.library_data_file_count,
+        target_index_exists: inspection.index_exists,
+        target_index_article_count: inspection.index_article_count,
+        target_index_read_error: inspection.index_read_error,
+        target_root_other_item_count: inspection.root_other_item_count,
+        target_looks_complete,
+        target_looks_partial,
+        target_needs_reindex,
+        copy_supported,
+        copy_block_reason,
+        merge_available,
+        merge_add_count,
+        merge_match_count,
+        merge_block_reason,
+        recommended_action,
+        notes,
+    })
+}
+
+#[tauri::command]
+fn merge_library_into_root(
+    state: tauri::State<'_, Mutex<AppState>>,
+    path: String,
+) -> Result<LibraryRootMergeResponse, String> {
+    let next_root = canonical_or_clean(&normalize_candidate_root(&path)?);
+
+    let (previous_root, app_root_dir, default_strategy, source_index) = {
+        let mut st = state.lock().map_err(|e| e.to_string())?;
+        if st.demo_mode_enabled() {
+            return Err("Exit demo mode before switching the primary library root.".to_string());
+        }
+
+        let previous_root = canonical_or_clean(&st.root_dir);
+        if previous_root == next_root {
+            return Err("Choose a different library root before attempting an experimental merge.".to_string());
+        }
+        if next_root.starts_with(&previous_root) || previous_root.starts_with(&next_root) {
+            return Err("Experimental merge is disabled when one library root is nested inside the other.".to_string());
+        }
+        if !library_root_has_existing_data(&previous_root) {
+            return Err("The current library does not contain any Articles or library_data to merge.".to_string());
+        }
+        if !library_root_has_existing_data(&next_root) {
+            return Err("Experimental merge requires the selected folder to already contain a library.".to_string());
+        }
+
+        (
+            previous_root,
+            st.app_root_dir.clone(),
+            st.default_strategy.clone(),
+            load_index(&mut st).clone(),
+        )
+    };
+
+    let source_state = build_temp_primary_library_state(
+        app_root_dir.clone(),
+        default_strategy.clone(),
+        previous_root.clone(),
+    );
+    let mut target_state =
+        build_temp_primary_library_state(app_root_dir, default_strategy, next_root.clone());
+    let _ = load_index(&mut target_state);
+
+    let mut warnings = Vec::new();
+    let mut merged_count = 0usize;
+    let mut skipped_count = 0usize;
+    let mut target_pdf_hash_cache = HashMap::new();
+
+    for article in &source_index.articles {
+        let (entry, pdf_bytes, thumbnail_bytes, _) =
+            match build_sync_bundle_article_entry(&source_state, article) {
+                Ok(payload) => payload,
+                Err(err) => {
+                    warnings.push(err);
+                    skipped_count += 1;
+                    continue;
+                }
+            };
+
+        let already_exists = target_state
+            .index
+            .as_ref()
+            .map(|index| {
+                index.articles.iter().any(|existing| {
+                    bundle_article_matches_existing(
+                        &target_state,
+                        existing,
+                        &entry,
+                        &mut target_pdf_hash_cache,
+                    )
+                })
+            })
+            .unwrap_or(false);
+
+        if already_exists {
+            skipped_count += 1;
+            continue;
+        }
+
+        import_sync_entry_into_library(
+            &mut target_state,
+            &entry,
+            &pdf_bytes,
+            thumbnail_bytes.as_deref(),
+        )?;
+        merged_count += 1;
+    }
+
+    if let Some(index) = target_state.index.as_ref() {
+        let json = serde_json::to_string_pretty(index).unwrap_or_default();
+        let _ = fs::write(&target_state.index_path, json);
+    }
+
+    Ok(LibraryRootMergeResponse {
+        ok: true,
+        path: next_root.to_string_lossy().to_string(),
+        previous_path: previous_root.to_string_lossy().to_string(),
+        merged_count,
+        skipped_count,
+        warning_count: warnings.len(),
+        warnings,
+    })
+}
+
+#[tauri::command]
 fn set_library_root(
     state: tauri::State<'_, Mutex<AppState>>,
     path: String,
@@ -2818,6 +3767,12 @@ fn set_library_root(
 fn open_library_root_folder(state: tauri::State<'_, Mutex<AppState>>) -> Result<(), String> {
     let st = state.lock().map_err(|e| e.to_string())?;
     open_folder_path(&st.root_dir, "library root folder")
+}
+
+#[tauri::command]
+fn open_selected_library_root_folder(path: String) -> Result<(), String> {
+    let target = canonical_or_clean(&normalize_candidate_root(&path)?);
+    open_folder_path(&target, "selected library root folder")
 }
 
 #[tauri::command]
@@ -3073,11 +4028,6 @@ fn import_sync_bundle(
             }
         };
 
-        let output_path = choose_unique_article_path(&st.articles_dir, &entry.pdf_filename);
-        fs::write(&output_path, &pdf_bytes)
-            .map_err(|e| format!("Failed to write imported PDF {}: {}", entry.pdf_filename, e))?;
-
-        let local_article_id = article_id_for_path(&output_path, &st.articles_dir);
         let thumbnail_bytes = if import_thumbnails {
             entry
                 .thumbnail_path
@@ -3088,140 +4038,8 @@ fn import_sync_bundle(
         } else {
             None
         };
-
-        let (auto_thumbnail, thumbnail, mut override_json) =
-            write_sync_thumbnail_files(&st, &local_article_id, thumbnail_bytes.as_deref())?;
-        let override_obj = override_json
-            .as_object_mut()
-            .ok_or("Failed to build imported override JSON")?;
-        override_obj.insert(
-            "sync_source_id".into(),
-            serde_json::Value::String(entry.source_article_id.clone()),
-        );
-        override_obj.insert(
-            "title".into(),
-            serde_json::Value::String(entry.metadata.title.trim().to_string()),
-        );
-        override_obj.insert(
-            "authors".into(),
-            serde_json::Value::String(entry.metadata.authors.trim().to_string()),
-        );
-        override_obj.insert(
-            "year".into(),
-            serde_json::Value::String(entry.metadata.year.trim().to_string()),
-        );
-        override_obj.insert(
-            "journal".into(),
-            serde_json::Value::String(entry.metadata.journal.trim().to_string()),
-        );
-        override_obj.insert(
-            "volume".into(),
-            serde_json::Value::String(entry.metadata.volume.trim().to_string()),
-        );
-        override_obj.insert(
-            "number".into(),
-            serde_json::Value::String(entry.metadata.number.trim().to_string()),
-        );
-        override_obj.insert(
-            "pages".into(),
-            serde_json::Value::String(entry.metadata.pages.trim().to_string()),
-        );
-        override_obj.insert(
-            "doi".into(),
-            serde_json::Value::String(entry.metadata.doi.trim().to_string()),
-        );
-        override_obj.insert(
-            "abstract".into(),
-            serde_json::Value::String(entry.metadata.abstract_text.trim().to_string()),
-        );
-        override_obj.insert(
-            "notes".into(),
-            serde_json::Value::String(entry.metadata.notes.clone()),
-        );
-        override_obj.insert(
-            "tags".into(),
-            serde_json::Value::Array(
-                dedupe_tag_values(entry.metadata.tags.clone())
-                    .into_iter()
-                    .map(serde_json::Value::String)
-                    .collect(),
-            ),
-        );
-        override_obj.insert(
-            "ref_dois".into(),
-            serde_json::Value::Array(
-                entry.metadata
-                    .ref_dois
-                    .iter()
-                    .filter_map(|doi| {
-                        let trimmed = doi.trim();
-                        if trimmed.is_empty() {
-                            None
-                        } else {
-                            Some(serde_json::Value::String(trimmed.to_string()))
-                        }
-                    })
-                    .collect(),
-            ),
-        );
-        let date_added = if entry.date_added.trim().is_empty() {
-            Utc::now().to_rfc3339()
-        } else {
-            entry.date_added.clone()
-        };
-        override_obj.insert(
-            "date_added".into(),
-            serde_json::Value::String(date_added.clone()),
-        );
-        if !entry.last_opened.trim().is_empty() {
-            override_obj.insert(
-                "last_opened".into(),
-                serde_json::Value::String(entry.last_opened.clone()),
-            );
-        }
-        save_override(&st.overrides_dir, &local_article_id, &override_json);
-
-        let rel_path = output_path
-            .strip_prefix(&st.root_dir)
-            .unwrap_or(&output_path)
-            .to_string_lossy()
-            .replace('\\', "/");
-        let stat = fs::metadata(&output_path)
-            .map_err(|e| format!("Failed to stat imported PDF {}: {}", entry.pdf_filename, e))?;
-        let file_modified = stat
-            .modified()
-            .ok()
-            .map(|t| {
-                let dt: chrono::DateTime<Utc> = t.into();
-                dt.to_rfc3339()
-            })
-            .unwrap_or_default();
-
-        let mut article = Article {
-            id: local_article_id.clone(),
-            pdf_filename: output_path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string(),
-            pdf_relpath: rel_path,
-            file_size: stat.len(),
-            file_modified,
-            auto_meta: entry.auto_meta.clone(),
-            auto_thumbnail,
-            metadata: entry.metadata.clone(),
-            thumbnail,
-            search_text: String::new(),
-            date_added,
-            last_opened: entry.last_opened.clone(),
-        };
-        article.search_text = build_search_text(&article);
-
-        if let Some(index) = st.index.as_mut() {
-            index.articles.push(article.clone());
-            index.article_count = index.articles.len();
-        }
-
+        let local_article_id =
+            import_sync_entry_into_library(&mut st, entry, &pdf_bytes, thumbnail_bytes.as_deref())?;
         imported_article_ids.push(local_article_id);
         imported_count += 1;
     }
@@ -3876,18 +4694,17 @@ fn get_article_text_front(
         return Err("PDF file not found".into());
     }
 
-    match panic::catch_unwind(panic::AssertUnwindSafe(|| pdf_extract::extract_text(&pdf_path))) {
-        Ok(Ok(text)) => {
+    match extract_pdf_text_result(&pdf_path, true) {
+        Ok(text) => {
             let prefix: String = text.chars().take(10000).collect();
             Ok(prefix)
         }
-        Ok(Err(e)) => {
-            let msg = format!("Failed to extract front text from PDF '{}': {:?}", pdf_path.display(), e);
-            write_crash_log(&data_dir, &msg);
-            Err(msg)
-        }
-        Err(_) => {
-            let msg = format!("Panic while extracting front text from PDF '{}'.", pdf_path.display());
+        Err(e) => {
+            let msg = format!(
+                "Failed to extract front text from PDF '{}': {}",
+                pdf_path.display(),
+                e
+            );
             write_crash_log(&data_dir, &msg);
             Err(msg)
         }
@@ -3913,22 +4730,209 @@ fn get_article_text_back(
         return Err("PDF file not found".into());
     }
 
-    match panic::catch_unwind(panic::AssertUnwindSafe(|| pdf_extract::extract_text(&pdf_path))) {
-        Ok(Ok(text)) => {
+    match extract_pdf_text_result(&pdf_path, true) {
+        Ok(text) => {
             let total_chars = text.chars().count();
             let start = total_chars.saturating_sub(15000);
             let suffix: String = text.chars().skip(start).collect();
             Ok(suffix)
         }
-        Ok(Err(e)) => {
-            let msg = format!("Failed to extract back text from PDF '{}': {:?}", pdf_path.display(), e);
+        Err(e) => {
+            let msg = format!(
+                "Failed to extract back text from PDF '{}': {}",
+                pdf_path.display(),
+                e
+            );
             write_crash_log(&data_dir, &msg);
             Err(msg)
         }
-        Err(_) => {
-            let msg = format!("Panic while extracting back text from PDF '{}'.", pdf_path.display());
-            write_crash_log(&data_dir, &msg);
-            Err(msg)
+    }
+}
+
+#[tauri::command]
+fn resolve_article_reference_dois(
+    state: tauri::State<'_, Mutex<AppState>>,
+    article_id: String,
+    force: Option<bool>,
+) -> Result<ReferenceDoiScanResponse, String> {
+    let force = force.unwrap_or(false);
+
+    let (article, pdf_path, data_dir) = {
+        let mut st = state.lock().map_err(|e| e.to_string())?;
+        let index = load_index(&mut st);
+        let article = index
+            .articles
+            .iter()
+            .find(|a| a.id == article_id)
+            .cloned()
+            .ok_or_else(|| "Article not found".to_string())?;
+        let pdf_path = st.root_dir.join(&article.pdf_relpath);
+        if !pdf_path.exists() {
+            return Err("PDF file not found".into());
+        }
+        (article, pdf_path, st.data_dir.clone())
+    };
+
+    if !force && !article.metadata.ref_dois.is_empty() {
+        return Ok(ReferenceDoiScanResponse {
+            ok: true,
+            article: article.clone(),
+            ref_dois: article.metadata.ref_dois.clone(),
+            status: "stored".to_string(),
+            message: None,
+        });
+    }
+
+    if !force {
+        let over = {
+            let st = state.lock().map_err(|e| e.to_string())?;
+            load_override(&st.overrides_dir, &article_id)
+        };
+        if let Some(cache) = read_pdf_ref_scan_cache(&over, &article) {
+            let status = match cache.status {
+                PdfRefScanCacheStatus::Empty => "cached_empty",
+                PdfRefScanCacheStatus::Failed => "cached_failure",
+                PdfRefScanCacheStatus::Timeout => "cached_timeout",
+            };
+            return Ok(ReferenceDoiScanResponse {
+                ok: true,
+                article,
+                ref_dois: Vec::new(),
+                status: status.to_string(),
+                message: cache.message,
+            });
+        }
+    }
+
+    match extract_pdf_text_result(&pdf_path, false) {
+        Ok(text) => {
+            let own_doi = normalize_doi_key(&article.metadata.doi);
+            let ref_dois: Vec<String> = extract_all_dois_from_text(&text)
+                .into_iter()
+                .filter(|doi| !doi.is_empty() && *doi != own_doi)
+                .collect();
+
+            let mut st = state.lock().map_err(|e| e.to_string())?;
+            let _ = load_index(&mut st);
+            let live_article = st
+                .index
+                .as_ref()
+                .and_then(|index| index.articles.iter().find(|a| a.id == article_id))
+                .cloned()
+                .ok_or_else(|| "Article not found".to_string())?;
+
+            if !force && !live_article.metadata.ref_dois.is_empty() {
+                return Ok(ReferenceDoiScanResponse {
+                    ok: true,
+                    article: live_article.clone(),
+                    ref_dois: live_article.metadata.ref_dois.clone(),
+                    status: "stored".to_string(),
+                    message: None,
+                });
+            }
+
+            let mut over = load_override(&st.overrides_dir, &article_id);
+            let obj = over.as_object_mut().ok_or("corrupt override")?;
+
+            if ref_dois.is_empty() {
+                let message = "No reference DOIs were found in the PDF text.".to_string();
+                set_pdf_ref_scan_cache_fields(
+                    obj,
+                    &live_article,
+                    PdfRefScanCacheStatus::Empty,
+                    Some(message.clone()),
+                );
+                save_override(&st.overrides_dir, &article_id, &over);
+                return Ok(ReferenceDoiScanResponse {
+                    ok: true,
+                    article: live_article,
+                    ref_dois,
+                    status: "scanned_empty".to_string(),
+                    message: Some(message),
+                });
+            }
+
+            obj.insert(
+                "ref_dois".into(),
+                serde_json::Value::Array(
+                    ref_dois
+                        .iter()
+                        .cloned()
+                        .map(serde_json::Value::String)
+                        .collect(),
+                ),
+            );
+            clear_pdf_ref_scan_cache_fields(obj);
+            save_override(&st.overrides_dir, &article_id, &over);
+
+            let updated = update_article_from_override(&mut st, &article_id, &over)?;
+            let message = format!("Recovered {} reference DOI(s) from PDF text.", ref_dois.len());
+            Ok(ReferenceDoiScanResponse {
+                ok: true,
+                article: updated,
+                ref_dois,
+                status: "scanned".to_string(),
+                message: Some(message),
+            })
+        }
+        Err(detail) => {
+            let (cache_status, response_status, message) =
+                if detail.starts_with("Timed out while extracting text") {
+                    (
+                        PdfRefScanCacheStatus::Timeout,
+                        "cached_timeout",
+                        format!(
+                            "Automatic PDF reference scanning timed out after {} seconds and will be skipped for this article unless the PDF changes.",
+                            PDF_REF_SCAN_TIMEOUT_SECS
+                        ),
+                    )
+                } else {
+                    (
+                        PdfRefScanCacheStatus::Failed,
+                        "cached_failure",
+                        "Automatic PDF reference scanning failed and will be skipped for this article unless the PDF changes.".to_string(),
+                    )
+                };
+
+            let detailed_message = format!(
+                "Reference DOI scan for PDF '{}' ended with status '{}': {}",
+                pdf_path.display(),
+                cache_status.as_str(),
+                detail
+            );
+            write_crash_log(&data_dir, &detailed_message);
+
+            let mut st = state.lock().map_err(|e| e.to_string())?;
+            let _ = load_index(&mut st);
+            let live_article = st
+                .index
+                .as_ref()
+                .and_then(|index| index.articles.iter().find(|a| a.id == article_id))
+                .cloned()
+                .ok_or_else(|| "Article not found".to_string())?;
+
+            if !force && !live_article.metadata.ref_dois.is_empty() {
+                return Ok(ReferenceDoiScanResponse {
+                    ok: true,
+                    article: live_article.clone(),
+                    ref_dois: live_article.metadata.ref_dois.clone(),
+                    status: "stored".to_string(),
+                    message: None,
+                });
+            }
+
+            let mut over = load_override(&st.overrides_dir, &article_id);
+            let obj = over.as_object_mut().ok_or("corrupt override")?;
+            set_pdf_ref_scan_cache_fields(obj, &live_article, cache_status, Some(message.clone()));
+            save_override(&st.overrides_dir, &article_id, &over);
+
+            Ok(ReferenceDoiScanResponse {
+                ok: true,
+                article: live_article,
+                ref_dois: Vec::new(),
+                status: response_status.to_string(),
+                message: Some(message),
+            })
         }
     }
 }
@@ -4037,6 +5041,10 @@ pub fn run() {
             let panic_log_dir = app_state.data_dir.clone();
             let default_hook = panic::take_hook();
             panic::set_hook(Box::new(move |info| {
+                let thread_name = std::thread::current()
+                    .name()
+                    .unwrap_or("unnamed")
+                    .to_string();
                 let location = info
                     .location()
                     .map(|loc| format!("{}:{}", loc.file(), loc.line()))
@@ -4048,8 +5056,11 @@ pub fn run() {
                 } else {
                     "non-string panic payload".to_string()
                 };
-                let message = format!("PANIC at {}: {}", location, payload);
+                let message = format!("PANIC on thread '{}' at {}: {}", thread_name, location, payload);
                 write_crash_log(&panic_log_dir, &message);
+                if thread_name == GUARDED_PDF_EXTRACT_THREAD_NAME {
+                    return;
+                }
                 default_hook(info);
             }));
             app.manage(Mutex::new(app_state));
@@ -4069,8 +5080,11 @@ pub fn run() {
             open_file_location,
             get_library_root_info,
             pick_library_root_path,
+            preview_library_root_switch,
+            merge_library_into_root,
             set_library_root,
             open_library_root_folder,
+            open_selected_library_root_folder,
             open_articles_folder,
             pick_sync_bundle_export_path,
             pick_sync_bundle_import_path,
@@ -4087,6 +5101,7 @@ pub fn run() {
             fetch_doi_metadata,
             get_article_text_front,
             get_article_text_back,
+            resolve_article_reference_dois,
             create_backup,
             get_backups,
             restore_backup,

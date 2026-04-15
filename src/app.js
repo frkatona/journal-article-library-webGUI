@@ -6,12 +6,14 @@ const thumbCache = new Map();
 let metadataSavedBlinkTimeout = null;
 
 const DEFAULT_HOTKEYS = {
-    openPdfExternal: { ctrl: false, alt: false, shift: false },  // plain click
-    openPdfInternal: { ctrl: false, alt: true, shift: true },  // Alt+Shift+click
-    editMetadata: { ctrl: true, alt: false, shift: false },  // Ctrl+click
-    openAbstract: { ctrl: false, alt: true, shift: false },  // Alt+click
-    copyBibtex: { ctrl: false, alt: false, shift: true },  // Shift+click
-    openLocation: { ctrl: true, alt: false, shift: true },  // Ctrl+Shift+click
+    openPdfExternal: { ctrl: false, alt: false, shift: false, disabled: false },  // plain click
+    openPdfInternal: { ctrl: false, alt: true, shift: true, disabled: false },  // Alt+Shift+click
+    editMetadata: { ctrl: true, alt: false, shift: false, disabled: false },  // Ctrl+click
+    openAbstract: { ctrl: false, alt: true, shift: false, disabled: false },  // Alt+click
+    copyBibtex: { ctrl: false, alt: false, shift: true, disabled: false },  // Shift+click
+    copyReadyCitation: { ctrl: true, alt: true, shift: false, disabled: false },  // Ctrl+Alt+click
+    copyAbbreviatedCitation: { ctrl: true, alt: true, shift: true, disabled: false },  // Ctrl+Alt+Shift+click
+    openLocation: { ctrl: true, alt: false, shift: true, disabled: false },  // Ctrl+Shift+click
 };
 const KEYBOARD_SHORTCUTS_STORAGE_KEY = "article-keyboard-shortcuts";
 const DEMO_MODE_KEY = "article-demo-mode";
@@ -323,9 +325,32 @@ function saveThemePresets() {
     window.localStorage.setItem(THEME_PRESET_STORAGE_KEY, JSON.stringify(state.themePresets));
 }
 
+function createKeyboardShortcutState(bindings, disabled = false) {
+    return {
+        bindings: Array.isArray(bindings) ? [...bindings] : [],
+        disabled: Boolean(disabled),
+    };
+}
+
+function normalizeStoredShortcutBindings(value) {
+    if (typeof value === "string") {
+        return [value].map(normalizeShortcutBinding).filter(Boolean);
+    }
+    if (Array.isArray(value)) {
+        return value.map(normalizeShortcutBinding).filter(Boolean);
+    }
+    if (value && typeof value === "object") {
+        const nestedBindings = typeof value.bindings === "string"
+            ? [value.bindings]
+            : (Array.isArray(value.bindings) ? value.bindings : []);
+        return nestedBindings.map(normalizeShortcutBinding).filter(Boolean);
+    }
+    return [];
+}
+
 function cloneDefaultKeyboardShortcuts() {
     return Object.fromEntries(
-        Object.entries(DEFAULT_KEYBOARD_SHORTCUTS).map(([key, bindings]) => [key, [...bindings]]),
+        Object.entries(DEFAULT_KEYBOARD_SHORTCUTS).map(([key, bindings]) => [key, createKeyboardShortcutState(bindings)]),
     );
 }
 
@@ -453,18 +478,20 @@ function loadKeyboardShortcuts() {
 
         for (const key of Object.keys(defaults)) {
             const value = raw[key];
-            const asList = typeof value === "string" ? [value] : (Array.isArray(value) ? value : []);
-            const normalized = asList.map(normalizeShortcutBinding).filter(Boolean);
-            if (normalized.length > 0) defaults[key] = normalized;
+            const normalized = normalizeStoredShortcutBindings(value);
+            if (normalized.length > 0) defaults[key].bindings = normalized;
+            if (value && typeof value === "object" && !Array.isArray(value)) {
+                defaults[key].disabled = Boolean(value.disabled);
+            }
         }
 
         if (!rawHasPrevModal) {
             const legacyPrevBindings = normalizedLegacyToggleBindings.filter((binding) => binding === "ArrowUp");
-            if (legacyPrevBindings.length > 0) defaults.prevModal = legacyPrevBindings;
+            if (legacyPrevBindings.length > 0) defaults.prevModal.bindings = legacyPrevBindings;
         }
         if (!rawHasNextModal) {
             const legacyNextBindings = normalizedLegacyToggleBindings.filter((binding) => binding === "ArrowDown");
-            if (legacyNextBindings.length > 0) defaults.nextModal = legacyNextBindings;
+            if (legacyNextBindings.length > 0) defaults.nextModal.bindings = legacyNextBindings;
         }
     } catch {
         return defaults;
@@ -478,6 +505,7 @@ function normalizeMouseHotkeyBinding(binding) {
         ctrl: Boolean(binding.ctrl),
         alt: Boolean(binding.alt),
         shift: Boolean(binding.shift),
+        disabled: Boolean(binding.disabled),
     };
 }
 
@@ -511,8 +539,35 @@ function saveKeyboardShortcuts() {
     window.localStorage.setItem(KEYBOARD_SHORTCUTS_STORAGE_KEY, JSON.stringify(state.keyboardShortcuts));
 }
 
+function getKeyboardShortcutState(shortcutKey) {
+    const configured = state.keyboardShortcuts?.[shortcutKey];
+    if (configured && typeof configured === "object" && Array.isArray(configured.bindings)) {
+        return configured;
+    }
+    return createKeyboardShortcutState(DEFAULT_KEYBOARD_SHORTCUTS[shortcutKey] || []);
+}
+
+function isKeyboardShortcutDisabled(shortcutKey) {
+    return Boolean(getKeyboardShortcutState(shortcutKey).disabled);
+}
+
+function setKeyboardShortcutDisabled(shortcutKey, disabled) {
+    const current = getKeyboardShortcutState(shortcutKey);
+    state.keyboardShortcuts[shortcutKey] = createKeyboardShortcutState(current.bindings, disabled);
+}
+
+function setKeyboardShortcutBindings(shortcutKey, bindings) {
+    const current = getKeyboardShortcutState(shortcutKey);
+    const normalizedBindings = normalizeStoredShortcutBindings(bindings);
+    state.keyboardShortcuts[shortcutKey] = createKeyboardShortcutState(
+        normalizedBindings.length > 0 ? normalizedBindings : current.bindings,
+        current.disabled,
+    );
+}
+
 function getKeyboardShortcutBindings(shortcutKey) {
-    return state.keyboardShortcuts?.[shortcutKey] || DEFAULT_KEYBOARD_SHORTCUTS[shortcutKey] || [];
+    const shortcut = getKeyboardShortcutState(shortcutKey);
+    return shortcut.disabled ? [] : shortcut.bindings;
 }
 
 function usesKeyboardShortcutBinding(shortcutKey, binding) {
@@ -705,6 +760,8 @@ const state = {
     lastDoiRateWarningAt: 0,
     syncImportBundlePath: "",
     syncImportPreview: null,
+    libraryRootSwitchPath: "",
+    libraryRootSwitchPreview: null,
     libraryRootPath: "",
     appRootPath: "",
     usingDefaultLibraryRoot: true,
@@ -785,7 +842,6 @@ const dom = {
     reindexBtn: document.getElementById("reindex-btn"),
     exportSyncBundleBtn: document.getElementById("export-sync-bundle-btn"),
     importSyncBundleBtn: document.getElementById("import-sync-bundle-btn"),
-    openArticlesBtn: document.getElementById("open-articles-btn"),
     renameTagBtn: document.getElementById("rename-tag-btn"),
     removeTagBtn: document.getElementById("remove-tag-btn"),
     syncImportModal: document.getElementById("sync-import-modal"),
@@ -809,6 +865,24 @@ const dom = {
     syncImportSettings: document.getElementById("sync-import-settings"),
     syncImportSettingsApplyRow: document.getElementById("sync-import-settings-apply-row"),
     syncImportSettingsApply: document.getElementById("sync-import-settings-apply"),
+    libraryRootSwitchModal: document.getElementById("library-root-switch-modal"),
+    libraryRootSwitchClose: document.getElementById("library-root-switch-close"),
+    libraryRootSwitchCancel: document.getElementById("library-root-switch-cancel"),
+    libraryRootSwitchPrimary: document.getElementById("library-root-switch-primary"),
+    libraryRootSwitchSecondary: document.getElementById("library-root-switch-secondary"),
+    libraryRootSwitchMerge: document.getElementById("library-root-switch-merge"),
+    libraryRootSwitchOpenFolder: document.getElementById("library-root-switch-open-folder"),
+    libraryRootSwitchPath: document.getElementById("library-root-switch-path"),
+    libraryRootSwitchSummary: document.getElementById("library-root-switch-summary"),
+    libraryRootSwitchStatus: document.getElementById("library-root-switch-status"),
+    libraryRootSwitchPdfCount: document.getElementById("library-root-switch-pdf-count"),
+    libraryRootSwitchIndexCount: document.getElementById("library-root-switch-index-count"),
+    libraryRootSwitchDataCount: document.getElementById("library-root-switch-data-count"),
+    libraryRootSwitchOtherCount: document.getElementById("library-root-switch-other-count"),
+    libraryRootSwitchRecommendation: document.getElementById("library-root-switch-recommendation"),
+    libraryRootSwitchNoteBlock: document.getElementById("library-root-switch-note-block"),
+    libraryRootSwitchNoteList: document.getElementById("library-root-switch-note-list"),
+    libraryRootSwitchDangerNote: document.getElementById("library-root-switch-danger-note"),
     statusLine: document.getElementById("status-line"),
     grid: document.getElementById("grid"),
     modal: document.getElementById("edit-modal"),
@@ -970,6 +1044,10 @@ const dom = {
     enableNicheCheckbox: document.getElementById("enable-niche"),
     experimentalSection: document.getElementById("experimental-section"),
     experimentalArrow: document.getElementById("experimental-arrow"),
+    tagsSection: document.getElementById("tags-section"),
+    tagsArrow: document.getElementById("tags-arrow"),
+    librarySection: document.getElementById("library-section"),
+    libraryArrow: document.getElementById("library-arrow"),
     debugModeCheckbox: document.getElementById("debug-mode"),
     debugModeOptions: document.getElementById("debug-mode-options"),
     debugLogRetentionValue: document.getElementById("debug-log-retention-value"),
@@ -992,6 +1070,8 @@ const dom = {
     abstractSectionCountValue: document.getElementById("abstract-section-count-value"),
     abstractSectionCountInput: document.getElementById("abstract-section-count"),
 };
+
+let pendingLibraryRootSwitchResolve = null;
 
 const pdfViewer = {
     article: null,
@@ -1641,6 +1721,7 @@ const NIGHT_FILTER_TARGET_SELECTOR = [
     "#duplicate-modal .modal-card",
     "#hotkeys-modal .modal-card",
     "#backup-modal .modal-content",
+    "#library-root-switch-modal .modal-card",
 ].join(", ");
 
 function clampUnit(value) {
@@ -2112,12 +2193,28 @@ function formatStorageRow(label, bytes, suffix = "") {
     return `${left} ${right}${suffix ? `  ${suffix}` : ""}`;
 }
 
+function stripWindowsVerbatimPathPrefix(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    if (raw.startsWith("\\\\?\\UNC\\")) {
+        return `\\\\${raw.slice(8)}`;
+    }
+    if (raw.startsWith("\\\\?\\")) {
+        return raw.slice(4);
+    }
+    return raw;
+}
+
+function formatDisplayPath(value) {
+    return stripWindowsVerbatimPathPrefix(value) || "(unknown)";
+}
+
 function formatStorageReport(report) {
     if (!report) return "No storage report returned.";
 
     const lines = [
-        `Library root: ${report.root_dir || "(unknown)"}`,
-        `Local app folder: ${report.app_root_dir || "(unknown)"}`,
+        `Library root: ${formatDisplayPath(report.root_dir)}`,
+        `Local app folder: ${formatDisplayPath(report.app_root_dir)}`,
         `Total size: ${formatBytes(report.total_bytes)}`,
         `Root-level files: ${formatBytes(report.root_file_bytes)} across ${(report.root_file_count || 0).toLocaleString()} file(s)`,
         "",
@@ -4091,6 +4188,26 @@ function getNeighborArticleById(articleId, direction) {
 function resolveArticleById(articleId) {
     if (!articleId) return null;
     return state.articles.find((article) => article.id === articleId) || null;
+}
+
+function upsertArticleInState(savedArticle) {
+    if (!savedArticle?.id) return null;
+    const idx = state.articles.findIndex((article) => article.id === savedArticle.id);
+    if (idx >= 0) {
+        state.articles[idx] = savedArticle;
+    } else {
+        state.articles.push(savedArticle);
+    }
+    if (state.current?.id === savedArticle.id) {
+        state.current = savedArticle;
+    }
+    if (state.abstractPreviewArticle?.id === savedArticle.id) {
+        state.abstractPreviewArticle = savedArticle;
+    }
+    if (pdfViewer.article?.id === savedArticle.id) {
+        pdfViewer.article = savedArticle;
+    }
+    return savedArticle;
 }
 
 async function copyToClipboard(text) {
@@ -6476,7 +6593,7 @@ async function openPdfExternal(article) {
 }
 
 function isUnmodifiedHotkey(binding) {
-    return Boolean(binding) && !binding.ctrl && !binding.alt && !binding.shift;
+    return Boolean(binding) && !binding.disabled && !binding.ctrl && !binding.alt && !binding.shift;
 }
 
 function getDefaultPdfOpenMode() {
@@ -7092,6 +7209,182 @@ function generateBibtex(article) {
     return bib;
 }
 
+const CITATION_SURNAME_PARTICLES = new Set([
+    "al", "ap", "bin", "da", "dal", "de", "del", "della", "dem", "den", "der", "di", "dos",
+    "du", "ibn", "la", "le", "san", "st", "ten", "ter", "van", "von",
+]);
+
+function getCitationBaseTitle(article) {
+    const title = normalizeWhitespace(article?.metadata?.title);
+    if (title) return title;
+    const fileFallback = normalizeWhitespace((article?.pdf_filename || "").replace(/\.pdf$/i, ""));
+    return fileFallback || "Untitled article";
+}
+
+function splitCitationAuthorEntries(authorsRaw) {
+    const normalized = normalizeWhitespace(authorsRaw).replace(/\s*&\s*/g, " and ");
+    if (!normalized) return [];
+    if (normalized.includes(";")) {
+        return normalized
+            .split(/\s*;\s*/)
+            .map((part) => normalizeWhitespace(part))
+            .filter(Boolean);
+    }
+    return normalized
+        .replace(/\s+,?\s+and\s+/gi, ", ")
+        .split(/\s*,\s*/)
+        .map((part) => normalizeWhitespace(part))
+        .filter(Boolean);
+}
+
+function splitCitationAuthorName(rawName) {
+    const normalized = normalizeWhitespace(rawName);
+    if (!normalized) return { family: "", given: "" };
+    if (normalized.includes(",")) {
+        const [family, ...rest] = normalized.split(",");
+        return {
+            family: normalizeWhitespace(family),
+            given: normalizeWhitespace(rest.join(" ")),
+        };
+    }
+
+    const tokens = normalized.split(/\s+/).filter(Boolean);
+    if (tokens.length === 1) {
+        return { family: tokens[0], given: "" };
+    }
+
+    const familyParts = [tokens.pop()];
+    while (tokens.length > 0) {
+        const candidate = tokens[tokens.length - 1];
+        const particleKey = candidate.toLowerCase().replace(/[^\p{L}]/gu, "");
+        if (!CITATION_SURNAME_PARTICLES.has(particleKey)) break;
+        familyParts.unshift(tokens.pop());
+    }
+
+    return {
+        family: familyParts.join(" "),
+        given: tokens.join(" "),
+    };
+}
+
+function buildCitationInitials(givenNameRaw) {
+    const normalized = normalizeWhitespace(givenNameRaw);
+    if (!normalized) return "";
+
+    return normalized
+        .split(/\s+/)
+        .map((part) => {
+            const cleanPart = part.replace(/^[^\p{L}-]+|[^\p{L}-]+$/gu, "");
+            if (!cleanPart) return "";
+            return cleanPart
+                .split("-")
+                .map((segment) => {
+                    const firstLetter = Array.from(segment).find((ch) => /\p{L}/u.test(ch));
+                    return firstLetter ? `${firstLetter.toUpperCase()}.` : "";
+                })
+                .filter(Boolean)
+                .join("-");
+        })
+        .filter(Boolean)
+        .join(" ");
+}
+
+function formatAcsAuthorName(rawName) {
+    const { family, given } = splitCitationAuthorName(rawName);
+    if (!family && !given) return "";
+    const initials = buildCitationInitials(given);
+    if (!family) return initials;
+    return initials ? `${family}, ${initials}` : family;
+}
+
+function formatAcsAuthorList(authorsRaw) {
+    return splitCitationAuthorEntries(authorsRaw)
+        .map((author) => formatAcsAuthorName(author))
+        .filter(Boolean)
+        .join("; ");
+}
+
+function ensureCitationSentence(text) {
+    const normalized = normalizeWhitespace(text);
+    if (!normalized) return "";
+    if (/[.!?]$/.test(normalized)) return normalized;
+    return `${normalized}.`;
+}
+
+function formatCitationDoi(doiRaw) {
+    const normalized = normalizeWhitespace(doiRaw);
+    if (!normalized) return "";
+    const clean = normalized
+        .replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, "")
+        .replace(/^doi:\s*/i, "")
+        .trim();
+    return clean ? `https://doi.org/${clean}` : "";
+}
+
+function buildReadyCitationOutletSegment(md) {
+    const journal = normalizeWhitespace(md.journal);
+    const year = normalizeWhitespace(md.year);
+    const volume = normalizeWhitespace(md.volume);
+    const issue = normalizeWhitespace(md.number);
+    const pages = normalizeWhitespace(md.pages);
+
+    let segment = journal;
+    if (year) {
+        segment = segment ? `${segment} ${year}` : year;
+    }
+
+    const tail = [];
+    if (volume && issue) tail.push(`${volume} (${issue})`);
+    else if (volume) tail.push(volume);
+    else if (issue) tail.push(`(${issue})`);
+    if (pages) tail.push(pages);
+
+    if (tail.length > 0) {
+        segment = segment ? `${segment}, ${tail.join(", ")}` : tail.join(", ");
+    }
+
+    return ensureCitationSentence(segment);
+}
+
+function extractCitationFirstAuthorLastName(authorsRaw) {
+    const [firstAuthor] = splitCitationAuthorEntries(authorsRaw);
+    if (!firstAuthor) return "";
+    const { family, given } = splitCitationAuthorName(firstAuthor);
+    return family || given;
+}
+
+function shortenCitationTitle(titleRaw, wordLimit = 5) {
+    const normalized = normalizeWhitespace(titleRaw).replace(/[,:;.!?]+$/g, "");
+    if (!normalized) return "";
+    const words = normalized.split(/\s+/);
+    if (words.length <= wordLimit) return normalized;
+    return `${words.slice(0, wordLimit).join(" ")}...`;
+}
+
+function generateReadyToPasteCitation(article) {
+    const md = article.metadata || {};
+    const authors = ensureCitationSentence(formatAcsAuthorList(md.authors));
+    const title = ensureCitationSentence(getCitationBaseTitle(article));
+    const outlet = buildReadyCitationOutletSegment(md);
+    const doi = formatCitationDoi(md.doi);
+    return [authors, title, outlet, doi].filter(Boolean).join(" ");
+}
+
+function generateAbbreviatedCitation(article) {
+    const md = article.metadata || {};
+    const leadAuthor = extractCitationFirstAuthorLastName(md.authors) || "Unknown";
+    const year = normalizeWhitespace(md.year) || "n.d.";
+    const titleSnippet = shortenCitationTitle(getCitationBaseTitle(article), 5);
+    return titleSnippet ? `${leadAuthor}, ${year}, ${titleSnippet}` : `${leadAuthor}, ${year}`;
+}
+
+function copyArticleCitationText(text, successMessage, failureMessage) {
+    return copyToClipboard(text).then((ok) => {
+        showToast(ok ? successMessage : failureMessage);
+        return ok;
+    });
+}
+
 // Color helpers for tag tinting
 function hexToHsl(hex) {
     let r = parseInt(hex.slice(1, 3), 16) / 255;
@@ -7376,7 +7669,11 @@ async function removeTagEverywhere() {
 
 // ---- Hotkey resolution ----
 function modMatch(evt, binding) {
-    return evt.ctrlKey === binding.ctrl && evt.altKey === binding.alt && evt.shiftKey === binding.shift;
+    return Boolean(binding)
+        && !binding.disabled
+        && evt.ctrlKey === binding.ctrl
+        && evt.altKey === binding.alt
+        && evt.shiftKey === binding.shift;
 }
 
 // Returns true if an action was taken, false if we should prevent default
@@ -7387,7 +7684,27 @@ function resolveClickAction(evt, article) {
     if (modMatch(evt, hk.copyBibtex)) {
         evt.preventDefault(); evt.stopPropagation();
         const bib = generateBibtex(article);
-        copyToClipboard(bib).then(ok => showToast(ok ? "BibTeX copied to clipboard" : "Failed to copy BibTeX"));
+        copyArticleCitationText(bib, "BibTeX copied to clipboard", "Failed to copy BibTeX");
+        return true;
+    }
+    if (modMatch(evt, hk.copyReadyCitation)) {
+        evt.preventDefault(); evt.stopPropagation();
+        const citation = generateReadyToPasteCitation(article);
+        copyArticleCitationText(
+            citation,
+            "Ready-to-paste citation copied to clipboard",
+            "Failed to copy ready-to-paste citation",
+        );
+        return true;
+    }
+    if (modMatch(evt, hk.copyAbbreviatedCitation)) {
+        evt.preventDefault(); evt.stopPropagation();
+        const citation = generateAbbreviatedCitation(article);
+        copyArticleCitationText(
+            citation,
+            "Abbreviated citation copied to clipboard",
+            "Failed to copy abbreviated citation",
+        );
         return true;
     }
     if (modMatch(evt, hk.openLocation)) { evt.preventDefault(); evt.stopPropagation(); openFileLocation(article); return true; }
@@ -7403,6 +7720,8 @@ const CLICK_ACTIONS = [
     { key: "editMetadata", label: "edit metadata" },
     { key: "openAbstract", label: "preview abstract" },
     { key: "copyBibtex", label: "copy BibTeX" },
+    { key: "copyReadyCitation", label: "copy ready-to-paste citation" },
+    { key: "copyAbbreviatedCitation", label: "copy abbreviated citation" },
     { key: "openLocation", label: "open file location" },
 ];
 const KEYBOARD_SHORTCUTS = [
@@ -7476,6 +7795,21 @@ function buildHotkeyTable() {
         return btn;
     };
 
+    const makeToggleLabel = (label, disabled, toggle) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = label;
+        btn.className = "shortcut-toggle-label";
+        if (disabled) btn.classList.add("is-disabled");
+        btn.title = disabled ? "Click to re-enable" : "Click to disable";
+        btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            toggle();
+            buildHotkeyTable();
+        });
+        return btn;
+    };
+
     // ─── Click-action section ───
     const clickHeader = document.createElement("div");
     clickHeader.style.cssText = "font-size:0.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;padding:6px 0 4px;";
@@ -7488,6 +7822,7 @@ function buildHotkeyTable() {
     const bindingCounts = {};
     for (const action of CLICK_ACTIONS) {
         const b = state.hotkeys[action.key];
+        if (!b || b.disabled) continue;
         const key = `${b.ctrl}-${b.alt}-${b.shift}`;
         bindingCounts[key] = (bindingCounts[key] || 0) + 1;
     }
@@ -7495,7 +7830,8 @@ function buildHotkeyTable() {
     let hasDuplicates = false;
     for (const action of CLICK_ACTIONS) {
         const binding = state.hotkeys[action.key];
-        const isDuplicate = bindingCounts[`${binding.ctrl}-${binding.alt}-${binding.shift}`] > 1;
+        const isDisabled = Boolean(binding?.disabled);
+        const isDuplicate = !isDisabled && bindingCounts[`${binding.ctrl}-${binding.alt}-${binding.shift}`] > 1;
         if (isDuplicate) hasDuplicates = true;
 
         const tr = document.createElement("tr");
@@ -7504,16 +7840,21 @@ function buildHotkeyTable() {
             tr.style.backgroundColor = "rgba(255, 60, 60, 0.1)";
         }
         const tdLabel = document.createElement("td");
-        tdLabel.textContent = action.label;
         tdLabel.style.padding = "5px 0 5px 4px";
+        tdLabel.appendChild(makeToggleLabel(action.label, isDisabled, () => {
+            binding.disabled = !binding.disabled;
+            saveHotkeys();
+        }));
         const tdMods = document.createElement("td");
         tdMods.style.cssText = "display:flex;gap:4px;align-items:center;padding:5px 0;";
-        tdMods.appendChild(makeModBtn("Ctrl", binding.ctrl, () => { binding.ctrl = !binding.ctrl; saveHotkeys(); }));
-        tdMods.appendChild(makeModBtn("Alt", binding.alt, () => { binding.alt = !binding.alt; saveHotkeys(); }));
-        tdMods.appendChild(makeModBtn("Shift", binding.shift, () => { binding.shift = !binding.shift; saveHotkeys(); }));
+        if (!isDisabled) {
+            tdMods.appendChild(makeModBtn("Ctrl", binding.ctrl, () => { binding.ctrl = !binding.ctrl; saveHotkeys(); }));
+            tdMods.appendChild(makeModBtn("Alt", binding.alt, () => { binding.alt = !binding.alt; saveHotkeys(); }));
+            tdMods.appendChild(makeModBtn("Shift", binding.shift, () => { binding.shift = !binding.shift; saveHotkeys(); }));
+        }
         const tdClick = document.createElement("td");
         tdClick.style.cssText = "padding:5px 0 5px 6px;opacity:0.6;font-size:0.78rem;white-space:nowrap;";
-        tdClick.textContent = "+Click";
+        tdClick.textContent = isDisabled ? "" : "+Click";
         tr.appendChild(tdLabel);
         tr.appendChild(tdMods);
         tr.appendChild(tdClick);
@@ -7565,6 +7906,7 @@ function buildHotkeyTable() {
 
     for (const shortcut of KEYBOARD_SHORTCUTS) {
         const tr = document.createElement("tr");
+        const isDisabled = isKeyboardShortcutDisabled(shortcut.key);
         const isDuplicate = getKeyboardShortcutBindings(shortcut.key).some((binding) => kbBindingCounts[binding] > 1);
         if (isDuplicate) {
             hasKeyboardDuplicates = true;
@@ -7572,17 +7914,25 @@ function buildHotkeyTable() {
             tr.style.backgroundColor = "rgba(255, 60, 60, 0.1)";
         }
         const tdL = document.createElement("td");
-        tdL.textContent = shortcut.label;
         tdL.style.padding = "5px 0";
+        tdL.appendChild(makeToggleLabel(shortcut.label, isDisabled, () => {
+            const nextDisabled = !isKeyboardShortcutDisabled(shortcut.key);
+            if (nextDisabled && _hkListening?.key === shortcut.key) {
+                _hkListening.cleanup();
+                _hkListening = null;
+            }
+            setKeyboardShortcutDisabled(shortcut.key, nextDisabled);
+            saveKeyboardShortcuts();
+        }));
 
         const tdDesc = document.createElement("td");
         const isListening = _hkListening?.key === shortcut.key;
-        if (isListening) {
+        if (isListening && !isDisabled) {
             const listening = document.createElement("span");
             listening.textContent = "⌨ Listening…";
             listening.style.cssText = "color:var(--accent-2);font-size:0.8rem;font-style:italic;";
             tdDesc.appendChild(listening);
-        } else {
+        } else if (!isDisabled) {
             const kbd = document.createElement("kbd");
             kbd.textContent = getKeyboardShortcutDisplay(shortcut.key);
             tdDesc.appendChild(kbd);
@@ -7590,37 +7940,39 @@ function buildHotkeyTable() {
 
         const tdEdit = document.createElement("td");
         tdEdit.style.cssText = "text-align:right;padding:5px 0;";
-        const pencil = document.createElement("button");
-        pencil.type = "button";
-        pencil.textContent = "···";
-        pencil.className = "ghost";
-        pencil.title = "Listen for key combo";
-        pencil.style.cssText = `font-size:0.85rem;font-weight:bold;padding:1px 6px;${isListening ? "color:var(--accent-2);" : ""}`;
-        pencil.addEventListener("click", (e) => {
-            e.stopPropagation();
-            if (_hkListening) {
-                _hkListening.cleanup();
-                _hkListening = null;
+        if (!isDisabled) {
+            const pencil = document.createElement("button");
+            pencil.type = "button";
+            pencil.textContent = "···";
+            pencil.className = "ghost";
+            pencil.title = "Listen for key combo";
+            pencil.style.cssText = `font-size:0.85rem;font-weight:bold;padding:1px 6px;${isListening ? "color:var(--accent-2);" : ""}`;
+            pencil.addEventListener("click", (e) => {
+                e.stopPropagation();
+                if (_hkListening) {
+                    _hkListening.cleanup();
+                    _hkListening = null;
+                    buildHotkeyTable();
+                    return;
+                }
+                _hkListening = { key: shortcut.key, cleanup: () => { } };
                 buildHotkeyTable();
-                return;
-            }
-            _hkListening = { key: shortcut.key, cleanup: () => { } };
-            buildHotkeyTable();
-            const handler = (ke) => {
-                ke.preventDefault();
-                ke.stopPropagation();
-                const binding = eventToShortcutBinding(ke);
-                if (!binding) return;
-                state.keyboardShortcuts[shortcut.key] = [binding];
-                saveKeyboardShortcuts();
-                _hkListening.cleanup();
-                _hkListening = null;
-                buildHotkeyTable();
-            };
-            document.addEventListener("keydown", handler, { capture: true });
-            _hkListening.cleanup = () => document.removeEventListener("keydown", handler, { capture: true });
-        });
-        tdEdit.appendChild(pencil);
+                const handler = (ke) => {
+                    ke.preventDefault();
+                    ke.stopPropagation();
+                    const binding = eventToShortcutBinding(ke);
+                    if (!binding) return;
+                    setKeyboardShortcutBindings(shortcut.key, [binding]);
+                    saveKeyboardShortcuts();
+                    _hkListening.cleanup();
+                    _hkListening = null;
+                    buildHotkeyTable();
+                };
+                document.addEventListener("keydown", handler, { capture: true });
+                _hkListening.cleanup = () => document.removeEventListener("keydown", handler, { capture: true });
+            });
+            tdEdit.appendChild(pencil);
+        }
         tr.appendChild(tdL);
         tr.appendChild(tdDesc);
         tr.appendChild(tdEdit);
@@ -7838,8 +8190,9 @@ async function refreshLibraryRootInfo() {
         if (dom.libraryRootPath) {
             const detail = state.usingDefaultLibraryRoot ? " (default local folder)" : "";
             const demoSuffix = info?.demo_mode_enabled ? " [demo mode active]" : "";
-            dom.libraryRootPath.textContent = `${state.libraryRootPath || "(unknown)"}${detail}${demoSuffix}`;
-            dom.libraryRootPath.title = state.libraryRootPath || "";
+            const displayPath = formatDisplayPath(state.libraryRootPath);
+            dom.libraryRootPath.textContent = `${displayPath}${detail}${demoSuffix}`;
+            dom.libraryRootPath.title = displayPath;
         }
     } catch (err) {
         const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
@@ -7848,6 +8201,206 @@ async function refreshLibraryRootInfo() {
             dom.libraryRootPath.title = "";
         }
     }
+}
+
+function libraryRootSwitchModalOpen() {
+    return Boolean(dom.libraryRootSwitchModal && !dom.libraryRootSwitchModal.classList.contains("hidden"));
+}
+
+function describeLibraryRootTargetStatus(preview) {
+    switch (preview?.target_status) {
+        case "empty_with_other_files":
+            return "Empty with other files";
+        case "partial_library":
+            return "Partial or stale library";
+        case "existing_library":
+            return "Existing library";
+        case "empty":
+        default:
+            return "Empty for library use";
+    }
+}
+
+function describeLibraryRootRecommendation(actionId) {
+    switch (actionId) {
+        case "copy_current":
+            return "Move current library here";
+        case "merge_into_target":
+            return "Experimental merge";
+        case "switch_reindex":
+            return "Switch and reindex";
+        case "switch_existing":
+            return "Use target as-is";
+        case "switch_empty":
+        default:
+            return "Switch without copy";
+    }
+}
+
+function buildLibraryRootSwitchSummary(preview) {
+    if (!preview) return "Review the selected folder before switching the shared library root.";
+    switch (preview.recommended_action) {
+        case "copy_current":
+            return "The selected folder does not contain an existing library. Move the current Articles and library_data into it if you want to relocate the library without starting fresh.";
+        case "merge_into_target":
+            return "The selected folder already contains a different library. Experimental merge will try to add current articles that the target does not already appear to contain, then switch and reindex.";
+        case "switch_reindex":
+            return "The selected folder already has library files, but they look incomplete or stale. Switching will not merge libraries, so reindexing after the switch is the safest option.";
+        case "switch_existing":
+            return "The selected folder already looks like a library. Switching will use its existing Articles and library_data folders as-is.";
+        case "switch_empty":
+        default:
+            return "The selected folder does not contain library data. Switching without copying will point the app at a fresh library root.";
+    }
+}
+
+function buildLibraryRootSwitchActions(preview) {
+    const status = preview?.target_status || "empty";
+    const actionSet = {
+        primary: null,
+        secondary: null,
+        merge: null,
+        dangerNote: "",
+    };
+    if (status === "empty" || status === "empty_with_other_files") {
+        if (preview?.copy_supported) {
+            actionSet.primary = { id: "copy_current", label: "Move Current Library Here" };
+            actionSet.secondary = { id: "switch_empty", label: "Switch Without Copy" };
+        } else {
+            actionSet.primary = { id: "switch_empty", label: "Switch to This Folder" };
+        }
+        return actionSet;
+    }
+    if (preview?.target_needs_reindex) {
+        actionSet.primary = { id: "switch_reindex", label: "Switch and Reindex" };
+        actionSet.secondary = { id: "switch_existing", label: "Switch As-Is" };
+    } else {
+        actionSet.primary = { id: "switch_existing", label: "Use Target Library" };
+        actionSet.secondary = { id: "switch_reindex", label: "Use Target and Reindex" };
+    }
+    if (preview?.merge_available) {
+        actionSet.merge = {
+            id: "merge_into_target",
+            label: `Merge Current Library Here (${Number(preview?.merge_add_count) || 0})`,
+        };
+        actionSet.dangerNote = "Experimental merge will copy missing current articles, metadata, and thumbnails into the selected library, then switch and reindex. It may be slow or unstable, so review backups first.";
+    }
+    return actionSet;
+}
+
+function configureLibraryRootSwitchButton(button, action) {
+    if (!button) return;
+    if (!action) {
+        button.classList.add("hidden");
+        button.disabled = false;
+        delete button.dataset.action;
+        return;
+    }
+    button.textContent = action.label;
+    button.dataset.action = action.id;
+    button.disabled = false;
+    button.classList.remove("hidden");
+}
+
+function closeLibraryRootSwitchModal({ canceled = false, action = null } = {}) {
+    state.libraryRootSwitchPath = "";
+    state.libraryRootSwitchPreview = null;
+    if (dom.libraryRootSwitchModal) {
+        dom.libraryRootSwitchModal.classList.add("hidden");
+    }
+    configureLibraryRootSwitchButton(dom.libraryRootSwitchPrimary, null);
+    configureLibraryRootSwitchButton(dom.libraryRootSwitchSecondary, null);
+    configureLibraryRootSwitchButton(dom.libraryRootSwitchMerge, null);
+    if (dom.libraryRootSwitchDangerNote) {
+        dom.libraryRootSwitchDangerNote.textContent = "";
+        dom.libraryRootSwitchDangerNote.classList.add("hidden");
+    }
+    const resolve = pendingLibraryRootSwitchResolve;
+    pendingLibraryRootSwitchResolve = null;
+    if (typeof resolve === "function") {
+        resolve(action);
+    }
+    if (canceled) {
+        setStatus("Library root change canceled.");
+    }
+}
+
+async function openSelectedLibraryRootCandidateFolder() {
+    const targetPath = state.libraryRootSwitchPath;
+    if (!targetPath) return;
+    try {
+        await invoke("open_selected_library_root_folder", { path: targetPath });
+    } catch (err) {
+        const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
+        setStatus(`Failed to open selected folder: ${message}`, true);
+    }
+}
+
+function openLibraryRootSwitchModal(preview) {
+    if (typeof pendingLibraryRootSwitchResolve === "function") {
+        pendingLibraryRootSwitchResolve(null);
+    }
+    state.libraryRootSwitchPath = preview?.path || "";
+    state.libraryRootSwitchPreview = preview || null;
+
+    if (dom.libraryRootSwitchPath) {
+        const displayPath = formatDisplayPath(preview?.path);
+        dom.libraryRootSwitchPath.textContent = displayPath;
+        dom.libraryRootSwitchPath.title = displayPath;
+    }
+    if (dom.libraryRootSwitchSummary) {
+        dom.libraryRootSwitchSummary.textContent = buildLibraryRootSwitchSummary(preview);
+    }
+    if (dom.libraryRootSwitchStatus) {
+        dom.libraryRootSwitchStatus.textContent = describeLibraryRootTargetStatus(preview);
+    }
+    if (dom.libraryRootSwitchPdfCount) {
+        dom.libraryRootSwitchPdfCount.textContent = String(preview?.target_article_pdf_count || 0);
+    }
+    if (dom.libraryRootSwitchIndexCount) {
+        dom.libraryRootSwitchIndexCount.textContent = preview?.target_index_read_error
+            ? "Unreadable"
+            : (preview?.target_index_exists ? String(preview?.target_index_article_count || 0) : "Missing");
+    }
+    if (dom.libraryRootSwitchDataCount) {
+        dom.libraryRootSwitchDataCount.textContent = String(preview?.target_library_data_file_count || 0);
+    }
+    if (dom.libraryRootSwitchOtherCount) {
+        dom.libraryRootSwitchOtherCount.textContent = String(preview?.target_root_other_item_count || 0);
+    }
+    if (dom.libraryRootSwitchRecommendation) {
+        dom.libraryRootSwitchRecommendation.textContent = describeLibraryRootRecommendation(preview?.recommended_action);
+    }
+    if (dom.libraryRootSwitchNoteList) {
+        clearNode(dom.libraryRootSwitchNoteList);
+        const notes = Array.isArray(preview?.notes) ? preview.notes : [];
+        notes.forEach((note) => {
+            const item = document.createElement("div");
+            item.className = "library-root-switch-note-item";
+            item.textContent = note;
+            dom.libraryRootSwitchNoteList.appendChild(item);
+        });
+        if (dom.libraryRootSwitchNoteBlock) {
+            dom.libraryRootSwitchNoteBlock.classList.toggle("hidden", notes.length === 0);
+        }
+    }
+
+    const actions = buildLibraryRootSwitchActions(preview);
+    configureLibraryRootSwitchButton(dom.libraryRootSwitchPrimary, actions.primary || null);
+    configureLibraryRootSwitchButton(dom.libraryRootSwitchSecondary, actions.secondary || null);
+    configureLibraryRootSwitchButton(dom.libraryRootSwitchMerge, actions.merge || null);
+    if (dom.libraryRootSwitchDangerNote) {
+        dom.libraryRootSwitchDangerNote.textContent = actions.dangerNote || "";
+        dom.libraryRootSwitchDangerNote.classList.toggle("hidden", !actions.dangerNote);
+    }
+
+    if (dom.libraryRootSwitchModal) {
+        dom.libraryRootSwitchModal.classList.remove("hidden");
+    }
+
+    return new Promise((resolve) => {
+        pendingLibraryRootSwitchResolve = resolve;
+    });
 }
 
 async function switchLibraryRoot() {
@@ -7859,24 +8412,62 @@ async function switchLibraryRoot() {
             setStatus("Library root change canceled.");
             return;
         }
-        if (selectedPath === state.libraryRootPath) {
+        if (formatDisplayPath(selectedPath) === formatDisplayPath(state.libraryRootPath)) {
             setStatus("Library root unchanged.");
             return;
         }
 
-        const switchConfirmed = await confirmUserAction(
-            `Switch the shared library root to:\n\n${selectedPath}\n\nUse this if the folder is already mirrored by Google Drive Desktop or another sync client.`,
-        );
-        if (!switchConfirmed) {
+        setStatus("Inspecting selected library root...");
+        const preview = await invoke("preview_library_root_switch", { path: selectedPath });
+        setFilesMenuOpen(false);
+        const selectedAction = await openLibraryRootSwitchModal(preview);
+        if (!selectedAction) {
             setStatus("Library root change canceled.");
             return;
         }
 
-        const hasCurrentLibrary = state.total > 0 || Boolean(state.generatedAt);
-        const copyExisting = hasCurrentLibrary
-            ? await confirmUserAction("Copy the current library contents into the selected folder before switching? Choose Cancel to switch without copying.")
-            : false;
+        if (selectedAction === "merge_into_target") {
+            const mergeConfirmed = await confirmUserAction(
+                "Experimental merge is still considered unstable. It will copy current articles that do not already appear to exist in the selected library, then switch roots and reindex. Continue?",
+            );
+            if (!mergeConfirmed) {
+                setStatus("Library root change canceled.");
+                return;
+            }
 
+            setStatus("Merging current library into selected folder...");
+            const mergeResult = await invoke("merge_library_into_root", { path: selectedPath });
+            if (Array.isArray(mergeResult?.warnings)) {
+                mergeResult.warnings.forEach((warning) => {
+                    if (warning) debugLog(`Library merge warning: ${warning}`);
+                });
+            }
+
+            const result = await invoke("set_library_root", {
+                path: selectedPath,
+                copyExisting: false,
+            });
+
+            await refreshLibraryRootInfo();
+            await reloadLibraryForStorageSwitch();
+
+            const targetName = basenameFromAnyPath(result?.path || selectedPath);
+            const mergedCount = Number(mergeResult?.merged_count) || 0;
+            const warningCount = Number(mergeResult?.warning_count) || 0;
+            const reindexed = await performReindex({
+                closeMenu: false,
+                initialStatus: `Library root switched to ${targetName}. Reindexing merged library...`,
+                successStatus: warningCount > 0
+                    ? `Library root switched to ${targetName}. Merged ${mergedCount} article(s), reindexed, and logged ${warningCount} warning(s).`
+                    : `Library root switched to ${targetName}. Merged ${mergedCount} article(s) and reindexed.`,
+                failurePrefix: "Library root switched after merge, but reindex failed",
+            });
+            debugLog(`Library root merged from ${mergeResult?.previous_path || state.libraryRootPath} into ${mergeResult?.path || selectedPath}. merged=${mergedCount} skipped=${Number(mergeResult?.skipped_count) || 0} warnings=${warningCount} reindexed=${Boolean(reindexed)}`);
+            return;
+        }
+
+        const copyExisting = selectedAction === "copy_current";
+        const reindexAfterSwitch = selectedAction === "switch_reindex";
         setStatus(copyExisting ? "Switching library root and copying library data..." : "Switching library root...");
         const result = await invoke("set_library_root", {
             path: selectedPath,
@@ -7886,9 +8477,21 @@ async function switchLibraryRoot() {
         await refreshLibraryRootInfo();
         await reloadLibraryForStorageSwitch();
 
+        const targetName = basenameFromAnyPath(result?.path || selectedPath);
+        if (reindexAfterSwitch) {
+            const reindexed = await performReindex({
+                closeMenu: false,
+                initialStatus: `Library root switched to ${targetName}. Reindexing...`,
+                successStatus: `Library root switched to ${targetName} and reindexed.`,
+                failurePrefix: "Library root switched, but reindex failed",
+            });
+            debugLog(`Library root switched from ${result?.previous_path || state.libraryRootPath} to ${result?.path || selectedPath}. copied=${Boolean(result?.copied_existing)} reindexed=${Boolean(reindexed)}`);
+            return;
+        }
+
         const copySuffix = result?.copied_existing ? " Current library data was copied to the new folder." : "";
-        setStatus(`Library root switched to ${basenameFromAnyPath(result?.path || selectedPath)}.${copySuffix}`);
-        debugLog(`Library root switched from ${result?.previous_path || state.libraryRootPath} to ${result?.path || selectedPath}. copied=${Boolean(result?.copied_existing)}`);
+        setStatus(`Library root switched to ${targetName}.${copySuffix}`);
+        debugLog(`Library root switched from ${result?.previous_path || state.libraryRootPath} to ${result?.path || selectedPath}. copied=${Boolean(result?.copied_existing)} reindexed=false`);
     } catch (err) {
         const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
         setStatus(`Library root change failed: ${message}`, true);
@@ -8329,28 +8932,40 @@ function openAbstract(article) {
         }
     }
 
-    // Also scan text for DOIs if autoRefCompile is on (supplemental)
-    if (dom.abstractReferencesSection && state.autoRefCompile) {
-        invoke("get_article_text_back", { articleId: article.id }).then(text => {
-            if (!text) return;
-            const matches = text.match(/\b10\.\d{4,9}\/[-._;()/:A-Za-z0-9]+\b/g) || [];
-            const uniqueDois = [...new Set(matches)];
-            const ownDoi = normalizeWhitespace(md.doi).toLowerCase();
-            const alreadyShown = new Set(getReferenceDois(md).map((d) =>
-                normalizeWhitespace(extractDoiFromText(d) || d).toLowerCase(),
-            ));
-            const refDois = uniqueDois.filter((d) => {
-                const clean = normalizeWhitespace(d).toLowerCase();
-                return clean && clean !== ownDoi && !alreadyShown.has(clean);
-            });
-            if (refDois.length > 0) {
-                dom.abstractReferencesList.appendChild(
-                    createAbstractReferenceColumns(refDois, nextReferenceOrdinal, true),
+    // Only try PDF-based ref scanning when the user wants refs shown and no stored refs exist yet.
+    if (dom.abstractReferencesSection && state.showRefDois && state.autoRefCompile && storedRefDois.length === 0) {
+        const previewArticleId = article.id;
+        invoke("resolve_article_reference_dois", { articleId: previewArticleId }).then((result) => {
+            if (state.abstractPreviewArticle?.id !== previewArticleId) return;
+            if (dom.abstractModal?.classList.contains("hidden")) return;
+
+            const updatedArticle = upsertArticleInState(result?.article)
+                || resolveArticleById(previewArticleId)
+                || article;
+            const status = String(result?.status || "");
+            const message = typeof result?.message === "string" ? result.message.trim() : "";
+            const resolvedRefDois = getReferenceDois(updatedArticle?.metadata);
+
+            if ((status === "scanned" || status === "stored") && resolvedRefDois.length > 0) {
+                debugLog(
+                    `Reference DOI scan resolved ${resolvedRefDois.length} item(s) for article ${previewArticleId} (status=${status}).`,
                 );
-                nextReferenceOrdinal += refDois.length;
-                dom.abstractReferencesSection.style.display = "block";
+                openAbstract(updatedArticle);
+                return;
             }
-        }).catch(err => console.warn("Failed to extract backend text:", err));
+
+            if (status === "cached_failure" || status === "cached_timeout") {
+                debugLog(message || `Automatic PDF reference scan skipped for article ${previewArticleId} (${status}).`);
+                return;
+            }
+
+            if (status === "cached_empty" || status === "scanned_empty") {
+                debugLog(message || `No reference DOIs were available from the PDF for article ${previewArticleId}.`);
+            }
+        }).catch((err) => {
+            const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
+            console.warn("Failed to resolve article reference DOIs:", message);
+        });
     }
 }
 
@@ -9402,11 +10017,18 @@ async function resetAutoThumbnail() {
     }
 }
 
-async function doReindex() {
+async function performReindex({
+    closeMenu = true,
+    initialStatus = null,
+    successStatus = "Reindex complete.",
+    failurePrefix = "Reindex failed",
+} = {}) {
     const strategy = dom.strategySelect?.value || state.strategy || "hybrid";
     const fast = !dom.parsePdfs.checked;
-    setFilesMenuOpen(false);
-    setStatus(`Reindexing with ${strategy} strategy${fast ? " (fast mode)" : ""}...`);
+    if (closeMenu) {
+        setFilesMenuOpen(false);
+    }
+    setStatus(initialStatus || `Reindexing with ${strategy} strategy${fast ? " (fast mode)" : ""}...`);
     debugLog(`Reindex requested (strategy=${strategy}, fast=${fast}).`);
     dom.reindexBtn.disabled = true;
     try {
@@ -9414,17 +10036,23 @@ async function doReindex() {
         thumbCache.clear();
         invalidateTagSuggestionCorpus();
         await Promise.all([loadTags(), loadArticles()]);
-        setStatus("Reindex complete.");
+        setStatus(successStatus);
         debugLog("Reindex completed successfully.");
         if (state.articles.length > 0) {
             checkDuplicates();
         }
+        return true;
     } catch (err) {
         const message = typeof err === "string" ? err : (err instanceof Error ? err.message : "Unknown error");
-        setStatus(`Reindex failed: ${message}`, true);
+        setStatus(`${failurePrefix}: ${message}`, true);
+        return false;
     } finally {
         dom.reindexBtn.disabled = false;
     }
+}
+
+async function doReindex() {
+    return performReindex();
 }
 
 async function checkDuplicates() {
@@ -9762,6 +10390,16 @@ function wireEvents() {
     if (dom.experimentalSection && dom.experimentalArrow) {
         dom.experimentalSection.addEventListener("toggle", () => {
             dom.experimentalArrow.style.transform = dom.experimentalSection.open ? "rotate(90deg)" : "";
+        });
+    }
+    if (dom.tagsSection && dom.tagsArrow) {
+        dom.tagsSection.addEventListener("toggle", () => {
+            dom.tagsArrow.style.transform = dom.tagsSection.open ? "rotate(90deg)" : "";
+        });
+    }
+    if (dom.librarySection && dom.libraryArrow) {
+        dom.librarySection.addEventListener("toggle", () => {
+            dom.libraryArrow.style.transform = dom.librarySection.open ? "rotate(90deg)" : "";
         });
     }
 
@@ -10657,11 +11295,44 @@ function wireEvents() {
             }
         });
     }
-    if (dom.openArticlesBtn) {
-        dom.openArticlesBtn.addEventListener("click", () => {
-            invoke("open_articles_folder").catch(err => {
-                setStatus(`Failed to open folder: ${err}`, true);
-            });
+    if (dom.libraryRootSwitchClose) {
+        dom.libraryRootSwitchClose.addEventListener("click", () => closeLibraryRootSwitchModal({ canceled: true }));
+    }
+    if (dom.libraryRootSwitchCancel) {
+        dom.libraryRootSwitchCancel.addEventListener("click", () => closeLibraryRootSwitchModal({ canceled: true }));
+    }
+    if (dom.libraryRootSwitchPrimary) {
+        dom.libraryRootSwitchPrimary.addEventListener("click", () => {
+            const action = dom.libraryRootSwitchPrimary.dataset.action || null;
+            if (action) {
+                closeLibraryRootSwitchModal({ action });
+            }
+        });
+    }
+    if (dom.libraryRootSwitchSecondary) {
+        dom.libraryRootSwitchSecondary.addEventListener("click", () => {
+            const action = dom.libraryRootSwitchSecondary.dataset.action || null;
+            if (action) {
+                closeLibraryRootSwitchModal({ action });
+            }
+        });
+    }
+    if (dom.libraryRootSwitchMerge) {
+        dom.libraryRootSwitchMerge.addEventListener("click", () => {
+            const action = dom.libraryRootSwitchMerge.dataset.action || null;
+            if (action) {
+                closeLibraryRootSwitchModal({ action });
+            }
+        });
+    }
+    if (dom.libraryRootSwitchOpenFolder) {
+        dom.libraryRootSwitchOpenFolder.addEventListener("click", openSelectedLibraryRootCandidateFolder);
+    }
+    if (dom.libraryRootSwitchModal) {
+        dom.libraryRootSwitchModal.addEventListener("click", (evt) => {
+            if (evt.target === dom.libraryRootSwitchModal) {
+                closeLibraryRootSwitchModal({ canceled: true });
+            }
         });
     }
     if (dom.renameTagBtn) {
@@ -11290,7 +11961,7 @@ function wireEvents() {
         if (handleModalKeyboardNavigation(evt)) return;
 
         if (evt.key === "Escape") {
-            // Priority: autocomplete -> color editors -> sync import -> PDF viewer -> abstract -> duplicate/edit modal -> hotkeys -> backup modal
+            // Priority: autocomplete -> color editors -> library-root switch -> sync import -> PDF viewer -> abstract -> duplicate/edit modal -> hotkeys -> backup modal
             if (!dom.tagAutocomplete.classList.contains("hidden")) {
                 dom.tagAutocomplete.classList.add("hidden");
                 return;
@@ -11301,6 +11972,10 @@ function wireEvents() {
             }
             if (dom.themeEditor && !dom.themeEditor.classList.contains("hidden")) {
                 closeThemeEditor();
+                return;
+            }
+            if (libraryRootSwitchModalOpen()) {
+                closeLibraryRootSwitchModal({ canceled: true });
                 return;
             }
             if (syncImportModalOpen()) {

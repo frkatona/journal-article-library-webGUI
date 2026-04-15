@@ -566,6 +566,21 @@ button.danger {
   border: 1px solid rgba(224, 93, 93, 0.45);
 }
 
+button.icon-button {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+button.icon-button svg {
+  width: 15px;
+  height: 15px;
+}
+
 button:hover {
   filter: brightness(1.08);
 }
@@ -987,13 +1002,15 @@ main {
   margin: 0;
 }
 
-.sync-import-modal-card {
+.sync-import-modal-card,
+.library-root-switch-modal-card {
   width: min(720px, 100%);
   height: auto;
   max-height: min(84vh, 760px);
 }
 
-.sync-import-body {
+.sync-import-body,
+.library-root-switch-body {
   padding: 16px 18px 18px;
   display: flex;
   flex-direction: column;
@@ -1005,13 +1022,15 @@ main {
   word-break: break-word;
 }
 
-.sync-import-summary-grid {
+.sync-import-summary-grid,
+.library-root-switch-summary-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 10px;
 }
 
-.sync-import-summary-item {
+.sync-import-summary-item,
+.library-root-switch-summary-item {
   display: flex;
   flex-direction: column;
   gap: 5px;
@@ -1021,7 +1040,8 @@ main {
   background: rgba(10, 24, 36, 0.32);
 }
 
-.sync-import-summary-item strong {
+.sync-import-summary-item strong,
+.library-root-switch-summary-item strong {
   font-size: 0.98rem;
   color: var(--text);
 }
@@ -1084,6 +1104,77 @@ main {
   justify-content: flex-end;
   gap: 10px;
   padding-top: 4px;
+}
+
+.library-root-switch-summary {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.library-root-field {
+  gap: 4px;
+}
+
+.library-root-label {
+  font-size: 0.82rem;
+}
+
+.library-root-display-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.library-root-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.74rem;
+  line-height: 1.35;
+  color: var(--muted);
+  word-break: break-word;
+}
+
+.library-root-open-btn {
+  margin-top: 1px;
+  color: var(--muted);
+}
+
+.library-root-switch-note-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(82, 208, 163, 0.16);
+  background: rgba(82, 208, 163, 0.08);
+}
+
+.library-root-switch-note-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.library-root-switch-note-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.library-root-switch-note-item {
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.library-root-switch-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 4px;
+  flex-wrap: wrap;
 }
 
 #abstract-modal .modal-header {
@@ -2848,7 +2939,7 @@ main {
 
 .pdf-copy-preview {
   position: fixed;
-  right: 24px;
+  left: 24px;
   bottom: 78px;
   width: min(420px, calc(100vw - 24px));
   padding: 12px 14px 10px;
@@ -3098,7 +3189,7 @@ main {
   }
 
   .pdf-copy-preview {
-    right: 10px;
+    left: 10px;
     bottom: 72px;
   }
 }
@@ -3475,6 +3566,21 @@ button.secondary {
   min-height: auto;
   overflow: visible;
   padding-right: 4px;
+}
+
+.shortcut-toggle-label {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shortcut-toggle-label.is-disabled {
+  color: var(--muted);
+  opacity: 0.68;
 }
 
 .hotkeys-debug-log {
