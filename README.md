@@ -1,4 +1,4 @@
-﻿# Literature Library
+# Literature Library
 
 Windows application for browsing local PDFs, geared towards collections of scientific literature.
 
@@ -1251,7 +1251,8 @@ forgot about 0.9.5 LOL
 
 ---
 
-- cloud-sync alpha: set library root (using google drive here)
+- cloud-sync alpha: 'set library root' (using google drive here)
+  - allows merge with danger warning if there are already articles in the library root folder
 
 **push: v1.2.0**
 
@@ -1263,22 +1264,20 @@ forgot about 0.9.5 LOL
 
 - [x] I get a panic when alt-clicking (hotkey for abstract view) on an article "173109_1_online", error: "thread 'main' (48140) panicked at C:\Users\antho\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cff-parser-0.1.0\src\encoding.rs:150:37: explicit panic"
   - when I access the abstract view by using the arrow key from the article's pdf view, I get the error "error: failed to remove file `C:\Users\antho\OneDrive - The Pennsylvania State University\Desktop\Code Testbench\literature-library\src-tauri\target\debug\literature-library.exe` Caused by: Access is denied. (os error 5)"
+  - [x] accessing abstracts still often causes the application to not respond for several seconds
 
 - [x] if I set a library root in a folder that already has articles, will it combine the articles?
 
 - [x] move the copied text preview window in the pdf reader to the bottom left of the screen instead of the bottom right
+
+- [x] allow enabling/disabling hotkeys 
+
 
 **push: v1.2.1**
 
 ---
 
 ### think about more first
-
-- cross-computer library syncing
-  - option to add link for where to search online for existing papers/metadata repo
-    - places to store a global source
-      - github (repos <~10 GB, so might have to just be the metadata)
-      - psu onedrive
 
   - [ ] basic image editing on the thumbnail, like masking
 
@@ -1290,11 +1289,7 @@ forgot about 0.9.5 LOL
   - total number of papers added vs time
   - which papers struggled for text recognition or DOI API metadata extraction?
 
-- [ ] is 'cited by' accessible through the API?  Is that worth showing?
-
 - [ ] checkbox for enabled a new auto-markdown notes (a la obsidian) section next to the paper?  Collect all paper notes as .md files so that they can be used with Obsidian?  
-
-- [ ] auto-rescale stored image when resolution is unecessarily high
 
 - [ ] show a prompt to accept or undo the changes for drag-and-drop thumbnails
 
@@ -1344,17 +1339,17 @@ node update-version.js <version>
 
 (e.g., node update-version.js 0.8.5)
 
-- [ ] accessing abstracts appears to cause the application to not respond for several seconds
+- [ ] auto-update from github releases page
 
 - [ ] remove the back-up function now that I have export library bundle
-
-- [ ] disable hotkeys 
 
 - [ ] when installing the software with the same version number, allow me to update (currently only option is to uninstall)
 
 - [ ] is the zoom on PDFs bugged when closed and re-opened?
 
 - [ ] bug when using thumbnail capture tool in the notes panel
+
+- [ ] opening the abstract preview window no longer causes a panic visible from the CLI, but freezes are still apparent for some articles.  Would it be trivial to have the first instance of this panic-catching for a given article get logged so that the same breaking attempt is not attempted the next time it is selected?  Or 
 
 questions:
 - is the articles folder in the project directory doing anything anymore?

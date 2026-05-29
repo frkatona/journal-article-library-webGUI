@@ -1,0 +1,57 @@
+name: Experimental macOS Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish-macos:
+    name: Publish macOS ${{ matrix.arch }}
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: Apple Silicon
+            target: aarch64-apple-darwin
+          - arch: Intel
+            target: x86_64-apple-darwin
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build and publish experimental macOS release
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: experimental-macos-v__VERSION__-run-${{ github.run_id }}-${{ github.run_attempt }}
+          releaseName: EXPERIMENTAL macOS build v__VERSION__ (run ${{ github.run_number }}.${{ github.run_attempt }})
+          releaseBody: |
+            Experimental GitHub Actions macOS build for FRK PDF Manager.
+
+            This release is intentionally labeled EXPERIMENTAL and may be unsigned or otherwise unsuitable for general distribution.
+
+            Commit: ${{ github.sha }}
+            Triggered from: ${{ github.ref_name }}
+          releaseCommitish: ${{ github.sha }}
+          prerelease: true
+          args: --target ${{ matrix.target }} --bundles app,dmg
+          releaseAssetNamePattern: experimental-[name]-[version]-[platform]-[arch][ext]
